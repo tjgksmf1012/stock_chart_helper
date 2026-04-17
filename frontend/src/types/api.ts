@@ -156,13 +156,17 @@ export interface ScreenerRequest {
   pattern_types?: string[]
   states?: string[]
   markets?: string[]
+  fetch_statuses?: string[]
   min_textbook_similarity?: number
   min_p_up?: number
   max_p_down?: number
   min_confidence?: number
+  min_sample_reliability?: number
+  min_data_quality?: number
+  min_confluence_score?: number
   timeframes?: Timeframe[]
   min_market_cap?: number
   exclude_no_signal?: boolean
-  sort_by?: 'entry_score' | 'p_up' | 'textbook_similarity' | 'confidence' | 'p_down'
+  sort_by?: 'composite_score' | 'entry_score' | 'p_up' | 'textbook_similarity' | 'confidence' | 'p_down' | 'sample_reliability' | 'confluence_score' | 'data_quality'
   limit?: number
 }

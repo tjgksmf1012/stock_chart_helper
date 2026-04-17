@@ -161,12 +161,16 @@ class ScreenerRequest(BaseModel):
     pattern_types: list[str] | None = None
     states: list[str] | None = None
     markets: list[str] | None = None
+    fetch_statuses: list[str] | None = None
     min_textbook_similarity: float = 0.0
     min_p_up: float = 0.0
     max_p_down: float = 1.0
     min_confidence: float = 0.0
+    min_sample_reliability: float = 0.0
+    min_data_quality: float = 0.0
+    min_confluence_score: float = 0.0
     timeframes: list[str] | None = None
     min_market_cap: float | None = None
     exclude_no_signal: bool = True
-    sort_by: str = "entry_score"
+    sort_by: str = "composite_score"
     limit: int = Field(default=50, ge=1, le=100)

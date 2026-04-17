@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Search, SlidersHorizontal } from 'lucide-react'
 
@@ -30,11 +30,22 @@ const MARKET_OPTIONS = [
   { value: 'KOSDAQ', label: 'KOSDAQ' },
 ]
 
-const SORT_OPTIONS = [
+const FETCH_STATUS_OPTIONS = [
+  { value: 'live_ok', label: '실시간 수집 성공' },
+  { value: 'live_augmented_by_store', label: '실시간 + 저장 분봉' },
+  { value: 'stored_fallback', label: '저장 분봉 대체' },
+  { value: 'daily_ok', label: '일봉 수집 성공' },
+]
+
+const SORT_OPTIONS: Array<{ value: NonNullable<ScreenerRequest['sort_by']>; label: string }> = [
+  { value: 'composite_score', label: '종합 점수' },
   { value: 'entry_score', label: '진입 적합도' },
+  { value: 'sample_reliability', label: '표본 신뢰도' },
+  { value: 'confluence_score', label: '멀티 타임프레임 정렬' },
+  { value: 'data_quality', label: '데이터 품질' },
   { value: 'p_up', label: '상승 확률' },
-  { value: 'textbook_similarity', label: '교과서 유사도' },
   { value: 'confidence', label: '신뢰도' },
+  { value: 'textbook_similarity', label: '교과서 유사도' },
   { value: 'p_down', label: '하락 확률' },
 ]
 
@@ -42,9 +53,12 @@ export default function ScreenerPage() {
   const [req, setReq] = useState<ScreenerRequest>({
     min_textbook_similarity: 0.3,
     min_p_up: 0.0,
-    min_confidence: 0.0,
+    min_confidence: 0.3,
+    min_sample_reliability: 0.2,
+    min_data_quality: 0.4,
+    min_confluence_score: 0.0,
     exclude_no_signal: true,
-    sort_by: 'entry_score',
+    sort_by: 'composite_score',
     limit: 20,
     timeframes: ['1d'],
   })
@@ -61,8 +75,8 @@ export default function ScreenerPage() {
     if (!data?.length) return null
     const kospi = data.filter(item => item.symbol.market === 'KOSPI').length
     const kosdaq = data.filter(item => item.symbol.market === 'KOSDAQ').length
-    const noSignal = data.filter(item => item.no_signal_flag).length
-    return { kospi, kosdaq, noSignal }
+    const avgReliability = data.reduce((sum, item) => sum + item.sample_reliability, 0) / data.length
+    return { kospi, kosdaq, avgReliability }
   }, [data])
 
   const run = () => {
@@ -70,14 +84,12 @@ export default function ScreenerPage() {
     refetch()
   }
 
-  const toggleMultiValue = (field: 'pattern_types' | 'states' | 'markets', value: string) => {
+  const toggleMultiValue = (field: 'pattern_types' | 'states' | 'markets' | 'fetch_statuses', value: string) => {
     setReq(current => {
       const selected = current[field]?.includes(value)
       return {
         ...current,
-        [field]: selected
-          ? current[field]?.filter(item => item !== value)
-          : [...(current[field] ?? []), value],
+        [field]: selected ? current[field]?.filter(item => item !== value) : [...(current[field] ?? []), value],
       }
     })
   }
@@ -87,9 +99,7 @@ export default function ScreenerPage() {
       const selected = current.timeframes?.includes(value)
       return {
         ...current,
-        timeframes: selected
-          ? current.timeframes?.filter(item => item !== value)
-          : [...(current.timeframes ?? []), value],
+        timeframes: selected ? current.timeframes?.filter(item => item !== value) : [...(current.timeframes ?? []), value],
       }
     })
   }
@@ -100,7 +110,9 @@ export default function ScreenerPage() {
         <SlidersHorizontal size={18} className="text-primary" />
         <div>
           <h1 className="text-xl font-bold">스크리너</h1>
-          <p className="text-xs text-muted-foreground">패턴, 상태, 시장, 타임프레임 조건으로 현재 스캔 결과를 좁혀 봅니다.</p>
+          <p className="text-xs text-muted-foreground">
+            패턴, 상태, 시장, 타임프레임뿐 아니라 표본 신뢰도와 데이터 상태까지 함께 걸러서 현재 스캔 결과를 좁혀 봅니다.
+          </p>
         </div>
       </div>
 
@@ -181,53 +193,71 @@ export default function ScreenerPage() {
           </div>
         </FilterGroup>
 
-        <FilterGroup label="최소 교과서 유사도">
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.05"
-            value={req.min_textbook_similarity ?? 0}
-            onChange={event => setReq(current => ({ ...current, min_textbook_similarity: Number(event.target.value) }))}
-            className="w-full accent-primary"
-          />
-          <span className="text-xs text-muted-foreground">{((req.min_textbook_similarity ?? 0) * 100).toFixed(0)}%</span>
+        <FilterGroup label="데이터 상태">
+          <div className="flex flex-wrap gap-1.5">
+            {FETCH_STATUS_OPTIONS.map(option => {
+              const selected = req.fetch_statuses?.includes(option.value)
+              return (
+                <button
+                  key={option.value}
+                  onClick={() => toggleMultiValue('fetch_statuses', option.value)}
+                  className={`rounded px-2 py-1 text-xs transition-colors ${
+                    selected ? 'bg-primary text-primary-foreground' : 'bg-muted/50 text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              )
+            })}
+          </div>
         </FilterGroup>
 
-        <FilterGroup label="최소 상승 확률">
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.05"
-            value={req.min_p_up ?? 0}
-            onChange={event => setReq(current => ({ ...current, min_p_up: Number(event.target.value) }))}
-            className="w-full accent-primary"
-          />
-          <span className="text-xs text-muted-foreground">{((req.min_p_up ?? 0) * 100).toFixed(0)}%</span>
-        </FilterGroup>
+        <SliderGroup
+          label="최소 교과서 유사도"
+          value={req.min_textbook_similarity ?? 0}
+          onChange={value => setReq(current => ({ ...current, min_textbook_similarity: value }))}
+        />
 
-        <FilterGroup label="최소 신뢰도">
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.05"
-            value={req.min_confidence ?? 0}
-            onChange={event => setReq(current => ({ ...current, min_confidence: Number(event.target.value) }))}
-            className="w-full accent-primary"
-          />
-          <span className="text-xs text-muted-foreground">{((req.min_confidence ?? 0) * 100).toFixed(0)}%</span>
-        </FilterGroup>
+        <SliderGroup
+          label="최소 상승 확률"
+          value={req.min_p_up ?? 0}
+          onChange={value => setReq(current => ({ ...current, min_p_up: value }))}
+        />
+
+        <SliderGroup
+          label="최소 신뢰도"
+          value={req.min_confidence ?? 0}
+          onChange={value => setReq(current => ({ ...current, min_confidence: value }))}
+        />
+
+        <SliderGroup
+          label="최소 표본 신뢰도"
+          value={req.min_sample_reliability ?? 0}
+          onChange={value => setReq(current => ({ ...current, min_sample_reliability: value }))}
+        />
+
+        <SliderGroup
+          label="최소 데이터 품질"
+          value={req.min_data_quality ?? 0}
+          onChange={value => setReq(current => ({ ...current, min_data_quality: value }))}
+        />
+
+        <SliderGroup
+          label="최소 합산 점수"
+          value={req.min_confluence_score ?? 0}
+          onChange={value => setReq(current => ({ ...current, min_confluence_score: value }))}
+        />
 
         <FilterGroup label="정렬 기준">
           <select
-            value={req.sort_by ?? 'entry_score'}
+            value={req.sort_by ?? 'composite_score'}
             onChange={event => setReq(current => ({ ...current, sort_by: event.target.value as ScreenerRequest['sort_by'] }))}
             className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
           >
             {SORT_OPTIONS.map(option => (
-              <option key={option.value} value={option.value}>{option.label}</option>
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
             ))}
           </select>
         </FilterGroup>
@@ -239,7 +269,9 @@ export default function ScreenerPage() {
             className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
           >
             {[10, 20, 30, 50].map(value => (
-              <option key={value} value={value}>{value}개</option>
+              <option key={value} value={value}>
+                {value}개
+              </option>
             ))}
           </select>
         </FilterGroup>
@@ -279,13 +311,15 @@ export default function ScreenerPage() {
               <div className="mt-1 text-sm font-medium">KOSPI {stats?.kospi ?? 0} / KOSDAQ {stats?.kosdaq ?? 0}</div>
             </Card>
             <Card>
-              <div className="text-xs text-muted-foreground">No Signal 포함 수</div>
-              <div className="mt-1 text-sm font-medium">{stats?.noSignal ?? 0}개</div>
+              <div className="text-xs text-muted-foreground">평균 표본 신뢰도</div>
+              <div className="mt-1 text-sm font-medium">{((stats?.avgReliability ?? 0) * 100).toFixed(0)}%</div>
             </Card>
           </div>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {data.map(item => <DashboardCard key={`${item.timeframe}-${item.symbol.code}`} item={item} />)}
+            {data.map(item => (
+              <DashboardCard key={`${item.timeframe}-${item.symbol.code}`} item={item} />
+            ))}
           </div>
         </div>
       )}
@@ -293,11 +327,36 @@ export default function ScreenerPage() {
   )
 }
 
-function FilterGroup({ label, children }: { label: string; children: React.ReactNode }) {
+function FilterGroup({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="space-y-2">
       <div className="text-xs font-semibold text-muted-foreground">{label}</div>
       {children}
     </div>
+  )
+}
+
+function SliderGroup({
+  label,
+  value,
+  onChange,
+}: {
+  label: string
+  value: number
+  onChange: (value: number) => void
+}) {
+  return (
+    <FilterGroup label={label}>
+      <input
+        type="range"
+        min="0"
+        max="1"
+        step="0.05"
+        value={value}
+        onChange={event => onChange(Number(event.target.value))}
+        className="w-full accent-primary"
+      />
+      <span className="text-xs text-muted-foreground">{(value * 100).toFixed(0)}%</span>
+    </FilterGroup>
   )
 }
