@@ -8,7 +8,10 @@ from ..schemas import AnalysisResult, OHLCVBar, PriceInfo, SymbolInfo
 from ...core.config import get_settings
 from ...core.redis import cache_get, cache_set
 from ...services.analysis_service import analyze_symbol_dataframe, build_no_signal_snapshot
+import pandas as pd
+
 from ...services.data_fetcher import get_data_fetcher
+from ...services.scanner import FALLBACK_CODES, get_scan_results
 from ...services.timeframe_service import DEFAULT_TIMEFRAME, SUPPORTED_TIMEFRAMES, get_timeframe_spec
 
 router = APIRouter(prefix="/symbols", tags=["symbols"])
@@ -21,10 +24,40 @@ def _validate_timeframe(timeframe: str) -> str:
     return timeframe
 
 
+async def _get_search_universe(fetcher) -> pd.DataFrame:
+    universe = await fetcher.get_universe()
+    if not universe.empty:
+        return universe
+
+    # Build from scan cache when KRX is unreachable
+    rows: list[dict] = []
+    seen: set[str] = set()
+    try:
+        cached = await get_scan_results(DEFAULT_TIMEFRAME)
+        for row in cached:
+            code = row.get("code") or row.get("symbol", {}).get("code", "")
+            if code and code not in seen:
+                seen.add(code)
+                rows.append({
+                    "code": code,
+                    "name": row.get("name") or row.get("symbol", {}).get("name", code),
+                    "market": row.get("market") or row.get("symbol", {}).get("market", "KRX"),
+                })
+    except Exception:
+        pass
+
+    for code, name, market in FALLBACK_CODES:
+        if code not in seen:
+            seen.add(code)
+            rows.append({"code": code, "name": name, "market": market})
+
+    return pd.DataFrame(rows, columns=["code", "name", "market"]) if rows else pd.DataFrame()
+
+
 @router.get("/search")
 async def search_symbols(q: str = Query(min_length=1)) -> list[SymbolInfo]:
     fetcher = get_data_fetcher()
-    universe = await fetcher.get_universe()
+    universe = await _get_search_universe(fetcher)
     if universe.empty:
         return []
 
@@ -95,7 +128,7 @@ async def get_bars(
             )
         )
 
-    ttl = settings.intraday_bars_ttl if spec.is_intraday else settings.daily_bars_ttl
+    ttl = settings.intraday_bars_ttl if spec.intraday else settings.daily_bars_ttl
     await cache_set(cache_key, [bar.model_dump() for bar in bars], ttl)
     return bars
 

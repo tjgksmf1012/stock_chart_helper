@@ -401,7 +401,7 @@ class KRXDataFetcher:
                             rows.append({"code": code, "market": market, "name": name})
                     return rows
 
-                rows = await asyncio.to_thread(build_rows)
+                rows = await asyncio.wait_for(asyncio.to_thread(build_rows), timeout=20.0)
                 if not rows:
                     return await self._fdr_universe_fallback()
                 df = pd.DataFrame(rows)
@@ -447,7 +447,8 @@ class KRXDataFetcher:
         try:
             from pykrx import stock as krx
 
-            return await asyncio.to_thread(krx.get_market_ticker_name, code)
+            result = await asyncio.to_thread(krx.get_market_ticker_name, code)
+            return str(result) if result and not hasattr(result, 'empty') else code
         except Exception:
             return code
 
