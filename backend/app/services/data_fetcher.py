@@ -184,8 +184,11 @@ class KRXDataFetcher:
         if kis_df.empty:
             return yahoo_df.reset_index(drop=True)
 
-        today = pd.Timestamp.now(tz="Asia/Seoul").tz_localize(None).normalize()
-        historical = yahoo_df.loc[yahoo_df["datetime"].dt.normalize() < today].copy()
+        today = pd.Timestamp.now(tz="Asia/Seoul").tz_convert(None).normalize()
+        yahoo_dt = pd.to_datetime(yahoo_df["datetime"])
+        if getattr(yahoo_dt.dt, "tz", None) is not None:
+            yahoo_dt = yahoo_dt.dt.tz_convert("Asia/Seoul").dt.tz_localize(None)
+        historical = yahoo_df.loc[yahoo_dt.dt.normalize() < today].copy()
         combined = pd.concat([historical, kis_df], ignore_index=True)
         combined = combined.sort_values("datetime").drop_duplicates(subset=["datetime"], keep="last")
         return combined.reset_index(drop=True)

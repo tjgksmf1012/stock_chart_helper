@@ -1,6 +1,6 @@
 import axios from 'axios'
 import type {
-  SymbolInfo, OHLCVBar, AnalysisResult,
+  SymbolInfo, OHLCVBar, AnalysisResult, PriceInfo,
   DashboardResponse, PatternLibraryEntry, ScreenerRequest, DashboardItem, ScanStatusResponse
 } from '@/types/api'
 
@@ -12,6 +12,8 @@ export const symbolsApi = {
     api.get<OHLCVBar[]>(`/symbols/${symbol}/bars`, { params: { timeframe, days } }).then(r => r.data),
   getAnalysis: (symbol: string, timeframe = '1d') =>
     api.get<AnalysisResult>(`/symbols/${symbol}/analysis`, { params: { timeframe } }).then(r => r.data),
+  getPrice: (symbol: string) =>
+    api.get<PriceInfo>(`/symbols/${symbol}/price`).then(r => r.data),
 }
 
 export const dashboardApi = {

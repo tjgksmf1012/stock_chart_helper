@@ -4,6 +4,17 @@ from datetime import datetime, date
 from typing import Any
 
 
+class PriceInfo(BaseModel):
+    code: str
+    close: float
+    prev_close: float
+    change: float
+    change_pct: float
+    volume: int
+    source: str           # "kis" | "pykrx" | "none"
+    timestamp: str | None = None
+
+
 class SymbolInfo(BaseModel):
     code: str
     name: str

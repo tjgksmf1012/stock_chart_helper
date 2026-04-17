@@ -7,6 +7,7 @@ import DashboardPage from './pages/DashboardPage'
 import ChartPage from './pages/ChartPage'
 import PatternLibraryPage from './pages/PatternLibraryPage'
 import ScreenerPage from './pages/ScreenerPage'
+import WatchlistPage from './pages/WatchlistPage'
 import './index.css'
 
 const queryClient = new QueryClient({
@@ -27,6 +28,7 @@ createRoot(document.getElementById('root')!).render(
             <Route index element={<DashboardPage />} />
             <Route path="chart" element={<ChartPage />} />
             <Route path="chart/:symbol" element={<ChartPage />} />
+            <Route path="watchlist" element={<WatchlistPage />} />
             <Route path="library" element={<PatternLibraryPage />} />
             <Route path="screener" element={<ScreenerPage />} />
           </Route>

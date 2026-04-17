@@ -2,9 +2,10 @@ from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Query
 
-from ..schemas import AnalysisResult, OHLCVBar, PatternInfo, SymbolInfo
+from ..schemas import AnalysisResult, OHLCVBar, PatternInfo, PriceInfo, SymbolInfo
 from ...core.config import get_settings
 from ...core.redis import cache_get, cache_set
+from ...services.backtest_engine import get_win_rate
 from ...services.data_fetcher import get_data_fetcher
 from ...services.pattern_engine import PatternEngine
 from ...services.probability_engine import compute_probability
@@ -177,7 +178,8 @@ async def get_analysis(
     best_pattern = max(pattern_results, key=lambda pattern: pattern.textbook_similarity) if pattern_results else None
 
     if best_pattern:
-        prob = compute_probability(best_pattern, sample_size=50)
+        win_rate = await get_win_rate(best_pattern.pattern_type)
+        prob = compute_probability(best_pattern, similar_win_rate=win_rate, sample_size=50)
         result = AnalysisResult(
             symbol=symbol_info,
             timeframe=timeframe,
@@ -216,3 +218,72 @@ async def get_analysis(
 
     await cache_set(cache_key, result.model_dump(), settings.pattern_cache_ttl)
     return result
+
+
+@router.get("/{symbol}/price")
+async def get_price(symbol: str) -> PriceInfo:
+    """Returns current price, previous close, and change information."""
+    cache_key = f"price:{symbol}"
+    cached = await cache_get(cache_key)
+    if cached:
+        return PriceInfo(**cached)
+
+    fetcher = get_data_fetcher()
+
+    # Try KIS first (real-time if configured)
+    from ...services.kis_client import get_kis_client
+    kis = get_kis_client()
+    if kis.configured:
+        try:
+            kis_data = await kis.fetch_current_price(symbol)
+            if kis_data and kis_data.get("close"):
+                # Get prev close from pykrx for change calculation
+                end = date.today()
+                start = end - timedelta(days=5)
+                hist = await fetcher.get_stock_ohlcv(symbol, start, end)
+                prev_close = float(hist["close"].iloc[-2]) if len(hist) >= 2 else float(hist["close"].iloc[-1])
+                close = float(kis_data["close"])
+                change = close - prev_close
+                change_pct = change / prev_close if prev_close else 0.0
+                info = PriceInfo(
+                    code=symbol,
+                    close=close,
+                    prev_close=prev_close,
+                    change=round(change, 2),
+                    change_pct=round(change_pct, 4),
+                    volume=kis_data.get("volume") or 0,
+                    source="kis",
+                    timestamp=kis_data.get("timestamp"),
+                )
+                await cache_set(cache_key, info.model_dump(), ttl=60)
+                return info
+        except Exception as exc:
+            pass  # fall through to pykrx
+
+    # pykrx fallback: get last 2 trading days
+    try:
+        end = date.today()
+        start = end - timedelta(days=5)
+        hist = await fetcher.get_stock_ohlcv(symbol, start, end)
+        if not hist.empty:
+            close = float(hist["close"].iloc[-1])
+            prev_close = float(hist["close"].iloc[-2]) if len(hist) >= 2 else close
+            change = close - prev_close
+            change_pct = change / prev_close if prev_close else 0.0
+            volume = int(hist["volume"].iloc[-1])
+            info = PriceInfo(
+                code=symbol,
+                close=close,
+                prev_close=prev_close,
+                change=round(change, 2),
+                change_pct=round(change_pct, 4),
+                volume=volume,
+                source="pykrx",
+                timestamp=str(hist["date"].iloc[-1])[:10],
+            )
+            await cache_set(cache_key, info.model_dump(), ttl=300)
+            return info
+    except Exception:
+        pass
+
+    return PriceInfo(code=symbol, close=0.0, prev_close=0.0, change=0.0, change_pct=0.0, volume=0, source="none")
