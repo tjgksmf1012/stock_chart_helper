@@ -2,9 +2,9 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { BookOpen, ChevronDown, ChevronUp } from 'lucide-react'
 
+import { patternsApi } from '@/lib/api'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
-import { patternsApi } from '@/lib/api'
 import { DIRECTION_LABELS } from '@/lib/utils'
 import type { PatternLibraryEntry } from '@/types/api'
 

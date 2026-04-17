@@ -1,8 +1,8 @@
 import { useNavigate } from 'react-router-dom'
 
 import type { DashboardItem } from '@/types/api'
-import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
+import { Card } from '@/components/ui/Card'
 import { ProbBar } from '@/components/ui/ProbBar'
 import { cn, fmtPct, PATTERN_NAMES, STATE_COLORS, STATE_LABELS } from '@/lib/utils'
 
