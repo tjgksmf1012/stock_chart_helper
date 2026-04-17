@@ -14,6 +14,7 @@ from datetime import date, datetime
 import pandas as pd
 
 from ..core.redis import cache_get, cache_set
+from .kis_client import KISClient, get_kis_client
 
 logger = logging.getLogger(__name__)
 UNIVERSE_CACHE_KEY = "symbols:universe"
@@ -45,9 +46,17 @@ INTRADAY_MAX_DAYS = {
     "15m": 60,
 }
 
+INTRADAY_RESAMPLE_RULES = {
+    "60m": "60min",
+    "15m": "15min",
+}
+
 
 class KRXDataFetcher:
     """Fetches historical OHLCV and symbol metadata for the Korean market."""
+
+    def __init__(self, kis_client: KISClient | None = None) -> None:
+        self._kis_client = kis_client or get_kis_client()
 
     async def get_stock_ohlcv(
         self,
@@ -83,6 +92,18 @@ class KRXDataFetcher:
             raise ValueError(f"Unsupported intraday timeframe: {timeframe}")
 
         period_days = max(5, min(days, INTRADAY_MAX_DAYS[timeframe]))
+        yahoo_df, kis_df = await asyncio.gather(
+            self._get_yahoo_intraday_ohlcv(code, timeframe, period_days),
+            self._get_kis_intraday_ohlcv(code, timeframe),
+        )
+        return self._merge_intraday_sources(yahoo_df, kis_df)
+
+    async def _get_yahoo_intraday_ohlcv(
+        self,
+        code: str,
+        timeframe: str,
+        period_days: int,
+    ) -> pd.DataFrame:
         candidates = await self._get_yahoo_symbol_candidates(code)
         if not candidates:
             return pd.DataFrame()
@@ -113,6 +134,61 @@ class KRXDataFetcher:
                     )
 
         return pd.DataFrame()
+
+    async def _get_kis_intraday_ohlcv(self, code: str, timeframe: str) -> pd.DataFrame:
+        if timeframe not in INTRADAY_RESAMPLE_RULES:
+            return pd.DataFrame()
+
+        try:
+            minute_bars = await self._kis_client.fetch_today_minute_bars(code)
+        except Exception as exc:
+            logger.warning("KIS intraday failed for %s (%s): %s", code, timeframe, exc)
+            return pd.DataFrame()
+
+        if minute_bars.empty:
+            return pd.DataFrame()
+
+        return self._resample_intraday_frame(minute_bars, timeframe)
+
+    def _resample_intraday_frame(self, df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
+        if df.empty:
+            return pd.DataFrame()
+
+        normalized = df.copy()
+        normalized["datetime"] = pd.to_datetime(normalized["datetime"])
+        normalized = (
+            normalized.sort_values("datetime")
+            .drop_duplicates(subset=["datetime"], keep="last")
+            .set_index("datetime")
+        )
+        resampled = normalized.resample(INTRADAY_RESAMPLE_RULES[timeframe]).agg(
+            {
+                "open": "first",
+                "high": "max",
+                "low": "min",
+                "close": "last",
+                "volume": "sum",
+            }
+        )
+        resampled = resampled.dropna(subset=["open", "high", "low", "close"])
+        if resampled.empty:
+            return pd.DataFrame()
+
+        result = resampled.reset_index()
+        result["amount"] = None
+        return result[["datetime", "open", "high", "low", "close", "volume", "amount"]]
+
+    def _merge_intraday_sources(self, yahoo_df: pd.DataFrame, kis_df: pd.DataFrame) -> pd.DataFrame:
+        if yahoo_df.empty:
+            return kis_df.reset_index(drop=True) if not kis_df.empty else pd.DataFrame()
+        if kis_df.empty:
+            return yahoo_df.reset_index(drop=True)
+
+        today = pd.Timestamp.now(tz="Asia/Seoul").tz_localize(None).normalize()
+        historical = yahoo_df.loc[yahoo_df["datetime"].dt.normalize() < today].copy()
+        combined = pd.concat([historical, kis_df], ignore_index=True)
+        combined = combined.sort_values("datetime").drop_duplicates(subset=["datetime"], keep="last")
+        return combined.reset_index(drop=True)
 
     async def _fdr_fallback(self, code: str, start: date, end: date) -> pd.DataFrame:
         try:
