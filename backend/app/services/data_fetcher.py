@@ -8,16 +8,19 @@ Real-time / intraday: KIS API (optional, requires account & API key)
 """
 
 import asyncio
-from datetime import date, datetime, timedelta
-from functools import lru_cache
-import pandas as pd
 import logging
+from datetime import date, datetime
+
+import pandas as pd
+
+from ..core.redis import cache_get, cache_set
 
 logger = logging.getLogger(__name__)
+UNIVERSE_CACHE_KEY = "symbols:universe"
 
 
 class KRXDataFetcher:
-    """Fetches historical OHLCV data from KRX via pykrx."""
+    """Fetches historical OHLCV and symbol metadata for the Korean market."""
 
     async def get_stock_ohlcv(
         self,
@@ -28,6 +31,7 @@ class KRXDataFetcher:
     ) -> pd.DataFrame:
         try:
             from pykrx import stock as krx
+
             start_str = start.strftime("%Y%m%d")
             end_str = end.strftime("%Y%m%d")
             df = await asyncio.to_thread(
@@ -35,67 +39,97 @@ class KRXDataFetcher:
             )
             if df.empty:
                 return pd.DataFrame()
+
             df = df.rename(columns={
-                "시가": "open", "고가": "high", "저가": "low",
-                "종가": "close", "거래량": "volume", "거래대금": "amount",
+                "시가": "open",
+                "고가": "high",
+                "저가": "low",
+                "종가": "close",
+                "거래량": "volume",
+                "거래대금": "amount",
             })
             df.index.name = "date"
             df = df.reset_index()
             df["date"] = pd.to_datetime(df["date"])
+
+            if "amount" not in df.columns:
+                df["amount"] = None
+
             return df[["date", "open", "high", "low", "close", "volume", "amount"]]
         except Exception as e:
-            logger.warning("pykrx failed for %s: %s — trying FinanceDataReader", code, e)
+            logger.warning("pykrx failed for %s: %s; trying FinanceDataReader fallback", code, e)
             return await self._fdr_fallback(code, start, end)
 
     async def _fdr_fallback(self, code: str, start: date, end: date) -> pd.DataFrame:
         try:
             import FinanceDataReader as fdr
+
             df = await asyncio.to_thread(fdr.DataReader, code, start, end)
             if df.empty:
                 return pd.DataFrame()
+
             df = df.rename(columns={
-                "Open": "open", "High": "high", "Low": "low",
-                "Close": "close", "Volume": "volume",
+                "Open": "open",
+                "High": "high",
+                "Low": "low",
+                "Close": "close",
+                "Volume": "volume",
             })
             df.index.name = "date"
             df = df.reset_index()
             df["date"] = pd.to_datetime(df["date"])
             df["amount"] = None
+
             return df[["date", "open", "high", "low", "close", "volume", "amount"]]
         except Exception as e:
             logger.error("FinanceDataReader also failed for %s: %s", code, e)
             return pd.DataFrame()
 
     async def get_universe(self) -> pd.DataFrame:
-        """KOSPI + KOSDAQ 상장 종목 전체 목록 + 시가총액."""
+        """Returns KOSPI/KOSDAQ symbol universe with names for search/autocomplete."""
+        cached = await cache_get(UNIVERSE_CACHE_KEY)
+        if cached:
+            return pd.DataFrame(cached)
+
         try:
             from pykrx import stock as krx
+
             today = datetime.today().strftime("%Y%m%d")
 
-            kospi = await asyncio.to_thread(krx.get_market_ticker_list, today, market="KOSPI")
-            kosdaq = await asyncio.to_thread(krx.get_market_ticker_list, today, market="KOSDAQ")
+            def build_rows() -> list[dict[str, str]]:
+                rows: list[dict[str, str]] = []
+                for market in ("KOSPI", "KOSDAQ"):
+                    tickers = krx.get_market_ticker_list(today, market=market)
+                    for code in tickers:
+                        try:
+                            name = krx.get_market_ticker_name(code)
+                        except Exception:
+                            name = code
+                        rows.append({
+                            "code": code,
+                            "market": market,
+                            "name": name,
+                        })
+                return rows
 
-            rows = []
-            for code in kospi:
-                rows.append({"code": code, "market": "KOSPI"})
-            for code in kosdaq:
-                rows.append({"code": code, "market": "KOSDAQ"})
-
+            rows = await asyncio.to_thread(build_rows)
             df = pd.DataFrame(rows)
+            await cache_set(UNIVERSE_CACHE_KEY, df.to_dict(orient="records"), ttl=3600)
             return df
         except Exception as e:
             logger.error("Failed to fetch universe: %s", e)
-            return pd.DataFrame(columns=["code", "market"])
+            return pd.DataFrame(columns=["code", "market", "name"])
 
     async def get_market_cap(self, code: str) -> float | None:
-        """시가총액 (억 원) 반환."""
+        """Returns market cap in units of 100M KRW when available."""
         try:
             from pykrx import stock as krx
+
             today = datetime.today().strftime("%Y%m%d")
             df = await asyncio.to_thread(krx.get_market_cap, today, today, code)
             if df.empty:
                 return None
-            val = df["시가총액"].iloc[0] / 1e8  # 원 → 억 원
+            val = df["시가총액"].iloc[0] / 1e8
             return float(val)
         except Exception:
             return None
@@ -108,16 +142,22 @@ class KRXDataFetcher:
             return code
 
     async def get_index_ohlcv(self, index_code: str, start: date, end: date) -> pd.DataFrame:
-        """지수 데이터 (예: 코스피=1, 코스닥=2)."""
+        """Fetches index OHLCV data such as KOSPI/KOSDAQ."""
         try:
             from pykrx import stock as krx
+
             start_str = start.strftime("%Y%m%d")
             end_str = end.strftime("%Y%m%d")
             df = await asyncio.to_thread(krx.get_index_ohlcv, start_str, end_str, index_code)
             if df.empty:
                 return pd.DataFrame()
+
             df = df.rename(columns={
-                "시가": "open", "고가": "high", "저가": "low", "종가": "close", "거래량": "volume",
+                "시가": "open",
+                "고가": "high",
+                "저가": "low",
+                "종가": "close",
+                "거래량": "volume",
             })
             df.index.name = "date"
             df = df.reset_index()
@@ -128,7 +168,6 @@ class KRXDataFetcher:
             return pd.DataFrame()
 
 
-# Singleton
 _fetcher: KRXDataFetcher | None = None
 
 

@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { symbolsApi } from '@/lib/api'
-import { CandleChart } from '@/components/chart/CandleChart'
+import { ArrowLeft, Loader2, Search } from 'lucide-react'
+
 import { AnalysisPanel } from '@/components/chart/AnalysisPanel'
-import { Loader2, ArrowLeft, Search } from 'lucide-react'
+import { CandleChart } from '@/components/chart/CandleChart'
+import { symbolsApi } from '@/lib/api'
 import { useAppStore } from '@/store/app'
 
 const TIMEFRAMES = [
@@ -34,57 +35,62 @@ export default function ChartPage() {
     staleTime: 300_000,
   })
 
-  const handleSearch = async (q: string) => {
-    setSearchQuery(q)
-    if (q.length < 1) { setSearchResults([]); return }
-    const results = await symbolsApi.search(q)
+  const handleSearch = async (query: string) => {
+    setSearchQuery(query)
+    if (query.trim().length < 1) {
+      setSearchResults([])
+      return
+    }
+
+    const results = await symbolsApi.search(query)
     setSearchResults(results)
   }
 
   return (
     <div className="space-y-4">
-      {/* Header */}
       <div className="flex items-center gap-3">
-        <button onClick={() => nav('/')} className="text-muted-foreground hover:text-foreground transition-colors">
+        <button onClick={() => nav('/')} className="text-muted-foreground transition-colors hover:text-foreground">
           <ArrowLeft size={18} />
         </button>
 
-        {/* Symbol search */}
-        <div className="relative flex-1 max-w-sm">
+        <div className="relative max-w-sm flex-1">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input
-            className="w-full bg-card border border-border rounded-lg pl-8 pr-3 py-2 text-sm focus:outline-none focus:border-primary/60"
-            placeholder="종목 코드 또는 이름 검색..."
+            className="w-full rounded-lg border border-border bg-card py-2 pl-8 pr-3 text-sm focus:border-primary/60 focus:outline-none"
+            placeholder="종목 코드 또는 이름 검색"
             value={searchQuery}
-            onChange={e => handleSearch(e.target.value)}
+            onChange={event => handleSearch(event.target.value)}
           />
           {searchResults.length > 0 && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-lg shadow-xl z-50 max-h-48 overflow-y-auto">
-              {searchResults.map(r => (
+            <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-48 overflow-y-auto rounded-lg border border-border bg-card shadow-xl">
+              {searchResults.map(result => (
                 <button
-                  key={r.code}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted/50 transition-colors text-left"
-                  onClick={() => { nav(`/chart/${r.code}`); setSearchQuery(''); setSearchResults([]) }}
+                  key={result.code}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted/50"
+                  onClick={() => {
+                    nav(`/chart/${result.code}`)
+                    setSearchQuery('')
+                    setSearchResults([])
+                  }}
                 >
-                  <span className="font-mono text-xs text-muted-foreground">{r.code}</span>
-                  <span>{r.name}</span>
-                  <span className="ml-auto text-xs text-muted-foreground">{r.market}</span>
+                  <span className="font-mono text-xs text-muted-foreground">{result.code}</span>
+                  <span>{result.name}</span>
+                  <span className="ml-auto text-xs text-muted-foreground">{result.market}</span>
                 </button>
               ))}
             </div>
           )}
         </div>
 
-        {/* Timeframe selector */}
         <div className="flex gap-1">
           {TIMEFRAMES.map(tf => (
             <button
               key={tf.value}
               onClick={() => setTimeframe(tf.value as '1d' | '60m' | '15m')}
-              className={`px-2.5 py-1.5 text-xs rounded-md transition-colors ${
+              className={`rounded-md px-2.5 py-1.5 text-xs transition-colors ${
                 selectedTimeframe === tf.value
                   ? 'bg-primary text-primary-foreground'
-                  : 'bg-card text-muted-foreground hover:text-foreground border border-border'
+                  : 'border border-border bg-card text-muted-foreground hover:text-foreground'
               }`}
             >
               {tf.label}
@@ -93,45 +99,50 @@ export default function ChartPage() {
         </div>
       </div>
 
-      {/* Symbol info */}
       {analysisQ.data && (
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-bold">{analysisQ.data.symbol.name}</h1>
-          <span className="text-muted-foreground font-mono text-sm">{symbol}</span>
+          <span className="font-mono text-sm text-muted-foreground">{symbol}</span>
           <span className="text-xs text-muted-foreground">{analysisQ.data.symbol.market}</span>
           {analysisQ.data.is_provisional && (
-            <span className="text-xs bg-orange-400/15 text-orange-400 px-1.5 py-0.5 rounded">잠정</span>
+            <span className="rounded bg-orange-400/15 px-1.5 py-0.5 text-xs text-orange-400">잠정</span>
           )}
         </div>
       )}
 
       {!symbol ? (
-        <div className="flex flex-col items-center justify-center h-80 text-muted-foreground gap-3">
+        <div className="flex h-80 flex-col items-center justify-center gap-3 text-muted-foreground">
           <Search size={40} className="opacity-20" />
-          <p className="text-sm">위 검색창에서 종목을 선택하세요</p>
+          <p className="text-sm">검색창에서 종목을 선택해 차트 분석을 시작하세요.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 xl:grid-cols-[1fr_300px] gap-4">
-          {/* Chart */}
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_300px]">
           <div>
             {barsQ.isLoading ? (
-              <div className="flex items-center justify-center h-96 bg-card rounded-lg">
+              <div className="flex h-96 items-center justify-center rounded-lg bg-card">
                 <Loader2 size={24} className="animate-spin text-muted-foreground" />
               </div>
+            ) : barsQ.data && barsQ.data.length > 0 ? (
+              <CandleChart bars={barsQ.data} analysis={analysisQ.data ?? null} height={480} />
             ) : (
-              <CandleChart bars={barsQ.data ?? []} height={480} />
+              <div className="flex h-96 items-center justify-center rounded-lg bg-card text-sm text-muted-foreground">
+                차트 데이터를 불러오지 못했습니다.
+              </div>
             )}
           </div>
 
-          {/* Analysis */}
           <div>
             {analysisQ.isLoading ? (
-              <div className="flex items-center justify-center h-40">
+              <div className="flex h-40 items-center justify-center">
                 <Loader2 size={20} className="animate-spin text-muted-foreground" />
               </div>
             ) : analysisQ.data ? (
               <AnalysisPanel analysis={analysisQ.data} />
-            ) : null}
+            ) : (
+              <div className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
+                분석 결과를 불러오지 못했습니다.
+              </div>
+            )}
           </div>
         </div>
       )}

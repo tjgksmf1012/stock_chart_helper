@@ -76,6 +76,19 @@ class DashboardResponse(BaseModel):
     generated_at: str
 
 
+class ScanStatusResponse(BaseModel):
+    status: str
+    is_running: bool
+    source: str | None = None
+    cached_result_count: int = 0
+    universe_size: int | None = None
+    last_started_at: str | None = None
+    last_finished_at: str | None = None
+    last_error: str | None = None
+    duration_ms: int | None = None
+    trigger_accepted: bool | None = None
+
+
 class PatternLibraryEntry(BaseModel):
     pattern_type: str
     name_kr: str

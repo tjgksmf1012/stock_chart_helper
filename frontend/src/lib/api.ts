@@ -1,7 +1,7 @@
 import axios from 'axios'
 import type {
   SymbolInfo, OHLCVBar, AnalysisResult,
-  DashboardResponse, PatternLibraryEntry, ScreenerRequest, DashboardItem
+  DashboardResponse, PatternLibraryEntry, ScreenerRequest, DashboardItem, ScanStatusResponse
 } from '@/types/api'
 
 const api = axios.create({ baseURL: '/api/v1' })
@@ -20,6 +20,8 @@ export const dashboardApi = {
   highSimilarity: (limit = 10) => api.get<DashboardResponse>('/dashboard/high-textbook-similarity', { params: { limit } }).then(r => r.data),
   noSignal: (limit = 10) => api.get<DashboardResponse>('/dashboard/watchlist-no-signal', { params: { limit } }).then(r => r.data),
   armed: (limit = 10) => api.get<DashboardResponse>('/dashboard/pattern-armed', { params: { limit } }).then(r => r.data),
+  scanStatus: () => api.get<ScanStatusResponse>('/dashboard/scan-status').then(r => r.data),
+  refreshScan: () => api.post<ScanStatusResponse>('/dashboard/scan-refresh').then(r => r.data),
 }
 
 export const patternsApi = {

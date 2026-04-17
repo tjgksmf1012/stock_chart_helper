@@ -70,6 +70,19 @@ export interface DashboardResponse {
   generated_at: string
 }
 
+export interface ScanStatusResponse {
+  status: string
+  is_running: boolean
+  source: string | null
+  cached_result_count: number
+  universe_size: number | null
+  last_started_at: string | null
+  last_finished_at: string | null
+  last_error: string | null
+  duration_ms: number | null
+  trigger_accepted?: boolean | null
+}
+
 export interface PatternLibraryEntry {
   pattern_type: string
   name_kr: string

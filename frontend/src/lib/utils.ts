@@ -10,11 +10,20 @@ export function fmtPct(val: number, decimals = 1): string {
 }
 
 export function fmtPrice(val: number): string {
-  return val.toLocaleString('ko-KR') + '원'
+  return `${Math.round(val).toLocaleString('ko-KR')}원`
 }
 
 export function fmtNumber(val: number): string {
   return val.toLocaleString('ko-KR')
+}
+
+export function fmtDateTime(value: string | null | undefined): string {
+  if (!value) return '-'
+
+  return new Intl.DateTimeFormat('ko-KR', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  }).format(new Date(value))
 }
 
 export const STATE_LABELS: Record<string, string> = {
@@ -34,8 +43,8 @@ export const STATE_COLORS: Record<string, string> = {
 }
 
 export const PATTERN_NAMES: Record<string, string> = {
-  double_bottom: '이중바닥 (W)',
-  double_top: '이중천장 (M)',
+  double_bottom: '이중 바닥 (W)',
+  double_top: '이중 천장 (M)',
   head_and_shoulders: '헤드앤숄더',
   inverse_head_and_shoulders: '역헤드앤숄더',
   ascending_triangle: '상승 삼각형',
@@ -49,7 +58,7 @@ export const PATTERN_NAMES: Record<string, string> = {
 }
 
 export const DIRECTION_LABELS: Record<string, string> = {
-  bullish: '상승',
-  bearish: '하락',
-  neutral: '방향성 없음',
+  bullish: '상승형',
+  bearish: '하락형',
+  neutral: '중립형',
 }
