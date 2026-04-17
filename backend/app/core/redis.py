@@ -1,30 +1,68 @@
 import json
+import time
 from typing import Any
-import redis.asyncio as aioredis
 from .config import get_settings
 
 settings = get_settings()
-_redis: aioredis.Redis | None = None
+
+# In-memory fallback cache (used when Redis is unavailable)
+_mem_cache: dict[str, tuple[Any, float]] = {}  # key -> (value, expires_at)
+
+_redis = None
+_redis_available: bool | None = None  # None = not yet tried
 
 
-async def get_redis() -> aioredis.Redis:
-    global _redis
-    if _redis is None:
-        _redis = aioredis.from_url(settings.redis_url, decode_responses=True)
-    return _redis
+async def _try_get_redis():
+    global _redis, _redis_available
+    if _redis_available is False:
+        return None
+    if _redis is not None:
+        return _redis
+    try:
+        import redis.asyncio as aioredis
+        r = aioredis.from_url(settings.redis_url, decode_responses=True, socket_connect_timeout=1)
+        await r.ping()
+        _redis = r
+        _redis_available = True
+        return _redis
+    except Exception:
+        _redis_available = False
+        return None
 
 
 async def cache_get(key: str) -> Any | None:
-    r = await get_redis()
-    val = await r.get(key)
-    return json.loads(val) if val else None
+    r = await _try_get_redis()
+    if r:
+        try:
+            val = await r.get(key)
+            return json.loads(val) if val else None
+        except Exception:
+            pass
+    # in-memory fallback
+    entry = _mem_cache.get(key)
+    if entry and entry[1] > time.time():
+        return entry[0]
+    _mem_cache.pop(key, None)
+    return None
 
 
 async def cache_set(key: str, value: Any, ttl: int) -> None:
-    r = await get_redis()
-    await r.setex(key, ttl, json.dumps(value, default=str))
+    r = await _try_get_redis()
+    if r:
+        try:
+            await r.setex(key, ttl, json.dumps(value, default=str))
+            return
+        except Exception:
+            pass
+    # in-memory fallback
+    _mem_cache[key] = (value, time.time() + ttl)
 
 
 async def cache_delete(key: str) -> None:
-    r = await get_redis()
-    await r.delete(key)
+    r = await _try_get_redis()
+    if r:
+        try:
+            await r.delete(key)
+        except Exception:
+            pass
+    _mem_cache.pop(key, None)

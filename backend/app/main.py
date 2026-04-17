@@ -37,3 +37,10 @@ async def health() -> dict:
 @app.on_event("startup")
 async def on_startup():
     logger.info("Stock Chart Helper API started", debug=settings.debug)
+    # DB init is optional — skip gracefully if no DB configured
+    try:
+        from .core.database import init_db
+        await init_db()
+        logger.info("Database initialized")
+    except Exception as e:
+        logger.warning("DB init skipped (no DB configured)", error=str(e))
