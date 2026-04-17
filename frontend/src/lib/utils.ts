@@ -1,0 +1,55 @@
+import { type ClassValue, clsx } from 'clsx'
+import { twMerge } from 'tailwind-merge'
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs))
+}
+
+export function fmtPct(val: number, decimals = 1): string {
+  return `${(val * 100).toFixed(decimals)}%`
+}
+
+export function fmtPrice(val: number): string {
+  return val.toLocaleString('ko-KR') + '원'
+}
+
+export function fmtNumber(val: number): string {
+  return val.toLocaleString('ko-KR')
+}
+
+export const STATE_LABELS: Record<string, string> = {
+  forming: '형성 중',
+  armed: '확인 직전',
+  confirmed: '확인 완료',
+  invalidated: '무효화',
+  played_out: '전개 완료',
+}
+
+export const STATE_COLORS: Record<string, string> = {
+  forming: 'text-yellow-400 bg-yellow-400/10',
+  armed: 'text-orange-400 bg-orange-400/10',
+  confirmed: 'text-green-400 bg-green-400/10',
+  invalidated: 'text-red-400 bg-red-400/10',
+  played_out: 'text-gray-400 bg-gray-400/10',
+}
+
+export const PATTERN_NAMES: Record<string, string> = {
+  double_bottom: '이중바닥 (W)',
+  double_top: '이중천장 (M)',
+  head_and_shoulders: '헤드앤숄더',
+  inverse_head_and_shoulders: '역헤드앤숄더',
+  ascending_triangle: '상승 삼각형',
+  descending_triangle: '하락 삼각형',
+  symmetric_triangle: '대칭 삼각형',
+  rectangle: '박스권',
+  rising_channel: '상승 채널',
+  falling_channel: '하락 채널',
+  cup_and_handle: '컵앤핸들',
+  rounding_bottom: '라운딩 바텀',
+}
+
+export const DIRECTION_LABELS: Record<string, string> = {
+  bullish: '상승',
+  bearish: '하락',
+  neutral: '방향성 없음',
+}
