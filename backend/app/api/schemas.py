@@ -106,6 +106,7 @@ class PatternLibraryEntry(BaseModel):
 class ScreenerRequest(BaseModel):
     pattern_types: list[str] | None = None
     states: list[str] | None = None
+    markets: list[str] | None = None
     min_textbook_similarity: float = 0.0
     min_p_up: float = 0.0
     max_p_down: float = 1.0
@@ -113,4 +114,5 @@ class ScreenerRequest(BaseModel):
     timeframes: list[str] | None = None
     min_market_cap: float | None = None
     exclude_no_signal: bool = True
+    sort_by: str = "entry_score"
     limit: int = 50

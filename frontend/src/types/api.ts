@@ -100,11 +100,13 @@ export interface PatternLibraryEntry {
 export interface ScreenerRequest {
   pattern_types?: string[]
   states?: string[]
+  markets?: string[]
   min_textbook_similarity?: number
   min_p_up?: number
   max_p_down?: number
   min_confidence?: number
   timeframes?: string[]
   exclude_no_signal?: boolean
+  sort_by?: 'entry_score' | 'p_up' | 'textbook_similarity' | 'confidence' | 'p_down'
   limit?: number
 }
