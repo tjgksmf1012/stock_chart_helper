@@ -86,7 +86,7 @@ async def get_bars(
     days: int = Query(default=180, ge=5, le=4000),
 ) -> list[OHLCVBar]:
     timeframe = _validate_timeframe(timeframe)
-    cache_key = f"bars:{symbol}:{timeframe}:{days}"
+    cache_key = f"bars:v2:{symbol}:{timeframe}:{days}"
     cached = await cache_get(cache_key)
     if cached:
         return [OHLCVBar(**bar) for bar in cached]
@@ -109,7 +109,7 @@ async def get_analysis(
     timeframe: str = Query(default=DEFAULT_TIMEFRAME),
 ) -> AnalysisResult:
     timeframe = _validate_timeframe(timeframe)
-    cache_key = f"analysis:{symbol}:{timeframe}"
+    cache_key = f"analysis:v2:{symbol}:{timeframe}"
     cached = await cache_get(cache_key)
     if cached:
         return AnalysisResult(**cached)

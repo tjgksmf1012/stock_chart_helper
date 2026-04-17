@@ -3,9 +3,11 @@ Korean market data fetcher.
 
 Primary source: pykrx (daily)
 Fallback: FinanceDataReader (daily)
-Intraday: Yahoo Finance (15m / 60m)
+Intraday: Yahoo Finance with persistent local storage fallback
 Optional real-time: KIS API
 """
+
+from __future__ import annotations
 
 import asyncio
 import logging
@@ -13,20 +15,23 @@ from datetime import date, datetime, timedelta
 
 import pandas as pd
 
+from ..core.config import get_settings
 from ..core.redis import cache_get, cache_set
+from .intraday_store import get_intraday_store
 from .kis_client import KISClient, get_kis_client
 from .timeframe_service import get_timeframe_spec, is_intraday_timeframe
 
 logger = logging.getLogger(__name__)
+settings = get_settings()
 UNIVERSE_CACHE_KEY = "symbols:universe"
 
 KRX_OHLCV_COLUMNS = {
-    "시가": "open",
-    "고가": "high",
-    "저가": "low",
-    "종가": "close",
-    "거래량": "volume",
-    "거래대금": "amount",
+    "\uc2dc\uac00": "open",
+    "\uace0\uac00": "high",
+    "\uc800\uac00": "low",
+    "\uc885\uac00": "close",
+    "\uac70\ub798\ub7c9": "volume",
+    "\uac70\ub798\ub300\uae08": "amount",
 }
 
 FDR_OHLCV_COLUMNS = {
@@ -63,12 +68,24 @@ DAILY_RESAMPLE_RULES = {
     "1mo": "MS",
 }
 
+FETCH_STATUS_MESSAGES = {
+    "live_ok": "Live intraday bars loaded successfully.",
+    "live_augmented_by_store": "Live intraday bars loaded and gaps were filled with stored bars.",
+    "stored_fallback": "Stored intraday bars were used because live providers were unavailable.",
+    "stored_empty": "No previously stored intraday bars are available.",
+    "intraday_rate_limited": "Yahoo Finance temporarily limited intraday requests.",
+    "intraday_unavailable": "Live intraday data is temporarily unavailable from the current providers.",
+    "intraday_empty": "The providers returned no intraday bars for this symbol and timeframe.",
+    "intraday_insufficient": "Too few intraday bars were available to run a reliable pattern scan.",
+}
+
 
 class KRXDataFetcher:
     """Fetches historical OHLCV and symbol metadata for the Korean market."""
 
     def __init__(self, kis_client: KISClient | None = None) -> None:
         self._kis_client = kis_client or get_kis_client()
+        self._intraday_store = get_intraday_store()
         self._universe_lock = asyncio.Lock()
 
     async def get_stock_ohlcv(
@@ -88,11 +105,12 @@ class KRXDataFetcher:
                 timeout=15.0,
             )
             if df.empty:
-                return pd.DataFrame()
+                return self._empty_frame(data_source="pykrx_daily", fetch_status="daily_empty")
 
-            return self._with_source(
+            return self._with_attrs(
                 self._normalize_daily_frame(df.rename(columns=KRX_OHLCV_COLUMNS)),
-                "pykrx_daily",
+                data_source="pykrx_daily",
+                fetch_status="daily_ok",
             )
         except Exception as exc:
             logger.warning("pykrx failed for %s: %s; trying FinanceDataReader fallback", code, exc)
@@ -114,9 +132,9 @@ class KRXDataFetcher:
         base_daily = await self.get_stock_ohlcv(code, end - timedelta(days=period_days), end)
         if base_daily.empty or timeframe == "1d":
             return base_daily
-        return self._with_source(
+        return self._with_attrs(
             self._resample_daily_frame(base_daily, timeframe),
-            str(base_daily.attrs.get("data_source") or "daily_resampled"),
+            **base_daily.attrs,
         )
 
     async def get_stock_intraday_ohlcv(
@@ -129,12 +147,41 @@ class KRXDataFetcher:
         if interval is None:
             raise ValueError(f"Unsupported intraday timeframe: {timeframe}")
 
+        spec = get_timeframe_spec(timeframe)
         period_days = max(5, min(days, INTRADAY_MAX_DAYS[timeframe]))
+        stored_df = await self._intraday_store.load_bars(symbol=code, timeframe=timeframe, lookback_days=period_days)
         yahoo_df, kis_df = await asyncio.gather(
             self._get_yahoo_intraday_ohlcv(code, timeframe, period_days),
             self._get_kis_intraday_ohlcv(code, timeframe),
         )
-        return self._merge_intraday_sources(yahoo_df, kis_df)
+
+        live_df = self._merge_intraday_sources(yahoo_df, kis_df)
+        if not live_df.empty:
+            combined = self._combine_intraday_frames(stored_df, live_df)
+            live_source = str(live_df.attrs.get("data_source") or "intraday_live")
+            await self._intraday_store.upsert_bars(symbol=code, timeframe=timeframe, df=combined, source=live_source)
+            fetch_status = "live_ok"
+            if not stored_df.empty and len(combined) > len(live_df):
+                fetch_status = "live_augmented_by_store"
+            combined.attrs["fetch_status"] = fetch_status
+            combined.attrs["fetch_message"] = FETCH_STATUS_MESSAGES[fetch_status]
+            return combined
+
+        if not stored_df.empty:
+            stored_only = stored_df.copy()
+            stored_only.attrs["data_source"] = str(stored_df.attrs.get("stored_source") or "intraday_store")
+            stored_only.attrs["fetch_status"] = "stored_fallback"
+            stored_only.attrs["fetch_message"] = self._stored_fallback_message(yahoo_df, kis_df, stored_df)
+            return stored_only
+
+        failure_status, failure_message = self._combine_intraday_failure(yahoo_df, kis_df)
+        return self._empty_frame(
+            data_source="intraday_unavailable",
+            fetch_status=failure_status,
+            fetch_message=failure_message,
+            requested_bars=spec.min_bars,
+            available_bars=0,
+        )
 
     async def _get_yahoo_intraday_ohlcv(
         self,
@@ -144,7 +191,11 @@ class KRXDataFetcher:
     ) -> pd.DataFrame:
         candidates = await self._get_yahoo_symbol_candidates(code)
         if not candidates:
-            return pd.DataFrame()
+            return self._empty_frame(
+                data_source="yahoo_fallback",
+                fetch_status="yahoo_symbol_missing",
+                fetch_message="Yahoo Finance symbol mapping is unavailable for this stock.",
+            )
 
         for yahoo_symbol in candidates:
             for yahoo_interval in self._intraday_interval_candidates(timeframe):
@@ -161,35 +212,73 @@ class KRXDataFetcher:
                     )
                     normalized = self._normalize_intraday_frame(df)
                     if not normalized.empty:
-                        return self._with_source(normalized, "yahoo_fallback")
+                        return self._with_attrs(
+                            normalized,
+                            data_source="yahoo_fallback",
+                            fetch_status="live_ok",
+                            fetch_message="Yahoo Finance intraday bars loaded successfully.",
+                        )
                 except Exception as exc:
                     exc_str = str(exc)
                     if "Too Many Requests" in exc_str or "Rate limit" in exc_str.lower():
                         logger.warning("yfinance rate-limited for %s; intraday unavailable", code)
-                        return pd.DataFrame()
+                        return self._empty_frame(
+                            data_source="yahoo_fallback",
+                            fetch_status="yahoo_rate_limited",
+                            fetch_message=FETCH_STATUS_MESSAGES["intraday_rate_limited"],
+                        )
                     logger.warning(
                         "yfinance intraday failed for %s (%s, %s): %s",
                         code, yahoo_symbol, yahoo_interval, exc,
                     )
 
-        return pd.DataFrame()
+        return self._empty_frame(
+            data_source="yahoo_fallback",
+            fetch_status="yahoo_empty",
+            fetch_message="Yahoo Finance returned no intraday bars for this symbol.",
+        )
 
     async def _get_kis_intraday_ohlcv(self, code: str, timeframe: str) -> pd.DataFrame:
         if timeframe not in INTRADAY_RESAMPLE_RULES:
-            return pd.DataFrame()
+            return self._empty_frame(data_source="kis_intraday", fetch_status="kis_unsupported")
+
+        if not self._kis_client.configured:
+            return self._empty_frame(
+                data_source="kis_intraday",
+                fetch_status="kis_not_configured",
+                fetch_message="KIS API is not configured in this environment.",
+            )
 
         try:
             minute_bars = await self._kis_client.fetch_today_minute_bars(code)
         except Exception as exc:
             logger.warning("KIS intraday failed for %s (%s): %s", code, timeframe, exc)
-            return pd.DataFrame()
+            return self._empty_frame(
+                data_source="kis_intraday",
+                fetch_status="kis_error",
+                fetch_message="KIS intraday request failed and was ignored.",
+            )
 
         if minute_bars.empty:
-            return pd.DataFrame()
+            return self._empty_frame(
+                data_source="kis_intraday",
+                fetch_status="kis_empty",
+                fetch_message="KIS returned no intraday bars for this request.",
+            )
 
         if timeframe == "1m":
-            return self._with_source(minute_bars.reset_index(drop=True), "kis_intraday")
-        return self._with_source(self._resample_intraday_frame(minute_bars, timeframe), "kis_intraday")
+            return self._with_attrs(
+                minute_bars.reset_index(drop=True),
+                data_source="kis_intraday",
+                fetch_status="live_ok",
+                fetch_message="KIS intraday bars loaded successfully.",
+            )
+        return self._with_attrs(
+            self._resample_intraday_frame(minute_bars, timeframe),
+            data_source="kis_intraday",
+            fetch_status="live_ok",
+            fetch_message="KIS intraday bars loaded successfully.",
+        )
 
     def _resample_intraday_frame(self, df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
         if df.empty:
@@ -249,10 +338,12 @@ class KRXDataFetcher:
         return result[["date", "open", "high", "low", "close", "volume", "amount"]]
 
     def _merge_intraday_sources(self, yahoo_df: pd.DataFrame, kis_df: pd.DataFrame) -> pd.DataFrame:
+        if yahoo_df.empty and kis_df.empty:
+            return pd.DataFrame()
         if yahoo_df.empty:
-            return self._with_source(kis_df.reset_index(drop=True), str(kis_df.attrs.get("data_source") or "kis_intraday")) if not kis_df.empty else pd.DataFrame()
+            return self._with_attrs(kis_df.reset_index(drop=True), **kis_df.attrs)
         if kis_df.empty:
-            return self._with_source(yahoo_df.reset_index(drop=True), str(yahoo_df.attrs.get("data_source") or "yahoo_fallback"))
+            return self._with_attrs(yahoo_df.reset_index(drop=True), **yahoo_df.attrs)
 
         today = pd.Timestamp.now(tz="Asia/Seoul").tz_convert(None).normalize()
         yahoo_dt = pd.to_datetime(yahoo_df["datetime"])
@@ -261,7 +352,42 @@ class KRXDataFetcher:
         historical = yahoo_df.loc[yahoo_dt.dt.normalize() < today].copy()
         combined = pd.concat([historical, kis_df], ignore_index=True)
         combined = combined.sort_values("datetime").drop_duplicates(subset=["datetime"], keep="last")
-        return self._with_source(combined.reset_index(drop=True), "hybrid_intraday")
+        return self._with_attrs(
+            combined.reset_index(drop=True),
+            data_source="hybrid_intraday",
+            fetch_status="live_ok",
+            fetch_message="Historical bars came from Yahoo and recent bars came from KIS.",
+        )
+
+    def _combine_intraday_frames(self, stored_df: pd.DataFrame, live_df: pd.DataFrame) -> pd.DataFrame:
+        if stored_df.empty:
+            return self._with_attrs(live_df.reset_index(drop=True), **live_df.attrs)
+
+        combined = pd.concat([stored_df, live_df], ignore_index=True)
+        combined = combined.sort_values("datetime").drop_duplicates(subset=["datetime"], keep="last")
+        result = combined.reset_index(drop=True)
+        attrs = dict(live_df.attrs)
+        attrs["storage_age_minutes"] = stored_df.attrs.get("storage_age_minutes")
+        return self._with_attrs(result, **attrs)
+
+    def _combine_intraday_failure(self, yahoo_df: pd.DataFrame, kis_df: pd.DataFrame) -> tuple[str, str]:
+        statuses = {str(yahoo_df.attrs.get("fetch_status") or ""), str(kis_df.attrs.get("fetch_status") or "")}
+        if "yahoo_rate_limited" in statuses:
+            return "intraday_rate_limited", FETCH_STATUS_MESSAGES["intraday_rate_limited"]
+        if "yahoo_empty" in statuses and ("kis_not_configured" in statuses or "kis_empty" in statuses):
+            return "intraday_empty", FETCH_STATUS_MESSAGES["intraday_empty"]
+        return "intraday_unavailable", FETCH_STATUS_MESSAGES["intraday_unavailable"]
+
+    def _stored_fallback_message(self, yahoo_df: pd.DataFrame, kis_df: pd.DataFrame, stored_df: pd.DataFrame) -> str:
+        age_minutes = stored_df.attrs.get("storage_age_minutes")
+        age_text = ""
+        if isinstance(age_minutes, int):
+            age_text = f" Last successful cache refresh: about {age_minutes} minutes ago."
+
+        failure_status, base_message = self._combine_intraday_failure(yahoo_df, kis_df)
+        if failure_status == "intraday_rate_limited":
+            return f"{FETCH_STATUS_MESSAGES['stored_fallback']} Yahoo was rate-limited.{age_text}"
+        return f"{FETCH_STATUS_MESSAGES['stored_fallback']} {base_message}{age_text}"
 
     async def _fdr_fallback(self, code: str, start: date, end: date) -> pd.DataFrame:
         try:
@@ -269,15 +395,20 @@ class KRXDataFetcher:
 
             df = await asyncio.to_thread(fdr.DataReader, code, start, end)
             if df.empty:
-                return pd.DataFrame()
+                return self._empty_frame(data_source="fdr_daily", fetch_status="daily_empty")
 
-            return self._with_source(
+            return self._with_attrs(
                 self._normalize_daily_frame(df.rename(columns=FDR_OHLCV_COLUMNS)),
-                "fdr_daily",
+                data_source="fdr_daily",
+                fetch_status="daily_ok",
             )
         except Exception as exc:
             logger.error("FinanceDataReader also failed for %s: %s", code, exc)
-            return pd.DataFrame()
+            return self._empty_frame(
+                data_source="fdr_daily",
+                fetch_status="daily_error",
+                fetch_message="FinanceDataReader daily fallback failed.",
+            )
 
     async def get_universe(self) -> pd.DataFrame:
         """Returns KOSPI/KOSDAQ symbol universe with names for search/autocomplete."""
@@ -286,7 +417,6 @@ class KRXDataFetcher:
             return pd.DataFrame(cached)
 
         async with self._universe_lock:
-            # Re-check after acquiring lock — another coroutine may have populated it
             cached = await cache_get(UNIVERSE_CACHE_KEY)
             if cached:
                 return pd.DataFrame(cached)
@@ -351,7 +481,7 @@ class KRXDataFetcher:
             df = await asyncio.to_thread(krx.get_market_cap, today, today, code)
             if df.empty:
                 return None
-            return float(df["시가총액"].iloc[0] / 1e8)
+            return float(df["?쒓?珥앹븸"].iloc[0] / 1e8)
         except Exception:
             return None
 
@@ -375,7 +505,7 @@ class KRXDataFetcher:
                 return pd.DataFrame()
 
             normalized = df.rename(
-                columns={key: value for key, value in KRX_OHLCV_COLUMNS.items() if key != "거래대금"}
+                columns={key: value for key, value in KRX_OHLCV_COLUMNS.items() if value != "amount"}
             )
             normalized.index.name = "date"
             normalized = normalized.reset_index()
@@ -448,11 +578,14 @@ class KRXDataFetcher:
 
         return normalized[columns].dropna(subset=["datetime", "open", "high", "low", "close"])
 
-    def _with_source(self, df: pd.DataFrame, source: str) -> pd.DataFrame:
-        if df.empty:
-            return df
+    def _empty_frame(self, **attrs: object) -> pd.DataFrame:
+        df = pd.DataFrame()
+        df.attrs.update(attrs)
+        return df
+
+    def _with_attrs(self, df: pd.DataFrame, **attrs: object) -> pd.DataFrame:
         copied = df.copy()
-        copied.attrs["data_source"] = source
+        copied.attrs.update({key: value for key, value in attrs.items() if value is not None})
         return copied
 
 

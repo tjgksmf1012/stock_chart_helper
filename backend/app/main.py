@@ -96,8 +96,8 @@ async def on_startup():
     _start_scheduler()
 
     from .services.scanner import get_scan_results
-    from .services.backtest_engine import get_win_rates
+    from .services.backtest_engine import get_pattern_stats_map
 
     asyncio.create_task(get_scan_results())
-    asyncio.create_task(get_win_rates())   # warm backtest cache
+    asyncio.create_task(get_pattern_stats_map())   # warm backtest cache
     logger.info("Background scan + backtest tasks queued")

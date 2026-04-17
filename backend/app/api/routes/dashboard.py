@@ -15,6 +15,10 @@ def _quality_weight(row: dict) -> float:
     return float(row.get("data_quality") or 0.0)
 
 
+def _liquidity_weight(row: dict) -> float:
+    return max(0.25, float(row.get("liquidity_score") or 0.0))
+
+
 def _make_item(rank: int, row: dict) -> DashboardItem:
     return DashboardItem(
         rank=rank,
@@ -31,6 +35,8 @@ def _make_item(rank: int, row: dict) -> DashboardItem:
         data_source=row.get("data_source"),
         data_quality=row.get("data_quality", 0.0),
         source_note=row.get("source_note"),
+        fetch_status=row.get("fetch_status"),
+        fetch_message=row.get("fetch_message"),
         pattern_type=row.get("pattern_type"),
         state=row.get("state"),
         p_up=row["p_up"],
@@ -41,8 +47,13 @@ def _make_item(rank: int, row: dict) -> DashboardItem:
         completion_proximity=row.get("completion_proximity", 0.0),
         recency_score=row.get("recency_score", 0.0),
         bars_since_signal=row.get("bars_since_signal"),
+        liquidity_score=row.get("liquidity_score", 0.0),
+        avg_turnover_billion=row.get("avg_turnover_billion", 0.0),
         no_signal_flag=row["no_signal_flag"],
         reason_summary=row["reason_summary"],
+        sample_size=row.get("sample_size"),
+        stats_timeframe=row.get("stats_timeframe"),
+        available_bars=row.get("available_bars", 0),
     )
 
 
@@ -82,7 +93,7 @@ async def dashboard_long(
     timeframe = _validated_timeframe(timeframe)
     data = await get_scan_results(timeframe=timeframe)
     ranked = [row for row in data if not row["no_signal_flag"] and row["p_up"] > 0.55]
-    ranked.sort(key=lambda row: row["entry_score"] * _quality_weight(row), reverse=True)
+    ranked.sort(key=lambda row: row["entry_score"] * _quality_weight(row) * _liquidity_weight(row), reverse=True)
     items = [_make_item(index + 1, row) for index, row in enumerate(ranked[:limit])]
     return _response("long_high_probability", timeframe, items)
 
@@ -95,7 +106,7 @@ async def dashboard_short(
     timeframe = _validated_timeframe(timeframe)
     data = await get_scan_results(timeframe=timeframe)
     ranked = [row for row in data if not row["no_signal_flag"] and row["p_down"] > 0.55]
-    ranked.sort(key=lambda row: row["p_down"] * _quality_weight(row), reverse=True)
+    ranked.sort(key=lambda row: row["p_down"] * _quality_weight(row) * _liquidity_weight(row), reverse=True)
     items = [_make_item(index + 1, row) for index, row in enumerate(ranked[:limit])]
     return _response("short_high_probability", timeframe, items)
 
@@ -107,7 +118,7 @@ async def dashboard_similarity(
 ) -> DashboardResponse:
     timeframe = _validated_timeframe(timeframe)
     data = await get_scan_results(timeframe=timeframe)
-    ranked = sorted(data, key=lambda row: row["textbook_similarity"] * _quality_weight(row), reverse=True)
+    ranked = sorted(data, key=lambda row: row["textbook_similarity"] * _quality_weight(row) * _liquidity_weight(row), reverse=True)
     items = [_make_item(index + 1, row) for index, row in enumerate(ranked[:limit])]
     return _response("high_textbook_similarity", timeframe, items)
 
@@ -139,7 +150,7 @@ async def dashboard_armed(
     ranked.sort(
         key=lambda row: (
             row["completion_proximity"] * _quality_weight(row),
-            row["textbook_similarity"] * _quality_weight(row),
+            row["textbook_similarity"] * _quality_weight(row) * _liquidity_weight(row),
         ),
         reverse=True,
     )

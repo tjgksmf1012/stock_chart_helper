@@ -5,17 +5,27 @@ import type { DashboardItem } from '@/types/api'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { ProbBar } from '@/components/ui/ProbBar'
-import { cn, fmtPct, PATTERN_NAMES, STATE_COLORS, STATE_LABELS } from '@/lib/utils'
+import { cn, fmtNumber, fmtPct, PATTERN_NAMES, STATE_COLORS, STATE_LABELS } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
 
 interface DashboardCardProps {
   item: DashboardItem
 }
 
+function sourceBadge(item: DashboardItem): { label: string; variant: 'muted' | 'warning' | 'default' } | null {
+  if (item.data_source === 'krx_eod') return { label: 'KRX 기준', variant: 'muted' }
+  if (item.data_source === 'fdr_daily') return { label: '일봉 대체', variant: 'warning' }
+  if (item.data_source === 'intraday_store') return { label: '저장 분봉', variant: 'warning' }
+  if (item.data_source === 'yahoo_fallback') return { label: '분봉 fallback', variant: 'warning' }
+  if (item.data_source === 'kis_intraday' || item.data_source === 'hybrid_intraday') return { label: '실시간/혼합', variant: 'default' }
+  return null
+}
+
 export function DashboardCard({ item }: DashboardCardProps) {
   const nav = useNavigate()
   const { addToWatchlist, removeFromWatchlist, isWatched, setTimeframe } = useAppStore()
   const watched = isWatched(item.symbol.code)
+  const source = sourceBadge(item)
 
   const toggleWatch = (event: React.MouseEvent) => {
     event.stopPropagation()
@@ -35,17 +45,16 @@ export function DashboardCard({ item }: DashboardCardProps) {
       }}
     >
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <div className="flex items-center gap-1.5">
             <span className="font-mono text-xs text-muted-foreground">#{item.rank}</span>
-            <span className="text-sm font-semibold">{item.symbol.name}</span>
+            <span className="truncate text-sm font-semibold">{item.symbol.name}</span>
             <span className="font-mono text-xs text-muted-foreground">{item.symbol.code}</span>
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
             <span className="text-xs text-muted-foreground">{item.symbol.market}</span>
             {item.timeframe_label && <Badge variant="muted">{item.timeframe_label}</Badge>}
-            {item.data_source === 'yahoo_fallback' && <Badge variant="warning">분봉 fallback</Badge>}
-            {item.data_source === 'krx_eod' && <Badge variant="muted">KRX 기준</Badge>}
+            {source && <Badge variant={source.variant}>{source.label}</Badge>}
             {item.pattern_type ? (
               <span className="text-xs text-muted-foreground">
                 {PATTERN_NAMES[item.pattern_type] ?? item.pattern_type}
@@ -86,14 +95,26 @@ export function DashboardCard({ item }: DashboardCardProps) {
         <span className="text-right">신호 신선도 {fmtPct(item.recency_score)}</span>
         <span>신뢰도 {fmtPct(item.confidence)}</span>
         <span className="text-right">데이터 품질 {fmtPct(item.data_quality)}</span>
+        <span>유동성 {fmtPct(item.liquidity_score)}</span>
+        <span className="text-right">평균 거래대금 {fmtNumber(item.avg_turnover_billion)}억</span>
       </div>
 
       <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+        {item.fetch_message ? `${item.fetch_message} ` : ''}
         {item.source_note ? `${item.source_note} ` : ''}
         {item.reason_summary}
       </p>
 
-      {item.no_signal_flag && <Badge variant="warning">No Signal</Badge>}
+      <div className="flex flex-wrap gap-2">
+        {item.sample_size !== null && (
+          <Badge variant="muted">
+            표본 {item.sample_size}건
+            {item.stats_timeframe ? ` · 기준 ${item.stats_timeframe}` : ''}
+          </Badge>
+        )}
+        {item.available_bars > 0 && <Badge variant="muted">분석 바 {item.available_bars}개</Badge>}
+        {item.no_signal_flag && <Badge variant="warning">No Signal</Badge>}
+      </div>
     </Card>
   )
 }

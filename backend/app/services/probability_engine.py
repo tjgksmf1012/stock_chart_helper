@@ -56,7 +56,6 @@ _BEARISH_PATTERNS = {
 
 
 def _rule_engine_prob(pattern: PatternResult) -> tuple[float, float]:
-    """Builds a simple directional bias from pattern type and state."""
     sim = pattern.textbook_similarity
 
     base_up = 0.50
@@ -82,12 +81,10 @@ def _rule_engine_prob(pattern: PatternResult) -> tuple[float, float]:
 
 
 def _logistic_calibrate(raw: float) -> float:
-    """Gently shrinks extreme probabilities toward the center for MVP stability."""
     return 0.5 + (raw - 0.5) * 0.85
 
 
 def _sample_size_score(sample_size: int) -> float:
-    """Logarithmic score: 10->0.4, 50->0.7, 200->0.9, 400->1.0."""
     if sample_size <= 0:
         return 0.0
     return min(1.0, math.log(sample_size + 1) / math.log(401))
@@ -117,7 +114,7 @@ def compute_probability(
             recency_score=0.0,
             no_signal_flag=True,
             no_signal_reason=f"패턴 상태: {pattern.state}",
-            reason_summary=f"{pattern.pattern_type} 패턴은 현재 {pattern.state} 상태로 유효 신호가 아닙니다.",
+            reason_summary=f"{pattern.pattern_type} 패턴은 현재 {pattern.state} 상태라 유효 신호로 보기 어렵습니다.",
             sample_size=sample_size,
         )
 
@@ -132,8 +129,8 @@ def compute_probability(
             completion_proximity=completion_proximity,
             recency_score=recency_score,
             no_signal_flag=True,
-            no_signal_reason="유사 패턴 표본 부족 (< 10건)",
-            reason_summary=f"유사 패턴 표본이 {sample_size}건으로 아직 확률 신뢰도가 부족합니다.",
+            no_signal_reason="유사 패턴 표본 부족",
+            reason_summary=f"현재 확보된 유사 패턴 표본은 {sample_size}건이라 통계적으로 신뢰하기엔 부족합니다.",
             sample_size=sample_size,
         )
 
@@ -189,11 +186,9 @@ def compute_probability(
     entry_score = max(0.0, min(1.0, entry_score))
 
     summary = (
-        f"{pattern.pattern_type} 패턴, 교과서 유사도 {pattern.textbook_similarity:.0%} / "
-        f"상태 {pattern.state} / "
-        f"완성 임박도 {completion_proximity:.0%} / "
-        f"신호 신선도 {recency_score:.0%} / "
-        f"유사 패턴 {sample_size}건 중 승률 {similar_win_rate:.0%} / "
+        f"{pattern.pattern_type} 패턴 / 교과서 유사도 {pattern.textbook_similarity:.0%} / "
+        f"상태 {pattern.state} / 완성 임박도 {completion_proximity:.0%} / "
+        f"신호 신선도 {recency_score:.0%} / 유사 패턴 {sample_size}건 중 승률 {similar_win_rate:.0%} / "
         f"신뢰도 {confidence:.0%}"
     )
 
@@ -203,7 +198,7 @@ def compute_probability(
         or recency_score < 0.15
         or (data_quality < 0.6 and confidence < 0.72)
     )
-    no_signal_reason = "" if not no_signal else "신호 최신성 또는 신뢰도가 기준에 미달합니다."
+    no_signal_reason = "" if not no_signal else "신호 최신성 또는 신뢰도가 기준치에 미달합니다."
 
     return ProbabilityOutput(
         p_up=round(p_up, 3),

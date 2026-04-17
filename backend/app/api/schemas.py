@@ -59,6 +59,8 @@ class AnalysisResult(BaseModel):
     data_source: str | None = None
     data_quality: float = 0.0
     source_note: str | None = None
+    fetch_status: str | None = None
+    fetch_message: str | None = None
     p_up: float
     p_down: float
     textbook_similarity: float
@@ -68,10 +70,14 @@ class AnalysisResult(BaseModel):
     completion_proximity: float = 0.0
     recency_score: float = 0.0
     bars_since_signal: int | None = None
+    liquidity_score: float = 0.0
+    avg_turnover_billion: float = 0.0
     no_signal_flag: bool
     no_signal_reason: str
     reason_summary: str
     sample_size: int
+    stats_timeframe: str | None = None
+    available_bars: int = 0
     patterns: list[PatternInfo]
     is_provisional: bool
     updated_at: str
@@ -85,6 +91,8 @@ class DashboardItem(BaseModel):
     data_source: str | None = None
     data_quality: float = 0.0
     source_note: str | None = None
+    fetch_status: str | None = None
+    fetch_message: str | None = None
     pattern_type: str | None
     state: str | None
     p_up: float
@@ -95,8 +103,13 @@ class DashboardItem(BaseModel):
     completion_proximity: float = 0.0
     recency_score: float = 0.0
     bars_since_signal: int | None = None
+    liquidity_score: float = 0.0
+    avg_turnover_billion: float = 0.0
     no_signal_flag: bool
     reason_summary: str
+    sample_size: int | None = None
+    stats_timeframe: str | None = None
+    available_bars: int = 0
 
 
 class DashboardResponse(BaseModel):
@@ -112,6 +125,8 @@ class ScanStatusResponse(BaseModel):
     is_running: bool
     timeframe: str | None = None
     source: str | None = None
+    candidate_source: str | None = None
+    candidate_count: int | None = None
     cached_result_count: int = 0
     universe_size: int | None = None
     last_started_at: str | None = None

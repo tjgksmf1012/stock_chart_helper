@@ -7,10 +7,48 @@ import { Badge } from '@/components/ui/Badge'
 import { AnalysisPanel } from '@/components/chart/AnalysisPanel'
 import { CandleChart } from '@/components/chart/CandleChart'
 import { symbolsApi } from '@/lib/api'
-import { getChartLookbackDays, TIMEFRAME_OPTIONS } from '@/lib/timeframes'
+import { getChartLookbackDays, TIMEFRAME_OPTIONS, timeframeLabel } from '@/lib/timeframes'
 import { cn, fmtDateTime, fmtNumber, fmtPct, fmtPrice } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
-import type { Timeframe } from '@/types/api'
+import type { AnalysisResult, Timeframe } from '@/types/api'
+
+function sourceBadges(analysis: AnalysisResult): Array<{ label: string; variant: 'muted' | 'warning' | 'default' }> {
+  const badges: Array<{ label: string; variant: 'muted' | 'warning' | 'default' }> = []
+
+  if (analysis.data_source === 'krx_eod') badges.push({ label: 'KRX 기준', variant: 'muted' })
+  if (analysis.data_source === 'fdr_daily') badges.push({ label: '일봉 대체', variant: 'warning' })
+  if (analysis.data_source === 'yahoo_fallback') badges.push({ label: '분봉 fallback', variant: 'warning' })
+  if (analysis.data_source === 'intraday_store') badges.push({ label: '저장 분봉', variant: 'warning' })
+  if (analysis.data_source === 'kis_intraday' || analysis.data_source === 'hybrid_intraday') {
+    badges.push({ label: '실시간/혼합', variant: 'default' })
+  }
+
+  if (analysis.stats_timeframe && analysis.stats_timeframe !== analysis.timeframe) {
+    badges.push({ label: `통계 ${timeframeLabel(analysis.stats_timeframe)}`, variant: 'muted' })
+  }
+
+  return badges
+}
+
+function emptyChartMessage(timeframe: Timeframe, analysis: AnalysisResult | undefined): string {
+  if (!analysis) {
+    return '차트 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'
+  }
+
+  if (analysis.fetch_status === 'intraday_rate_limited') {
+    return '분봉 요청이 일시적으로 제한되었습니다. 잠시 후 다시 시도하거나 일봉/주봉을 먼저 확인해 주세요.'
+  }
+
+  if (analysis.fetch_status === 'stored_fallback') {
+    return `라이브 분봉 확보에 실패해 저장된 ${timeframeLabel(timeframe)} 데이터를 대신 사용하려 했지만, 표시 가능한 바가 충분하지 않았습니다.`
+  }
+
+  if (analysis.available_bars > 0) {
+    return `${timeframeLabel(timeframe)} 분석용 바는 ${analysis.available_bars}개 확보됐지만 차트를 그리기에는 부족합니다.`
+  }
+
+  return analysis.fetch_message || analysis.reason_summary || '차트 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'
+}
 
 export default function ChartPage() {
   const { symbol } = useParams<{ symbol: string }>()
@@ -119,9 +157,9 @@ export default function ChartPage() {
                 <span className="font-mono text-sm text-muted-foreground">{symbol}</span>
                 <span className="text-xs text-muted-foreground">{analysisQ.data.symbol.market}</span>
                 {analysisQ.data.timeframe_label && <Badge variant="muted">{analysisQ.data.timeframe_label}</Badge>}
-                {analysisQ.data.data_source === 'krx_eod' && <Badge variant="muted">KRX 기준</Badge>}
-                {analysisQ.data.data_source === 'fdr_daily' && <Badge variant="warning">대체 일봉</Badge>}
-                {analysisQ.data.data_source === 'yahoo_fallback' && <Badge variant="warning">분봉 fallback</Badge>}
+                {sourceBadges(analysisQ.data).map(source => (
+                  <Badge key={source.label} variant={source.variant}>{source.label}</Badge>
+                ))}
                 {analysisQ.data.is_provisional && <Badge variant="warning">잠정</Badge>}
                 <button
                   onClick={() => {
@@ -159,7 +197,7 @@ export default function ChartPage() {
                     </span>
                   </span>
                   <span className="text-xs text-muted-foreground">
-                    {priceQ.data.source === 'kis' ? '실시간' : '전일 종가 기준'}
+                    {priceQ.data.source === 'kis' ? '실시간 기준' : '일봉 종가 기준'}
                   </span>
                 </div>
               )}
@@ -167,6 +205,9 @@ export default function ChartPage() {
               <p className="text-xs text-muted-foreground">분석 업데이트 {fmtDateTime(analysisQ.data.updated_at)}</p>
               {analysisQ.data.source_note && (
                 <p className="text-xs text-muted-foreground">{analysisQ.data.source_note}</p>
+              )}
+              {analysisQ.data.fetch_message && (
+                <p className="text-xs text-muted-foreground">{analysisQ.data.fetch_message}</p>
               )}
             </div>
 
@@ -198,10 +239,8 @@ export default function ChartPage() {
             ) : barsQ.data && barsQ.data.length > 0 ? (
               <CandleChart bars={barsQ.data} analysis={analysisQ.data ?? null} height={480} />
             ) : (
-              <div className="flex h-96 items-center justify-center rounded-lg bg-card text-sm text-muted-foreground">
-                {selectedTimeframe === '1d' || selectedTimeframe === '1wk' || selectedTimeframe === '1mo'
-                  ? '차트 데이터를 불러오지 못했습니다.'
-                  : '분봉 데이터를 불러오지 못했습니다. 잠시 후 다시 시도하거나 다른 타임프레임을 확인해 주세요.'}
+              <div className="flex h-96 items-center justify-center rounded-lg bg-card px-8 text-center text-sm text-muted-foreground">
+                {emptyChartMessage(selectedTimeframe, analysisQ.data)}
               </div>
             )}
           </div>

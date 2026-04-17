@@ -32,3 +32,8 @@ export function getChartLookbackDays(timeframe: Timeframe): number {
       return 365
   }
 }
+
+export function timeframeLabel(timeframe: Timeframe | string | null | undefined): string {
+  if (!timeframe) return '-'
+  return TIMEFRAME_OPTIONS.find(option => option.value === timeframe)?.label ?? timeframe
+}

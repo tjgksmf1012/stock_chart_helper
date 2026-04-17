@@ -55,6 +55,8 @@ export interface AnalysisResult {
   data_source: string | null
   data_quality: number
   source_note: string | null
+  fetch_status: string | null
+  fetch_message: string | null
   p_up: number
   p_down: number
   textbook_similarity: number
@@ -64,10 +66,14 @@ export interface AnalysisResult {
   completion_proximity: number
   recency_score: number
   bars_since_signal: number | null
+  liquidity_score: number
+  avg_turnover_billion: number
   no_signal_flag: boolean
   no_signal_reason: string
   reason_summary: string
   sample_size: number
+  stats_timeframe: string | null
+  available_bars: number
   patterns: PatternInfo[]
   is_provisional: boolean
   updated_at: string
@@ -80,6 +86,8 @@ export interface DashboardItem {
   data_source: string | null
   data_quality: number
   source_note: string | null
+  fetch_status: string | null
+  fetch_message: string | null
   symbol: SymbolInfo
   pattern_type: string | null
   state: string | null
@@ -91,8 +99,13 @@ export interface DashboardItem {
   completion_proximity: number
   recency_score: number
   bars_since_signal: number | null
+  liquidity_score: number
+  avg_turnover_billion: number
   no_signal_flag: boolean
   reason_summary: string
+  sample_size: number | null
+  stats_timeframe: string | null
+  available_bars: number
 }
 
 export interface DashboardResponse {
@@ -108,6 +121,8 @@ export interface ScanStatusResponse {
   is_running: boolean
   timeframe: Timeframe | null
   source: string | null
+  candidate_source: string | null
+  candidate_count: number | null
   cached_result_count: number
   universe_size: number | null
   last_started_at: string | null

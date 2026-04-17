@@ -47,6 +47,8 @@ _scan_status: dict[str, Any] = {
     "is_running": False,
     "timeframe": DEFAULT_TIMEFRAME,
     "source": None,
+    "candidate_source": None,
+    "candidate_count": None,
     "cached_result_count": 0,
     "universe_size": None,
     "last_started_at": None,
@@ -71,7 +73,26 @@ async def _get_cached_count(timeframe: str | None = None) -> int:
 
 
 def _scan_cache_key(timeframe: str) -> str:
-    return f"scanner:full_results:{timeframe}"
+    return f"scanner:v2:full_results:{timeframe}"
+
+
+def _result_priority(row: dict[str, Any]) -> float:
+    direction_strength = max(float(row.get("p_up") or 0.0), float(row.get("p_down") or 0.0))
+    completion = max(0.3, float(row.get("completion_proximity") or 0.0))
+    recency = max(0.3, float(row.get("recency_score") or 0.0))
+    quality = max(0.2, float(row.get("data_quality") or 0.0))
+    liquidity = max(0.2, float(row.get("liquidity_score") or 0.0))
+    no_signal_penalty = 0.4 if row.get("no_signal_flag") else 1.0
+    return (
+        direction_strength
+        * max(0.15, float(row.get("entry_score") or 0.0))
+        * max(0.15, float(row.get("confidence") or 0.0))
+        * completion
+        * recency
+        * quality
+        * liquidity
+        * no_signal_penalty
+    )
 
 
 async def get_scan_status(timeframe: str | None = None) -> dict[str, Any]:
@@ -157,6 +178,36 @@ async def _fetch_universe_codes(limit: int = 100) -> list[tuple[str, str, str]]:
     return FALLBACK_CODES[:limit]
 
 
+async def _resolve_scan_universe(timeframe: str, limit: int) -> tuple[list[tuple[str, str, str]], str]:
+    if timeframe == "1d" or timeframe == "1wk" or timeframe == "1mo":
+        return await _fetch_universe_codes(limit), "market_cap_rank"
+
+    seed_limit = max(settings.intraday_seed_limit, limit * settings.intraday_seed_multiplier)
+    daily_cached = await cache_get(_scan_cache_key("1d"))
+    if not daily_cached:
+        daily_cached = await get_scan_results(timeframe="1d")
+
+    ranked_daily = []
+    if isinstance(daily_cached, list):
+        ranked_daily = sorted(daily_cached, key=_result_priority, reverse=True)
+
+    if ranked_daily:
+        seen: set[str] = set()
+        narrowed: list[tuple[str, str, str]] = []
+        for row in ranked_daily:
+            code = str(row.get("code") or "")
+            if not code or code in seen:
+                continue
+            seen.add(code)
+            narrowed.append((code, row.get("name", code), row.get("market", "KOSPI")))
+            if len(narrowed) >= seed_limit:
+                break
+        if len(narrowed) >= min(limit, 10):
+            return narrowed, "daily_seed"
+
+    return await _fetch_universe_codes(seed_limit), "market_cap_fallback"
+
+
 async def _analyze_one(
     code: str,
     name: str,
@@ -166,7 +217,7 @@ async def _analyze_one(
     force_refresh: bool = False,
 ) -> dict[str, Any] | None:
     fetcher = get_data_fetcher()
-    cache_key = f"scan:result:{timeframe}:{code}"
+    cache_key = f"scan:v2:result:{timeframe}:{code}"
     if not force_refresh:
         cached = await cache_get(cache_key)
         if cached:
@@ -207,6 +258,13 @@ async def _analyze_one(
             "completion_proximity": snapshot["completion_proximity"],
             "recency_score": snapshot["recency_score"],
             "bars_since_signal": snapshot["bars_since_signal"],
+            "liquidity_score": snapshot["liquidity_score"],
+            "avg_turnover_billion": snapshot["avg_turnover_billion"],
+            "fetch_status": snapshot.get("fetch_status"),
+            "fetch_message": snapshot.get("fetch_message"),
+            "sample_size": snapshot.get("sample_size"),
+            "stats_timeframe": snapshot.get("stats_timeframe"),
+            "available_bars": snapshot.get("available_bars"),
             "no_signal_flag": snapshot["no_signal_flag"],
             "reason_summary": snapshot["reason_summary"],
         }
@@ -266,8 +324,12 @@ async def run_scan(
                 source,
                 timeframe,
             )
-            universe = await _fetch_universe_codes(limit)
-            _update_scan_status(universe_size=len(universe))
+            universe, candidate_source = await _resolve_scan_universe(timeframe, limit)
+            _update_scan_status(
+                universe_size=len(universe),
+                candidate_source=candidate_source,
+                candidate_count=len(universe),
+            )
 
             results: list[dict[str, Any]] = []
             for index in range(0, len(universe), batch_size):
@@ -292,6 +354,7 @@ async def run_scan(
                 is_running=False,
                 timeframe=timeframe,
                 cached_result_count=len(results),
+                candidate_count=len(universe),
                 last_finished_at=finished_at.isoformat(),
                 duration_ms=int((finished_at - started_at).total_seconds() * 1000),
             )
@@ -334,6 +397,8 @@ async def trigger_scan(
     status["is_running"] = True
     status["timeframe"] = timeframe
     status["source"] = source
+    status["candidate_source"] = None
+    status["candidate_count"] = None
     status["last_started_at"] = _utc_now_iso()
     status["trigger_accepted"] = True
     return status
