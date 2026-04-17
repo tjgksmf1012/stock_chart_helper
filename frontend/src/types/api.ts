@@ -1,3 +1,5 @@
+export type Timeframe = '1mo' | '1wk' | '1d' | '60m' | '30m' | '15m' | '1m'
+
 export interface SymbolInfo {
   code: string
   name: string
@@ -41,17 +43,27 @@ export interface PatternInfo {
   is_provisional: boolean
   start_dt: string
   end_dt: string | null
+  recency_score: number
+  completion_proximity: number
+  bars_since_signal: number | null
 }
 
 export interface AnalysisResult {
   symbol: SymbolInfo
-  timeframe: string
+  timeframe: Timeframe
+  timeframe_label: string | null
+  data_source: string | null
+  data_quality: number
+  source_note: string | null
   p_up: number
   p_down: number
   textbook_similarity: number
   pattern_confirmation_score: number
   confidence: number
   entry_score: number
+  completion_proximity: number
+  recency_score: number
+  bars_since_signal: number | null
   no_signal_flag: boolean
   no_signal_reason: string
   reason_summary: string
@@ -63,6 +75,11 @@ export interface AnalysisResult {
 
 export interface DashboardItem {
   rank: number
+  timeframe: Timeframe | null
+  timeframe_label: string | null
+  data_source: string | null
+  data_quality: number
+  source_note: string | null
   symbol: SymbolInfo
   pattern_type: string | null
   state: string | null
@@ -71,12 +88,17 @@ export interface DashboardItem {
   textbook_similarity: number
   confidence: number
   entry_score: number
+  completion_proximity: number
+  recency_score: number
+  bars_since_signal: number | null
   no_signal_flag: boolean
   reason_summary: string
 }
 
 export interface DashboardResponse {
   category: string
+  timeframe: Timeframe | null
+  timeframe_label: string | null
   items: DashboardItem[]
   generated_at: string
 }
@@ -84,6 +106,7 @@ export interface DashboardResponse {
 export interface ScanStatusResponse {
   status: string
   is_running: boolean
+  timeframe: Timeframe | null
   source: string | null
   cached_result_count: number
   universe_size: number | null
@@ -116,7 +139,7 @@ export interface ScreenerRequest {
   min_p_up?: number
   max_p_down?: number
   min_confidence?: number
-  timeframes?: string[]
+  timeframes?: Timeframe[]
   exclude_no_signal?: boolean
   sort_by?: 'entry_score' | 'p_up' | 'textbook_similarity' | 'confidence' | 'p_down'
   limit?: number

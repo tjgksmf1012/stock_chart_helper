@@ -3,27 +3,28 @@ import type {
   SymbolInfo, OHLCVBar, AnalysisResult, PriceInfo,
   DashboardResponse, PatternLibraryEntry, ScreenerRequest, DashboardItem, ScanStatusResponse
 } from '@/types/api'
+import type { Timeframe } from '@/types/api'
 
 const api = axios.create({ baseURL: '/api/v1' })
 
 export const symbolsApi = {
   search: (q: string) => api.get<SymbolInfo[]>('/symbols/search', { params: { q } }).then(r => r.data),
-  getBars: (symbol: string, timeframe = '1d', days = 365) =>
+  getBars: (symbol: string, timeframe: Timeframe = '1d', days = 365) =>
     api.get<OHLCVBar[]>(`/symbols/${symbol}/bars`, { params: { timeframe, days } }).then(r => r.data),
-  getAnalysis: (symbol: string, timeframe = '1d') =>
+  getAnalysis: (symbol: string, timeframe: Timeframe = '1d') =>
     api.get<AnalysisResult>(`/symbols/${symbol}/analysis`, { params: { timeframe } }).then(r => r.data),
   getPrice: (symbol: string) =>
     api.get<PriceInfo>(`/symbols/${symbol}/price`).then(r => r.data),
 }
 
 export const dashboardApi = {
-  longHigh: (limit = 10) => api.get<DashboardResponse>('/dashboard/long-high-probability', { params: { limit } }).then(r => r.data),
-  shortHigh: (limit = 10) => api.get<DashboardResponse>('/dashboard/short-high-probability', { params: { limit } }).then(r => r.data),
-  highSimilarity: (limit = 10) => api.get<DashboardResponse>('/dashboard/high-textbook-similarity', { params: { limit } }).then(r => r.data),
-  noSignal: (limit = 10) => api.get<DashboardResponse>('/dashboard/watchlist-no-signal', { params: { limit } }).then(r => r.data),
-  armed: (limit = 10) => api.get<DashboardResponse>('/dashboard/pattern-armed', { params: { limit } }).then(r => r.data),
-  scanStatus: () => api.get<ScanStatusResponse>('/dashboard/scan-status').then(r => r.data),
-  refreshScan: () => api.post<ScanStatusResponse>('/dashboard/scan-refresh').then(r => r.data),
+  longHigh: (timeframe: Timeframe, limit = 10) => api.get<DashboardResponse>('/dashboard/long-high-probability', { params: { timeframe, limit } }).then(r => r.data),
+  shortHigh: (timeframe: Timeframe, limit = 10) => api.get<DashboardResponse>('/dashboard/short-high-probability', { params: { timeframe, limit } }).then(r => r.data),
+  highSimilarity: (timeframe: Timeframe, limit = 10) => api.get<DashboardResponse>('/dashboard/high-textbook-similarity', { params: { timeframe, limit } }).then(r => r.data),
+  noSignal: (timeframe: Timeframe, limit = 10) => api.get<DashboardResponse>('/dashboard/watchlist-no-signal', { params: { timeframe, limit } }).then(r => r.data),
+  armed: (timeframe: Timeframe, limit = 10) => api.get<DashboardResponse>('/dashboard/pattern-armed', { params: { timeframe, limit } }).then(r => r.data),
+  scanStatus: (timeframe: Timeframe) => api.get<ScanStatusResponse>('/dashboard/scan-status', { params: { timeframe } }).then(r => r.data),
+  refreshScan: (timeframe: Timeframe) => api.post<ScanStatusResponse>('/dashboard/scan-refresh', null, { params: { timeframe } }).then(r => r.data),
 }
 
 export const patternsApi = {

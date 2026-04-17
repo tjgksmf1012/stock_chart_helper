@@ -1,23 +1,46 @@
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 
-from ..schemas import AnalysisResult, OHLCVBar, PatternInfo, PriceInfo, SymbolInfo
+from ..schemas import AnalysisResult, OHLCVBar, PriceInfo, SymbolInfo
 from ...core.config import get_settings
 from ...core.redis import cache_get, cache_set
-from ...services.backtest_engine import get_win_rate
+from ...services.analysis_service import analyze_symbol_dataframe
 from ...services.data_fetcher import get_data_fetcher
-from ...services.pattern_engine import PatternEngine
-from ...services.probability_engine import compute_probability
+from ...services.timeframe_service import DEFAULT_TIMEFRAME, SUPPORTED_TIMEFRAMES, get_timeframe_spec, is_intraday_timeframe
 
 router = APIRouter(prefix="/symbols", tags=["symbols"])
 settings = get_settings()
 
-TIMEFRAME_LABELS = {
-    "1d": "일봉",
-    "60m": "60분",
-    "15m": "15분",
-}
+
+def _validate_timeframe(timeframe: str) -> str:
+    if timeframe not in SUPPORTED_TIMEFRAMES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported timeframe. Available: {', '.join(SUPPORTED_TIMEFRAMES)}",
+        )
+    return timeframe
+
+
+def _frame_to_bars(df, timeframe: str) -> list[OHLCVBar]:
+    timestamp_key = "datetime" if is_intraday_timeframe(timeframe) else "date"
+    bars: list[OHLCVBar] = []
+    for _, row in df.iterrows():
+        amount = row.get("amount")
+        stamp = row[timestamp_key]
+        timestamp = stamp.isoformat() if timestamp_key == "datetime" else str(stamp)[:10]
+        bars.append(
+            OHLCVBar(
+                date=timestamp,
+                open=float(row["open"]),
+                high=float(row["high"]),
+                low=float(row["low"]),
+                close=float(row["close"]),
+                volume=int(row["volume"]),
+                amount=float(amount) if amount is not None and str(amount) != "nan" else None,
+            )
+        )
+    return bars
 
 
 @router.get("/search")
@@ -59,44 +82,23 @@ async def search_symbols(q: str = Query(min_length=1)) -> list[SymbolInfo]:
 @router.get("/{symbol}/bars")
 async def get_bars(
     symbol: str,
-    timeframe: str = Query(default="1d", pattern="^(1d|60m|15m)$"),
-    days: int = Query(default=180, ge=10, le=1000),
+    timeframe: str = Query(default=DEFAULT_TIMEFRAME),
+    days: int = Query(default=180, ge=5, le=4000),
 ) -> list[OHLCVBar]:
+    timeframe = _validate_timeframe(timeframe)
     cache_key = f"bars:{symbol}:{timeframe}:{days}"
     cached = await cache_get(cache_key)
     if cached:
         return [OHLCVBar(**bar) for bar in cached]
 
     fetcher = get_data_fetcher()
-    end = date.today()
-
-    if timeframe == "1d":
-        start = end - timedelta(days=days)
-        df = await fetcher.get_stock_ohlcv(symbol, start, end)
-        ttl = settings.daily_bars_ttl
-    else:
-        df = await fetcher.get_stock_intraday_ohlcv(symbol, timeframe, days)
-        ttl = settings.intraday_bars_ttl
+    df = await fetcher.get_stock_ohlcv_by_timeframe(symbol, timeframe, lookback_days=days)
+    ttl = settings.intraday_bars_ttl if is_intraday_timeframe(timeframe) else settings.daily_bars_ttl
 
     if df.empty:
         return []
 
-    bars: list[OHLCVBar] = []
-    for _, row in df.iterrows():
-        amount = row.get("amount")
-        timestamp = str(row["date"])[:10] if timeframe == "1d" else row["datetime"].isoformat()
-        bars.append(
-            OHLCVBar(
-                date=timestamp,
-                open=float(row["open"]),
-                high=float(row["high"]),
-                low=float(row["low"]),
-                close=float(row["close"]),
-                volume=int(row["volume"]),
-                amount=float(amount) if amount is not None and str(amount) != "nan" else None,
-            )
-        )
-
+    bars = _frame_to_bars(df, timeframe)
     await cache_set(cache_key, [bar.model_dump() for bar in bars], ttl)
     return bars
 
@@ -104,26 +106,26 @@ async def get_bars(
 @router.get("/{symbol}/analysis")
 async def get_analysis(
     symbol: str,
-    timeframe: str = Query(default="1d", pattern="^(1d|60m|15m)$"),
+    timeframe: str = Query(default=DEFAULT_TIMEFRAME),
 ) -> AnalysisResult:
+    timeframe = _validate_timeframe(timeframe)
     cache_key = f"analysis:{symbol}:{timeframe}"
     cached = await cache_get(cache_key)
     if cached:
         return AnalysisResult(**cached)
 
     fetcher = get_data_fetcher()
-    end = date.today()
-    if timeframe == "1d":
-        df = await fetcher.get_stock_ohlcv(symbol, end - timedelta(days=365), end)
-    else:
-        intraday_days = 90 if timeframe == "60m" else 30
-        df = await fetcher.get_stock_intraday_ohlcv(symbol, timeframe, intraday_days)
+    spec = get_timeframe_spec(timeframe)
+    df = await fetcher.get_stock_ohlcv_by_timeframe(symbol, timeframe, lookback_days=spec.analysis_lookback_days)
 
     name = await fetcher.get_stock_name(symbol)
     market_cap = await fetcher.get_market_cap(symbol)
     universe = await fetcher.get_universe()
-    matched = universe.loc[universe["code"] == symbol]
-    market = matched.iloc[0]["market"] if not matched.empty else "KRX"
+    market = "KRX"
+    if not universe.empty and "code" in universe.columns:
+        matched = universe.loc[universe["code"] == symbol]
+        if not matched.empty:
+            market = matched.iloc[0]["market"]
 
     symbol_info = SymbolInfo(
         code=symbol,
@@ -134,87 +136,7 @@ async def get_analysis(
         is_in_universe=market_cap is not None and market_cap >= 500,
     )
 
-    if df.empty or len(df) < 20:
-        timeframe_label = TIMEFRAME_LABELS[timeframe]
-        return AnalysisResult(
-            symbol=symbol_info,
-            timeframe=timeframe,
-            p_up=0.5,
-            p_down=0.5,
-            textbook_similarity=0.0,
-            pattern_confirmation_score=0.0,
-            confidence=0.0,
-            entry_score=0.0,
-            no_signal_flag=True,
-            no_signal_reason="데이터 부족",
-            reason_summary=f"{timeframe_label} 기준으로 패턴을 판단하기에 충분한 캔들이 아직 쌓이지 않았습니다.",
-            sample_size=0,
-            patterns=[],
-            is_provisional=True,
-            updated_at=datetime.utcnow().isoformat(),
-        )
-
-    engine = PatternEngine()
-    pattern_results = engine.detect_all(df)
-
-    patterns = [
-        PatternInfo(
-            pattern_type=pattern.pattern_type,
-            state=pattern.state,
-            grade=pattern.grade,
-            textbook_similarity=pattern.textbook_similarity,
-            geometry_fit=pattern.geometry_fit,
-            neckline=pattern.neckline,
-            invalidation_level=pattern.invalidation_level,
-            target_level=pattern.target_level,
-            key_points=pattern.key_points,
-            is_provisional=pattern.is_provisional,
-            start_dt=pattern.start_dt.isoformat(),
-            end_dt=pattern.end_dt.isoformat() if pattern.end_dt else None,
-        )
-        for pattern in pattern_results
-    ]
-
-    best_pattern = max(pattern_results, key=lambda pattern: pattern.textbook_similarity) if pattern_results else None
-
-    if best_pattern:
-        win_rate = await get_win_rate(best_pattern.pattern_type)
-        prob = compute_probability(best_pattern, similar_win_rate=win_rate, sample_size=50)
-        result = AnalysisResult(
-            symbol=symbol_info,
-            timeframe=timeframe,
-            p_up=prob.p_up,
-            p_down=prob.p_down,
-            textbook_similarity=prob.textbook_similarity,
-            pattern_confirmation_score=prob.pattern_confirmation_score,
-            confidence=prob.confidence,
-            entry_score=prob.entry_score,
-            no_signal_flag=prob.no_signal_flag,
-            no_signal_reason=prob.no_signal_reason,
-            reason_summary=prob.reason_summary,
-            sample_size=prob.sample_size,
-            patterns=patterns,
-            is_provisional=best_pattern.is_provisional,
-            updated_at=datetime.utcnow().isoformat(),
-        )
-    else:
-        result = AnalysisResult(
-            symbol=symbol_info,
-            timeframe=timeframe,
-            p_up=0.5,
-            p_down=0.5,
-            textbook_similarity=0.0,
-            pattern_confirmation_score=0.0,
-            confidence=0.0,
-            entry_score=0.0,
-            no_signal_flag=True,
-            no_signal_reason="감지된 패턴 없음",
-            reason_summary="현재 차트에서는 교과서형 패턴이 아직 선명하게 감지되지 않았습니다.",
-            sample_size=0,
-            patterns=[],
-            is_provisional=True,
-            updated_at=datetime.utcnow().isoformat(),
-        )
+    result = AnalysisResult(**(await analyze_symbol_dataframe(symbol_info=symbol_info, timeframe=timeframe, df=df)))
 
     await cache_set(cache_key, result.model_dump(), settings.pattern_cache_ttl)
     return result
