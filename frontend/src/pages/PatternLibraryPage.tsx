@@ -18,10 +18,10 @@ function PatternCard({ entry }: { entry: PatternLibraryEntry }) {
       : 'neutral'
 
   return (
-    <Card className="space-y-2">
-      <div className="flex items-start justify-between">
-        <div>
-          <div className="flex items-center gap-2">
+    <Card className="space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-semibold">{entry.name_kr}</span>
             <Badge variant={badgeVariant}>{DIRECTION_LABELS[entry.direction]}</Badge>
             <Badge variant="muted">{entry.grade}급</Badge>
@@ -36,10 +36,12 @@ function PatternCard({ entry }: { entry: PatternLibraryEntry }) {
         </button>
       </div>
 
+      <PatternPreview patternType={entry.pattern_type} />
+
       {expanded && (
-        <div className="space-y-3 border-t border-border pt-2">
+        <div className="space-y-3 border-t border-border pt-3">
           <Section title="구조 조건" items={entry.structure_conditions} color="text-blue-400" />
-          <Section title="거래량 조건" items={entry.volume_conditions} color="text-purple-400" />
+          <Section title="거래량 조건" items={entry.volume_conditions} color="text-violet-400" />
           <Section title="확인 조건" items={entry.confirmation_conditions} color="text-green-400" />
           <Section title="무효화 조건" items={entry.invalidation_conditions} color="text-red-400" />
           <Section title="주의사항" items={entry.cautions} color="text-yellow-400" />
@@ -67,6 +69,50 @@ function Section({ title, items, color }: { title: string; items: string[]; colo
   )
 }
 
+function PatternPreview({ patternType }: { patternType: string }) {
+  const points = previewPoints(patternType)
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-border bg-background/70 p-3">
+      <svg viewBox="0 0 160 72" className="h-20 w-full">
+        <defs>
+          <linearGradient id="patternLine" x1="0%" x2="100%" y1="0%" y2="0%">
+            <stop offset="0%" stopColor="#60a5fa" />
+            <stop offset="100%" stopColor="#34d399" />
+          </linearGradient>
+        </defs>
+        <rect x="0" y="0" width="160" height="72" rx="10" fill="rgba(15,23,42,0.2)" />
+        {[16, 36, 56].map(y => (
+          <line key={y} x1="0" y1={y} x2="160" y2={y} stroke="rgba(148,163,184,0.15)" strokeWidth="1" />
+        ))}
+        <polyline
+          fill="none"
+          stroke="url(#patternLine)"
+          strokeWidth="3"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          points={points}
+        />
+      </svg>
+    </div>
+  )
+}
+
+function previewPoints(patternType: string): string {
+  const map: Record<string, string> = {
+    double_bottom: '6,20 28,54 52,18 78,52 104,20 132,18 154,10',
+    double_top: '6,54 28,18 52,50 78,16 104,48 132,50 154,58',
+    head_and_shoulders: '6,54 24,26 42,46 68,12 94,44 118,26 138,42 154,56',
+    inverse_head_and_shoulders: '6,18 24,46 42,26 68,60 94,28 118,46 138,30 154,16',
+    ascending_triangle: '6,54 34,44 60,36 86,28 112,20 136,20 154,10',
+    descending_triangle: '6,18 34,28 60,36 86,44 112,52 136,52 154,60',
+    symmetric_triangle: '6,22 28,30 50,24 72,36 94,30 116,38 138,34 154,28',
+    rectangle: '6,46 30,24 54,46 78,24 102,46 126,24 154,46',
+  }
+
+  return map[patternType] ?? '6,40 26,30 46,42 66,28 86,38 106,24 126,32 154,18'
+}
+
 export default function PatternLibraryPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['patterns', 'library'],
@@ -84,7 +130,7 @@ export default function PatternLibraryPage() {
         <div>
           <h1 className="text-xl font-bold">차트 패턴 라이브러리</h1>
           <p className="text-xs text-muted-foreground">
-            교과서형 패턴의 정의, 구조 조건, 확인 조건, 무효화 기준을 정리한 페이지입니다.
+            교과서형 패턴의 정의, 구조 조건, 확인 조건, 무효화 기준을 한 번에 정리한 페이지입니다.
           </p>
         </div>
       </div>

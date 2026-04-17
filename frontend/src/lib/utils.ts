@@ -45,15 +45,15 @@ export const STATE_COLORS: Record<string, string> = {
 export const PATTERN_NAMES: Record<string, string> = {
   double_bottom: '이중 바닥 (W)',
   double_top: '이중 천장 (M)',
-  head_and_shoulders: '헤드앤숄더',
-  inverse_head_and_shoulders: '역헤드앤숄더',
+  head_and_shoulders: '헤드 앤 숄더',
+  inverse_head_and_shoulders: '역 헤드 앤 숄더',
   ascending_triangle: '상승 삼각형',
   descending_triangle: '하락 삼각형',
   symmetric_triangle: '대칭 삼각형',
   rectangle: '박스권',
   rising_channel: '상승 채널',
   falling_channel: '하락 채널',
-  cup_and_handle: '컵앤핸들',
+  cup_and_handle: '컵 앤 핸들',
   rounding_bottom: '라운딩 바텀',
 }
 

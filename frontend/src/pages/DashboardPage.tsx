@@ -71,7 +71,7 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-xl font-bold">대시보드</h1>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            실시간 스캔 결과를 기준으로 교과서형 패턴과 확률이 좋은 종목을 빠르게 확인합니다.
+            스캔 결과를 기준으로 교과서형 패턴과 확률이 좋은 종목을 빠르게 확인합니다.
           </p>
         </div>
         <button
@@ -137,7 +137,7 @@ export default function DashboardPage() {
 
       <DashboardSection
         title="교과서 유사도 상위"
-        subtitle="현재 차트가 교과서 패턴과 가장 많이 닮은 종목"
+        subtitle="현재 차트가 교과서형 패턴과 가장 많이 닮은 종목"
         data={simQ.data}
         isLoading={simQ.isLoading}
       />
@@ -194,7 +194,7 @@ function sourceLabel(source: string | null | undefined): string {
     case 'scheduled':
       return '예약 실행'
     case 'fallback':
-      return '폴백 예열'
+      return '초기 예열'
     default:
       return '-'
   }

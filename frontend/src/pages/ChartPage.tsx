@@ -16,6 +16,12 @@ const TIMEFRAMES = [
   { value: '15m', label: '15분' },
 ]
 
+function getBarLookbackDays(timeframe: '1d' | '60m' | '15m') {
+  if (timeframe === '60m') return 120
+  if (timeframe === '15m') return 30
+  return 365
+}
+
 export default function ChartPage() {
   const { symbol } = useParams<{ symbol: string }>()
   const nav = useNavigate()
@@ -25,7 +31,7 @@ export default function ChartPage() {
 
   const barsQ = useQuery({
     queryKey: ['bars', symbol, selectedTimeframe],
-    queryFn: () => symbolsApi.getBars(symbol!, selectedTimeframe, 365),
+    queryFn: () => symbolsApi.getBars(symbol!, selectedTimeframe, getBarLookbackDays(selectedTimeframe)),
     enabled: !!symbol,
     staleTime: 60_000,
   })
@@ -145,7 +151,9 @@ export default function ChartPage() {
               <CandleChart bars={barsQ.data} analysis={analysisQ.data ?? null} height={480} />
             ) : (
               <div className="flex h-96 items-center justify-center rounded-lg bg-card text-sm text-muted-foreground">
-                차트 데이터를 불러오지 못했습니다.
+                {selectedTimeframe === '1d'
+                  ? '차트 데이터를 불러오지 못했습니다.'
+                  : '분봉 소스를 불러오지 못했습니다. 잠시 후 다시 시도하거나 일봉으로 확인해 주세요.'}
               </div>
             )}
           </div>

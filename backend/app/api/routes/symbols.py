@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Query
 
@@ -12,13 +12,19 @@ from ...services.probability_engine import compute_probability
 router = APIRouter(prefix="/symbols", tags=["symbols"])
 settings = get_settings()
 
+TIMEFRAME_LABELS = {
+    "1d": "일봉",
+    "60m": "60분",
+    "15m": "15분",
+}
+
 
 @router.get("/search")
 async def search_symbols(q: str = Query(min_length=1)) -> list[SymbolInfo]:
     fetcher = get_data_fetcher()
     universe = await fetcher.get_universe()
     if universe.empty:
-      return []
+        return []
 
     query = q.strip().lower()
     code_match = universe["code"].astype(str).str.lower().str.contains(query, na=False)
@@ -36,14 +42,16 @@ async def search_symbols(q: str = Query(min_length=1)) -> list[SymbolInfo]:
 
     out: list[SymbolInfo] = []
     for _, row in results.iterrows():
-        out.append(SymbolInfo(
-            code=row["code"],
-            name=row.get("name") or row["code"],
-            market=row["market"],
-            sector=None,
-            market_cap=None,
-            is_in_universe=True,
-        ))
+        out.append(
+            SymbolInfo(
+                code=row["code"],
+                name=row.get("name") or row["code"],
+                market=row["market"],
+                sector=None,
+                market_cap=None,
+                is_in_universe=True,
+            )
+        )
     return out
 
 
@@ -60,13 +68,13 @@ async def get_bars(
 
     fetcher = get_data_fetcher()
     end = date.today()
-    start = end - timedelta(days=days)
 
     if timeframe == "1d":
+        start = end - timedelta(days=days)
         df = await fetcher.get_stock_ohlcv(symbol, start, end)
         ttl = settings.daily_bars_ttl
     else:
-        df = await fetcher.get_stock_ohlcv(symbol, start, end)
+        df = await fetcher.get_stock_intraday_ohlcv(symbol, timeframe, days)
         ttl = settings.intraday_bars_ttl
 
     if df.empty:
@@ -75,15 +83,18 @@ async def get_bars(
     bars: list[OHLCVBar] = []
     for _, row in df.iterrows():
         amount = row.get("amount")
-        bars.append(OHLCVBar(
-            date=str(row["date"])[:10],
-            open=float(row["open"]),
-            high=float(row["high"]),
-            low=float(row["low"]),
-            close=float(row["close"]),
-            volume=int(row["volume"]),
-            amount=float(amount) if amount is not None and str(amount) != "nan" else None,
-        ))
+        timestamp = str(row["date"])[:10] if timeframe == "1d" else row["datetime"].isoformat()
+        bars.append(
+            OHLCVBar(
+                date=timestamp,
+                open=float(row["open"]),
+                high=float(row["high"]),
+                low=float(row["low"]),
+                close=float(row["close"]),
+                volume=int(row["volume"]),
+                amount=float(amount) if amount is not None and str(amount) != "nan" else None,
+            )
+        )
 
     await cache_set(cache_key, [bar.model_dump() for bar in bars], ttl)
     return bars
@@ -101,9 +112,12 @@ async def get_analysis(
 
     fetcher = get_data_fetcher()
     end = date.today()
-    start = end - timedelta(days=365)
+    if timeframe == "1d":
+        df = await fetcher.get_stock_ohlcv(symbol, end - timedelta(days=365), end)
+    else:
+        intraday_days = 90 if timeframe == "60m" else 30
+        df = await fetcher.get_stock_intraday_ohlcv(symbol, timeframe, intraday_days)
 
-    df = await fetcher.get_stock_ohlcv(symbol, start, end)
     name = await fetcher.get_stock_name(symbol)
     market_cap = await fetcher.get_market_cap(symbol)
     universe = await fetcher.get_universe()
@@ -119,9 +133,8 @@ async def get_analysis(
         is_in_universe=market_cap is not None and market_cap >= 500,
     )
 
-    from datetime import datetime
-
     if df.empty or len(df) < 20:
+        timeframe_label = TIMEFRAME_LABELS[timeframe]
         return AnalysisResult(
             symbol=symbol_info,
             timeframe=timeframe,
@@ -133,7 +146,7 @@ async def get_analysis(
             entry_score=0.0,
             no_signal_flag=True,
             no_signal_reason="데이터 부족",
-            reason_summary="분석에 필요한 캔들 수가 충분하지 않아 아직 판단할 수 없습니다.",
+            reason_summary=f"{timeframe_label} 기준으로 패턴을 판단하기에 충분한 캔들이 아직 쌓이지 않았습니다.",
             sample_size=0,
             patterns=[],
             is_provisional=True,
@@ -194,7 +207,7 @@ async def get_analysis(
             entry_score=0.0,
             no_signal_flag=True,
             no_signal_reason="감지된 패턴 없음",
-            reason_summary="현재 차트에서는 교과서형 패턴을 아직 뚜렷하게 감지하지 못했습니다.",
+            reason_summary="현재 차트에서는 교과서형 패턴이 아직 선명하게 감지되지 않았습니다.",
             sample_size=0,
             patterns=[],
             is_provisional=True,

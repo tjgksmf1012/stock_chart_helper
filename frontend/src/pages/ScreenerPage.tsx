@@ -10,8 +10,8 @@ import type { ScreenerRequest } from '@/types/api'
 const PATTERN_OPTIONS = [
   { value: 'double_bottom', label: '이중 바닥 (W)' },
   { value: 'double_top', label: '이중 천장 (M)' },
-  { value: 'head_and_shoulders', label: '헤드앤숄더' },
-  { value: 'inverse_head_and_shoulders', label: '역헤드앤숄더' },
+  { value: 'head_and_shoulders', label: '헤드 앤 숄더' },
+  { value: 'inverse_head_and_shoulders', label: '역 헤드 앤 숄더' },
   { value: 'ascending_triangle', label: '상승 삼각형' },
   { value: 'descending_triangle', label: '하락 삼각형' },
   { value: 'symmetric_triangle', label: '대칭 삼각형' },
@@ -40,7 +40,7 @@ const SORT_OPTIONS = [
 const PRESETS: Array<{ label: string; description: string; patch: Partial<ScreenerRequest> }> = [
   {
     label: '돌파 후보',
-    description: '확인 직전 패턴 위주로 빠르게 보기',
+    description: '확인 직전 패턴 위주로 빠르게 확인',
     patch: { states: ['armed'], min_textbook_similarity: 0.55, min_p_up: 0.5, min_confidence: 0.35, sort_by: 'entry_score' },
   },
   {
@@ -50,7 +50,7 @@ const PRESETS: Array<{ label: string; description: string; patch: Partial<Screen
   },
   {
     label: '교과서형',
-    description: '유사도가 높은 예쁜 패턴 보기',
+    description: '유사도가 높은 정석 패턴 보기',
     patch: { min_textbook_similarity: 0.7, min_p_up: 0.0, min_confidence: 0.25, sort_by: 'textbook_similarity' },
   },
 ]
@@ -109,7 +109,7 @@ export default function ScreenerPage() {
         <SlidersHorizontal size={18} className="text-primary" />
         <div>
           <h1 className="text-xl font-bold">스크리너</h1>
-          <p className="text-xs text-muted-foreground">패턴, 상태, 시장, 확률 조건으로 현재 스캔 결과를 필터링합니다.</p>
+          <p className="text-xs text-muted-foreground">패턴, 상태, 시장, 확률 조건으로 현재 스캔 결과를 좁혀봅니다.</p>
         </div>
       </div>
 

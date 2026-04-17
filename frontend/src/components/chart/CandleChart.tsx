@@ -47,7 +47,7 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
       },
       crosshair: { mode: 1 },
       rightPriceScale: { borderColor: 'hsl(217 32% 17%)' },
-      timeScale: { borderColor: 'hsl(217 32% 17%)', timeVisible: true },
+      timeScale: { borderColor: 'hsl(217 32% 17%)', timeVisible: true, secondsVisible: false },
       width: containerRef.current.clientWidth,
       height: height - 80,
     })
@@ -88,8 +88,16 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
   useEffect(() => {
     if (!candleRef.current || !volumeRef.current || bars.length === 0) return
 
+    const isIntraday = bars.some(bar => bar.date.includes('T'))
+    chartRef.current?.applyOptions({
+      timeScale: {
+        timeVisible: isIntraday,
+        secondsVisible: false,
+      },
+    })
+
     const candleData: CandlestickData[] = bars.map(bar => ({
-      time: bar.date as Time,
+      time: toChartTime(bar.date),
       open: bar.open,
       high: bar.high,
       low: bar.low,
@@ -97,7 +105,7 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
     }))
 
     const volumeData: HistogramData[] = bars.map(bar => ({
-      time: bar.date as Time,
+      time: toChartTime(bar.date),
       value: bar.volume,
       color: bar.close >= bar.open ? 'rgba(38,166,154,0.4)' : 'rgba(239,83,80,0.4)',
     }))
@@ -125,8 +133,8 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
     if (!analysis || analysis.no_signal_flag || analysis.patterns.length === 0) return
 
     const best = analysis.patterns[0]
-    const firstTime = bars[0].date as Time
-    const lastTime = bars[bars.length - 1].date as Time
+    const firstTime = toChartTime(bars[0].date)
+    const lastTime = toChartTime(bars[bars.length - 1].date)
 
     const addHorizontalLine = (price: number, color: string, style: LineStyle) => {
       const series = chart.addLineSeries({
@@ -160,7 +168,7 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
     const markers: SeriesMarker<Time>[] = best.key_points
       .filter((point): point is { dt: string; price: number; type: string } => Boolean(point.dt))
       .map(point => ({
-        time: point.dt.split('T')[0] as Time,
+        time: toChartTime(point.dt),
         position: point.type.includes('low') || point.type === 'head' ? 'belowBar' : 'aboveBar',
         color: point.type.includes('neckline')
           ? OVERLAY_COLORS.neckline
@@ -192,6 +200,13 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
       )}
     </div>
   )
+}
+
+function toChartTime(value: string): Time {
+  if (value.includes('T')) {
+    return Math.floor(new Date(value).getTime() / 1000) as Time
+  }
+  return value as Time
 }
 
 function markerLabel(type: string): string {

@@ -13,6 +13,7 @@ python-dotenv==1.0.1
 # Korean market data
 pykrx==1.0.47
 FinanceDataReader==0.9.55
+yfinance==0.2.54
 
 # Analysis
 pandas==2.2.3
