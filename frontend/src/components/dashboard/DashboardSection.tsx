@@ -26,7 +26,7 @@ export function DashboardSection({ title, subtitle, data, isLoading }: Dashboard
         <p className="py-4 text-center text-xs text-muted-foreground">조건에 맞는 종목이 없습니다.</p>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {data.items.map(item => <DashboardCard key={item.symbol.code} item={item} />)}
+          {data.items.map(item => <DashboardCard key={`${item.timeframe}-${item.symbol.code}`} item={item} />)}
         </div>
       )}
     </div>

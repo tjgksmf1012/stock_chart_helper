@@ -18,9 +18,13 @@ class Settings(BaseSettings):
 
     # Cache TTL (seconds)
     daily_bars_ttl: int = 3600
-    intraday_bars_ttl: int = 60
+    intraday_bars_ttl: int = 300
     pattern_cache_ttl: int = 300
     dashboard_cache_ttl: int = 30
+    intraday_storage_path: str = "data/intraday_cache.sqlite3"
+    intraday_store_retention_days: int = 45
+    intraday_seed_limit: int = 40
+    intraday_seed_multiplier: int = 4
 
     # Universe filters
     min_market_cap_billion: float = 500.0   # 5,000억 원

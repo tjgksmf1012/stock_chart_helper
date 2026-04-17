@@ -17,6 +17,10 @@ export function fmtNumber(val: number): string {
   return val.toLocaleString('ko-KR')
 }
 
+export function fmtTurnoverBillion(val: number): string {
+  return `${val.toFixed(1)}억`
+}
+
 export function fmtDateTime(value: string | null | undefined): string {
   if (!value) return '-'
 
@@ -28,10 +32,10 @@ export function fmtDateTime(value: string | null | undefined): string {
 
 export const STATE_LABELS: Record<string, string> = {
   forming: '형성 중',
-  armed: '확인 직전',
+  armed: '완성 임박',
   confirmed: '확인 완료',
   invalidated: '무효화',
-  played_out: '전개 완료',
+  played_out: '목표 달성',
 }
 
 export const STATE_COLORS: Record<string, string> = {
@@ -39,14 +43,14 @@ export const STATE_COLORS: Record<string, string> = {
   armed: 'text-orange-400 bg-orange-400/10',
   confirmed: 'text-green-400 bg-green-400/10',
   invalidated: 'text-red-400 bg-red-400/10',
-  played_out: 'text-gray-400 bg-gray-400/10',
+  played_out: 'text-slate-400 bg-slate-400/10',
 }
 
 export const PATTERN_NAMES: Record<string, string> = {
   double_bottom: '이중 바닥 (W)',
   double_top: '이중 천장 (M)',
   head_and_shoulders: '헤드 앤 숄더',
-  inverse_head_and_shoulders: '역 헤드 앤 숄더',
+  inverse_head_and_shoulders: '역헤드 앤 숄더',
   ascending_triangle: '상승 삼각형',
   descending_triangle: '하락 삼각형',
   symmetric_triangle: '대칭 삼각형',
@@ -54,7 +58,7 @@ export const PATTERN_NAMES: Record<string, string> = {
   rising_channel: '상승 채널',
   falling_channel: '하락 채널',
   cup_and_handle: '컵 앤 핸들',
-  rounding_bottom: '라운딩 바텀',
+  rounding_bottom: '라운딩 바닥',
 }
 
 export const DIRECTION_LABELS: Record<string, string> = {

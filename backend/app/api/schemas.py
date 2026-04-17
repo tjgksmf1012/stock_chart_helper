@@ -1,7 +1,8 @@
 """Pydantic response schemas."""
-from pydantic import BaseModel
-from datetime import datetime, date
-from typing import Any
+
+from __future__ import annotations
+
+from pydantic import BaseModel, Field
 
 
 class PriceInfo(BaseModel):
@@ -11,7 +12,7 @@ class PriceInfo(BaseModel):
     change: float
     change_pct: float
     volume: int
-    source: str           # "kis" | "pykrx" | "none"
+    source: str
     timestamp: str | None = None
 
 
@@ -52,12 +53,15 @@ class PatternInfo(BaseModel):
 class AnalysisResult(BaseModel):
     symbol: SymbolInfo
     timeframe: str
+    timeframe_label: str
     p_up: float
     p_down: float
     textbook_similarity: float
     pattern_confirmation_score: float
     confidence: float
     entry_score: float
+    completion_proximity: float
+    recency_score: float
     no_signal_flag: bool
     no_signal_reason: str
     reason_summary: str
@@ -65,11 +69,23 @@ class AnalysisResult(BaseModel):
     patterns: list[PatternInfo]
     is_provisional: bool
     updated_at: str
+    data_source: str
+    data_quality: float
+    source_note: str
+    fetch_status: str
+    fetch_message: str
+    liquidity_score: float
+    avg_turnover_billion: float
+    bars_since_signal: int | None
+    stats_timeframe: str
+    available_bars: int
 
 
 class DashboardItem(BaseModel):
     rank: int
     symbol: SymbolInfo
+    timeframe: str
+    timeframe_label: str
     pattern_type: str | None
     state: str | None
     p_up: float
@@ -79,18 +95,36 @@ class DashboardItem(BaseModel):
     entry_score: float
     no_signal_flag: bool
     reason_summary: str
+    completion_proximity: float = 0.0
+    recency_score: float = 0.0
+    data_source: str = "unknown"
+    data_quality: float = 0.0
+    source_note: str = ""
+    fetch_status: str = "unknown"
+    fetch_message: str = ""
+    liquidity_score: float = 0.0
+    avg_turnover_billion: float = 0.0
+    sample_size: int = 0
+    stats_timeframe: str = "1d"
+    available_bars: int = 0
 
 
 class DashboardResponse(BaseModel):
     category: str
+    timeframe: str
+    timeframe_label: str
     items: list[DashboardItem]
     generated_at: str
 
 
 class ScanStatusResponse(BaseModel):
+    timeframe: str
+    timeframe_label: str
     status: str
     is_running: bool
     source: str | None = None
+    candidate_source: str | None = None
+    candidate_count: int | None = None
     cached_result_count: int = 0
     universe_size: int | None = None
     last_started_at: str | None = None
@@ -104,14 +138,14 @@ class PatternLibraryEntry(BaseModel):
     pattern_type: str
     name_kr: str
     grade: str
-    direction: str         # bullish | bearish | neutral
+    direction: str
     description: str
     structure_conditions: list[str]
     volume_conditions: list[str]
     confirmation_conditions: list[str]
     invalidation_conditions: list[str]
     cautions: list[str]
-    svg_path: str | None   # relative path to reference SVG
+    svg_path: str | None
 
 
 class ScreenerRequest(BaseModel):
@@ -126,4 +160,4 @@ class ScreenerRequest(BaseModel):
     min_market_cap: float | None = None
     exclude_no_signal: bool = True
     sort_by: str = "entry_score"
-    limit: int = 50
+    limit: int = Field(default=50, ge=1, le=100)

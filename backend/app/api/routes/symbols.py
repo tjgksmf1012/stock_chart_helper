@@ -1,23 +1,24 @@
-from datetime import date, datetime, timedelta
+from __future__ import annotations
 
-from fastapi import APIRouter, Query
+from datetime import date, timedelta
 
-from ..schemas import AnalysisResult, OHLCVBar, PatternInfo, PriceInfo, SymbolInfo
+from fastapi import APIRouter, HTTPException, Query
+
+from ..schemas import AnalysisResult, OHLCVBar, PriceInfo, SymbolInfo
 from ...core.config import get_settings
 from ...core.redis import cache_get, cache_set
-from ...services.backtest_engine import get_win_rate
+from ...services.analysis_service import analyze_symbol_dataframe, build_no_signal_snapshot
 from ...services.data_fetcher import get_data_fetcher
-from ...services.pattern_engine import PatternEngine
-from ...services.probability_engine import compute_probability
+from ...services.timeframe_service import DEFAULT_TIMEFRAME, SUPPORTED_TIMEFRAMES, get_timeframe_spec
 
 router = APIRouter(prefix="/symbols", tags=["symbols"])
 settings = get_settings()
 
-TIMEFRAME_LABELS = {
-    "1d": "일봉",
-    "60m": "60분",
-    "15m": "15분",
-}
+
+def _validate_timeframe(timeframe: str) -> str:
+    if timeframe not in SUPPORTED_TIMEFRAMES:
+        raise HTTPException(status_code=422, detail=f"Unsupported timeframe: {timeframe}")
+    return timeframe
 
 
 @router.get("/search")
@@ -41,50 +42,47 @@ async def search_symbols(q: str = Query(min_length=1)) -> list[SymbolInfo]:
     results.loc[results["name"].fillna("").astype(str).str.lower().str.startswith(query), "match_score"] += 25
     results = results.sort_values(["match_score", "market", "code"], ascending=[False, True, True]).head(20)
 
-    out: list[SymbolInfo] = []
-    for _, row in results.iterrows():
-        out.append(
-            SymbolInfo(
-                code=row["code"],
-                name=row.get("name") or row["code"],
-                market=row["market"],
-                sector=None,
-                market_cap=None,
-                is_in_universe=True,
-            )
+    return [
+        SymbolInfo(
+            code=row["code"],
+            name=row.get("name") or row["code"],
+            market=row["market"],
+            sector=None,
+            market_cap=None,
+            is_in_universe=True,
         )
-    return out
+        for _, row in results.iterrows()
+    ]
 
 
 @router.get("/{symbol}/bars")
 async def get_bars(
     symbol: str,
-    timeframe: str = Query(default="1d", pattern="^(1d|60m|15m)$"),
-    days: int = Query(default=180, ge=10, le=1000),
+    timeframe: str = Query(default=DEFAULT_TIMEFRAME),
+    days: int | None = Query(default=None, ge=10, le=3650),
 ) -> list[OHLCVBar]:
-    cache_key = f"bars:{symbol}:{timeframe}:{days}"
+    timeframe = _validate_timeframe(timeframe)
+    spec = get_timeframe_spec(timeframe)
+    lookback_days = days or spec.chart_lookback_days
+    cache_key = f"bars:v2:{symbol}:{timeframe}:{lookback_days}"
     cached = await cache_get(cache_key)
     if cached:
         return [OHLCVBar(**bar) for bar in cached]
 
     fetcher = get_data_fetcher()
-    end = date.today()
-
-    if timeframe == "1d":
-        start = end - timedelta(days=days)
-        df = await fetcher.get_stock_ohlcv(symbol, start, end)
-        ttl = settings.daily_bars_ttl
-    else:
-        df = await fetcher.get_stock_intraday_ohlcv(symbol, timeframe, days)
-        ttl = settings.intraday_bars_ttl
-
+    df = await fetcher.get_stock_ohlcv_by_timeframe(symbol, timeframe, lookback_days=lookback_days)
     if df.empty:
         return []
 
+    ts_col = "datetime" if "datetime" in df.columns else "date"
     bars: list[OHLCVBar] = []
     for _, row in df.iterrows():
         amount = row.get("amount")
-        timestamp = str(row["date"])[:10] if timeframe == "1d" else row["datetime"].isoformat()
+        timestamp = (
+            row[ts_col].isoformat()
+            if hasattr(row[ts_col], "isoformat") and ts_col == "datetime"
+            else str(row[ts_col])[:10]
+        )
         bars.append(
             OHLCVBar(
                 date=timestamp,
@@ -97,6 +95,7 @@ async def get_bars(
             )
         )
 
+    ttl = settings.intraday_bars_ttl if spec.is_intraday else settings.daily_bars_ttl
     await cache_set(cache_key, [bar.model_dump() for bar in bars], ttl)
     return bars
 
@@ -104,20 +103,16 @@ async def get_bars(
 @router.get("/{symbol}/analysis")
 async def get_analysis(
     symbol: str,
-    timeframe: str = Query(default="1d", pattern="^(1d|60m|15m)$"),
+    timeframe: str = Query(default=DEFAULT_TIMEFRAME),
 ) -> AnalysisResult:
-    cache_key = f"analysis:{symbol}:{timeframe}"
+    timeframe = _validate_timeframe(timeframe)
+    cache_key = f"analysis:v2:{symbol}:{timeframe}"
     cached = await cache_get(cache_key)
     if cached:
         return AnalysisResult(**cached)
 
     fetcher = get_data_fetcher()
-    end = date.today()
-    if timeframe == "1d":
-        df = await fetcher.get_stock_ohlcv(symbol, end - timedelta(days=365), end)
-    else:
-        intraday_days = 90 if timeframe == "60m" else 30
-        df = await fetcher.get_stock_intraday_ohlcv(symbol, timeframe, intraday_days)
+    df = await fetcher.get_stock_ohlcv_by_timeframe(symbol, timeframe)
 
     name = await fetcher.get_stock_name(symbol)
     market_cap = await fetcher.get_market_cap(symbol)
@@ -131,113 +126,33 @@ async def get_analysis(
         market=market,
         sector=None,
         market_cap=market_cap,
-        is_in_universe=market_cap is not None and market_cap >= 500,
+        is_in_universe=market_cap is not None and market_cap >= settings.min_market_cap_billion,
     )
 
-    if df.empty or len(df) < 20:
-        timeframe_label = TIMEFRAME_LABELS[timeframe]
-        return AnalysisResult(
-            symbol=symbol_info,
-            timeframe=timeframe,
-            p_up=0.5,
-            p_down=0.5,
-            textbook_similarity=0.0,
-            pattern_confirmation_score=0.0,
-            confidence=0.0,
-            entry_score=0.0,
-            no_signal_flag=True,
-            no_signal_reason="데이터 부족",
-            reason_summary=f"{timeframe_label} 기준으로 패턴을 판단하기에 충분한 캔들이 아직 쌓이지 않았습니다.",
-            sample_size=0,
-            patterns=[],
-            is_provisional=True,
-            updated_at=datetime.utcnow().isoformat(),
-        )
-
-    engine = PatternEngine()
-    pattern_results = engine.detect_all(df)
-
-    patterns = [
-        PatternInfo(
-            pattern_type=pattern.pattern_type,
-            state=pattern.state,
-            grade=pattern.grade,
-            textbook_similarity=pattern.textbook_similarity,
-            geometry_fit=pattern.geometry_fit,
-            neckline=pattern.neckline,
-            invalidation_level=pattern.invalidation_level,
-            target_level=pattern.target_level,
-            key_points=pattern.key_points,
-            is_provisional=pattern.is_provisional,
-            start_dt=pattern.start_dt.isoformat(),
-            end_dt=pattern.end_dt.isoformat() if pattern.end_dt else None,
-        )
-        for pattern in pattern_results
-    ]
-
-    best_pattern = max(pattern_results, key=lambda pattern: pattern.textbook_similarity) if pattern_results else None
-
-    if best_pattern:
-        win_rate = await get_win_rate(best_pattern.pattern_type)
-        prob = compute_probability(best_pattern, similar_win_rate=win_rate, sample_size=50)
-        result = AnalysisResult(
-            symbol=symbol_info,
-            timeframe=timeframe,
-            p_up=prob.p_up,
-            p_down=prob.p_down,
-            textbook_similarity=prob.textbook_similarity,
-            pattern_confirmation_score=prob.pattern_confirmation_score,
-            confidence=prob.confidence,
-            entry_score=prob.entry_score,
-            no_signal_flag=prob.no_signal_flag,
-            no_signal_reason=prob.no_signal_reason,
-            reason_summary=prob.reason_summary,
-            sample_size=prob.sample_size,
-            patterns=patterns,
-            is_provisional=best_pattern.is_provisional,
-            updated_at=datetime.utcnow().isoformat(),
-        )
-    else:
-        result = AnalysisResult(
-            symbol=symbol_info,
-            timeframe=timeframe,
-            p_up=0.5,
-            p_down=0.5,
-            textbook_similarity=0.0,
-            pattern_confirmation_score=0.0,
-            confidence=0.0,
-            entry_score=0.0,
-            no_signal_flag=True,
-            no_signal_reason="감지된 패턴 없음",
-            reason_summary="현재 차트에서는 교과서형 패턴이 아직 선명하게 감지되지 않았습니다.",
-            sample_size=0,
-            patterns=[],
-            is_provisional=True,
-            updated_at=datetime.utcnow().isoformat(),
-        )
-
+    result = (
+        await analyze_symbol_dataframe(symbol_info, timeframe, df)
+        if not df.empty
+        else build_no_signal_snapshot(symbol_info, timeframe, df)
+    )
     await cache_set(cache_key, result.model_dump(), settings.pattern_cache_ttl)
     return result
 
 
 @router.get("/{symbol}/price")
 async def get_price(symbol: str) -> PriceInfo:
-    """Returns current price, previous close, and change information."""
     cache_key = f"price:{symbol}"
     cached = await cache_get(cache_key)
     if cached:
         return PriceInfo(**cached)
 
     fetcher = get_data_fetcher()
-
-    # Try KIS first (real-time if configured)
     from ...services.kis_client import get_kis_client
+
     kis = get_kis_client()
     if kis.configured:
         try:
             kis_data = await kis.fetch_current_price(symbol)
             if kis_data and kis_data.get("close"):
-                # Get prev close from pykrx for change calculation
                 end = date.today()
                 start = end - timedelta(days=5)
                 hist = await fetcher.get_stock_ohlcv(symbol, start, end)
@@ -257,10 +172,9 @@ async def get_price(symbol: str) -> PriceInfo:
                 )
                 await cache_set(cache_key, info.model_dump(), ttl=60)
                 return info
-        except Exception as exc:
-            pass  # fall through to pykrx
+        except Exception:
+            pass
 
-    # pykrx fallback: get last 2 trading days
     try:
         end = date.today()
         start = end - timedelta(days=5)

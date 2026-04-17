@@ -5,13 +5,14 @@ import { Search, SlidersHorizontal } from 'lucide-react'
 import { DashboardCard } from '@/components/dashboard/DashboardCard'
 import { Card } from '@/components/ui/Card'
 import { screenerApi } from '@/lib/api'
-import type { ScreenerRequest } from '@/types/api'
+import { TIMEFRAME_OPTIONS } from '@/lib/timeframes'
+import type { ScreenerRequest, Timeframe } from '@/types/api'
 
 const PATTERN_OPTIONS = [
   { value: 'double_bottom', label: '이중 바닥 (W)' },
   { value: 'double_top', label: '이중 천장 (M)' },
   { value: 'head_and_shoulders', label: '헤드 앤 숄더' },
-  { value: 'inverse_head_and_shoulders', label: '역 헤드 앤 숄더' },
+  { value: 'inverse_head_and_shoulders', label: '역헤드 앤 숄더' },
   { value: 'ascending_triangle', label: '상승 삼각형' },
   { value: 'descending_triangle', label: '하락 삼각형' },
   { value: 'symmetric_triangle', label: '대칭 삼각형' },
@@ -20,7 +21,7 @@ const PATTERN_OPTIONS = [
 
 const STATE_OPTIONS = [
   { value: 'forming', label: '형성 중' },
-  { value: 'armed', label: '확인 직전' },
+  { value: 'armed', label: '완성 임박' },
   { value: 'confirmed', label: '확인 완료' },
 ]
 
@@ -37,24 +38,6 @@ const SORT_OPTIONS = [
   { value: 'p_down', label: '하락 확률' },
 ]
 
-const PRESETS: Array<{ label: string; description: string; patch: Partial<ScreenerRequest> }> = [
-  {
-    label: '돌파 후보',
-    description: '확인 직전 패턴 위주로 빠르게 확인',
-    patch: { states: ['armed'], min_textbook_similarity: 0.55, min_p_up: 0.5, min_confidence: 0.35, sort_by: 'entry_score' },
-  },
-  {
-    label: '상승 강세',
-    description: '상승 확률이 높은 종목만 보기',
-    patch: { min_p_up: 0.65, min_textbook_similarity: 0.4, min_confidence: 0.35, sort_by: 'p_up' },
-  },
-  {
-    label: '교과서형',
-    description: '유사도가 높은 정석 패턴 보기',
-    patch: { min_textbook_similarity: 0.7, min_p_up: 0.0, min_confidence: 0.25, sort_by: 'textbook_similarity' },
-  },
-]
-
 export default function ScreenerPage() {
   const [req, setReq] = useState<ScreenerRequest>({
     min_textbook_similarity: 0.3,
@@ -63,6 +46,7 @@ export default function ScreenerPage() {
     exclude_no_signal: true,
     sort_by: 'entry_score',
     limit: 20,
+    timeframes: ['1d'],
   })
   const [submitted, setSubmitted] = useState(false)
 
@@ -98,9 +82,16 @@ export default function ScreenerPage() {
     })
   }
 
-  const applyPreset = (patch: Partial<ScreenerRequest>) => {
-    setReq(current => ({ ...current, ...patch }))
-    setSubmitted(true)
+  const toggleTimeframe = (value: Timeframe) => {
+    setReq(current => {
+      const selected = current.timeframes?.includes(value)
+      return {
+        ...current,
+        timeframes: selected
+          ? current.timeframes?.filter(item => item !== value)
+          : [...(current.timeframes ?? []), value],
+      }
+    })
   }
 
   return (
@@ -109,28 +100,30 @@ export default function ScreenerPage() {
         <SlidersHorizontal size={18} className="text-primary" />
         <div>
           <h1 className="text-xl font-bold">스크리너</h1>
-          <p className="text-xs text-muted-foreground">패턴, 상태, 시장, 확률 조건으로 현재 스캔 결과를 좁혀봅니다.</p>
+          <p className="text-xs text-muted-foreground">패턴, 상태, 시장, 타임프레임 조건으로 현재 스캔 결과를 좁혀 봅니다.</p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-        {PRESETS.map(preset => (
-          <Card key={preset.label} className="space-y-3">
-            <div>
-              <div className="text-sm font-semibold">{preset.label}</div>
-              <p className="mt-1 text-xs text-muted-foreground">{preset.description}</p>
-            </div>
-            <button
-              onClick={() => applyPreset(preset.patch)}
-              className="rounded-md bg-primary/15 px-3 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/25"
-            >
-              프리셋 적용
-            </button>
-          </Card>
-        ))}
-      </div>
-
       <div className="grid grid-cols-1 gap-4 rounded-lg border border-border bg-card p-4 md:grid-cols-2 lg:grid-cols-3">
+        <FilterGroup label="타임프레임">
+          <div className="flex flex-wrap gap-1.5">
+            {TIMEFRAME_OPTIONS.map(option => {
+              const selected = req.timeframes?.includes(option.value)
+              return (
+                <button
+                  key={option.value}
+                  onClick={() => toggleTimeframe(option.value)}
+                  className={`rounded px-2 py-1 text-xs transition-colors ${
+                    selected ? 'bg-primary text-primary-foreground' : 'bg-muted/50 text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              )
+            })}
+          </div>
+        </FilterGroup>
+
         <FilterGroup label="패턴 유형">
           <div className="flex flex-wrap gap-1.5">
             {PATTERN_OPTIONS.map(option => {
@@ -269,7 +262,7 @@ export default function ScreenerPage() {
         className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
       >
         <Search size={14} />
-        스크리닝 실행
+        스크리너 실행
       </button>
 
       {isLoading && <p className="text-xs text-muted-foreground">분석 중...</p>}
@@ -292,7 +285,7 @@ export default function ScreenerPage() {
           </div>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {data.map(item => <DashboardCard key={item.symbol.code} item={item} />)}
+            {data.map(item => <DashboardCard key={`${item.timeframe}-${item.symbol.code}`} item={item} />)}
           </div>
         </div>
       )}

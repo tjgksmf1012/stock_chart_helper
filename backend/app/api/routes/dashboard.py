@@ -1,11 +1,14 @@
 """Dashboard API for ranked market scan views and scan status controls."""
 
+from __future__ import annotations
+
 from datetime import datetime
 
 from fastapi import APIRouter, Query
 
 from ..schemas import DashboardItem, DashboardResponse, ScanStatusResponse, SymbolInfo
 from ...services.scanner import get_scan_results, get_scan_status, trigger_scan
+from ...services.timeframe_service import DEFAULT_TIMEFRAME, timeframe_label
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -21,6 +24,8 @@ def _make_item(rank: int, row: dict) -> DashboardItem:
             market_cap=None,
             is_in_universe=True,
         ),
+        timeframe=row.get("timeframe", DEFAULT_TIMEFRAME),
+        timeframe_label=row.get("timeframe_label", timeframe_label(row.get("timeframe", DEFAULT_TIMEFRAME))),
         pattern_type=row.get("pattern_type"),
         state=row.get("state"),
         p_up=row["p_up"],
@@ -30,69 +35,107 @@ def _make_item(rank: int, row: dict) -> DashboardItem:
         entry_score=row["entry_score"],
         no_signal_flag=row["no_signal_flag"],
         reason_summary=row["reason_summary"],
+        completion_proximity=row.get("completion_proximity", 0.0),
+        recency_score=row.get("recency_score", 0.0),
+        data_source=row.get("data_source", "unknown"),
+        data_quality=row.get("data_quality", 0.0),
+        source_note=row.get("source_note", ""),
+        fetch_status=row.get("fetch_status", "unknown"),
+        fetch_message=row.get("fetch_message", ""),
+        liquidity_score=row.get("liquidity_score", 0.0),
+        avg_turnover_billion=row.get("avg_turnover_billion", 0.0),
+        sample_size=row.get("sample_size", 0),
+        stats_timeframe=row.get("stats_timeframe", "1d"),
+        available_bars=row.get("available_bars", 0),
     )
 
 
-def _response(category: str, items: list[DashboardItem]) -> DashboardResponse:
+def _response(category: str, timeframe: str, items: list[DashboardItem]) -> DashboardResponse:
     return DashboardResponse(
         category=category,
+        timeframe=timeframe,
+        timeframe_label=timeframe_label(timeframe),
         items=items,
         generated_at=datetime.utcnow().isoformat(),
     )
 
 
+def _timeframe_query(timeframe: str) -> str:
+    return timeframe or DEFAULT_TIMEFRAME
+
+
 @router.get("/scan-status", response_model=ScanStatusResponse)
-async def dashboard_scan_status() -> ScanStatusResponse:
-    return ScanStatusResponse(**(await get_scan_status()))
+async def dashboard_scan_status(timeframe: str = Query(default=DEFAULT_TIMEFRAME)) -> ScanStatusResponse:
+    return ScanStatusResponse(**(await get_scan_status(_timeframe_query(timeframe))))
 
 
 @router.post("/scan-refresh", response_model=ScanStatusResponse)
-async def dashboard_scan_refresh() -> ScanStatusResponse:
-    return ScanStatusResponse(**(await trigger_scan(force_refresh=True, source="manual")))
+async def dashboard_scan_refresh(timeframe: str = Query(default=DEFAULT_TIMEFRAME)) -> ScanStatusResponse:
+    return ScanStatusResponse(**(await trigger_scan(timeframe=_timeframe_query(timeframe), force_refresh=True, source="manual")))
 
 
 @router.get("/long-high-probability")
-async def dashboard_long(limit: int = Query(default=10, le=50)) -> DashboardResponse:
-    data = await get_scan_results()
+async def dashboard_long(
+    timeframe: str = Query(default=DEFAULT_TIMEFRAME),
+    limit: int = Query(default=10, le=50),
+) -> DashboardResponse:
+    timeframe = _timeframe_query(timeframe)
+    data = await get_scan_results(timeframe)
     ranked = [row for row in data if not row["no_signal_flag"] and row["p_up"] > 0.55]
-    ranked.sort(key=lambda row: row["entry_score"], reverse=True)
+    ranked.sort(key=lambda row: (row["entry_score"], row["data_quality"], row["liquidity_score"]), reverse=True)
     items = [_make_item(index + 1, row) for index, row in enumerate(ranked[:limit])]
-    return _response("long_high_probability", items)
+    return _response("long_high_probability", timeframe, items)
 
 
 @router.get("/short-high-probability")
-async def dashboard_short(limit: int = Query(default=10, le=50)) -> DashboardResponse:
-    data = await get_scan_results()
+async def dashboard_short(
+    timeframe: str = Query(default=DEFAULT_TIMEFRAME),
+    limit: int = Query(default=10, le=50),
+) -> DashboardResponse:
+    timeframe = _timeframe_query(timeframe)
+    data = await get_scan_results(timeframe)
     ranked = [row for row in data if not row["no_signal_flag"] and row["p_down"] > 0.55]
-    ranked.sort(key=lambda row: row["p_down"], reverse=True)
+    ranked.sort(key=lambda row: (row["p_down"], row["data_quality"], row["liquidity_score"]), reverse=True)
     items = [_make_item(index + 1, row) for index, row in enumerate(ranked[:limit])]
-    return _response("short_high_probability", items)
+    return _response("short_high_probability", timeframe, items)
 
 
 @router.get("/high-textbook-similarity")
-async def dashboard_similarity(limit: int = Query(default=10, le=50)) -> DashboardResponse:
-    data = await get_scan_results()
-    ranked = sorted(data, key=lambda row: row["textbook_similarity"], reverse=True)
+async def dashboard_similarity(
+    timeframe: str = Query(default=DEFAULT_TIMEFRAME),
+    limit: int = Query(default=10, le=50),
+) -> DashboardResponse:
+    timeframe = _timeframe_query(timeframe)
+    data = await get_scan_results(timeframe)
+    ranked = sorted(data, key=lambda row: (row["textbook_similarity"], row["recency_score"]), reverse=True)
     items = [_make_item(index + 1, row) for index, row in enumerate(ranked[:limit])]
-    return _response("high_textbook_similarity", items)
+    return _response("high_textbook_similarity", timeframe, items)
 
 
 @router.get("/watchlist-no-signal")
-async def dashboard_no_signal(limit: int = Query(default=10, le=50)) -> DashboardResponse:
-    data = await get_scan_results()
+async def dashboard_no_signal(
+    timeframe: str = Query(default=DEFAULT_TIMEFRAME),
+    limit: int = Query(default=10, le=50),
+) -> DashboardResponse:
+    timeframe = _timeframe_query(timeframe)
+    data = await get_scan_results(timeframe)
     ranked = [row for row in data if row["no_signal_flag"]]
+    ranked.sort(key=lambda row: (row["data_quality"], row["available_bars"]), reverse=True)
     items = [_make_item(index + 1, row) for index, row in enumerate(ranked[:limit])]
-    return _response("watchlist_no_signal", items)
+    return _response("watchlist_no_signal", timeframe, items)
 
 
 @router.get("/pattern-armed")
-async def dashboard_armed(limit: int = Query(default=10, le=50)) -> DashboardResponse:
-    data = await get_scan_results()
+async def dashboard_armed(
+    timeframe: str = Query(default=DEFAULT_TIMEFRAME),
+    limit: int = Query(default=10, le=50),
+) -> DashboardResponse:
+    timeframe = _timeframe_query(timeframe)
+    data = await get_scan_results(timeframe)
     ranked = [
-        row
-        for row in data
+        row for row in data
         if row.get("state") in ("armed", "forming") and row["textbook_similarity"] >= 0.5
     ]
-    ranked.sort(key=lambda row: row["textbook_similarity"], reverse=True)
+    ranked.sort(key=lambda row: (row["completion_proximity"], row["recency_score"]), reverse=True)
     items = [_make_item(index + 1, row) for index, row in enumerate(ranked[:limit])]
-    return _response("pattern_armed", items)
+    return _response("pattern_armed", timeframe, items)

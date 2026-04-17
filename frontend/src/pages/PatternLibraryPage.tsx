@@ -10,7 +10,6 @@ import type { PatternLibraryEntry } from '@/types/api'
 
 function PatternCard({ entry }: { entry: PatternLibraryEntry }) {
   const [expanded, setExpanded] = useState(false)
-
   const badgeVariant = entry.direction === 'bullish'
     ? 'bullish'
     : entry.direction === 'bearish'
@@ -130,7 +129,7 @@ export default function PatternLibraryPage() {
         <div>
           <h1 className="text-xl font-bold">차트 패턴 라이브러리</h1>
           <p className="text-xs text-muted-foreground">
-            교과서형 패턴의 정의, 구조 조건, 확인 조건, 무효화 기준을 한 번에 정리한 페이지입니다.
+            교과서형 패턴의 정의, 구조 조건, 확인 조건, 무효화 기준을 한 번에 정리해 둔 페이지입니다.
           </p>
         </div>
       </div>
