@@ -26,6 +26,13 @@ const OVERLAY_COLORS = {
   invalidation: '#f87171',
 }
 
+const CHART_COLORS = {
+  background: '#0b1220',
+  text: '#96a3b8',
+  grid: '#141c2b',
+  border: '#1f2937',
+}
+
 export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
@@ -36,19 +43,20 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
   useEffect(() => {
     if (!containerRef.current) return
 
+    const containerWidth = containerRef.current.clientWidth || containerRef.current.getBoundingClientRect().width || 600
     const chart = createChart(containerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: 'hsl(222 47% 8%)' },
-        textColor: 'hsl(215 20% 65%)',
+        background: { type: ColorType.Solid, color: CHART_COLORS.background },
+        textColor: CHART_COLORS.text,
       },
       grid: {
-        vertLines: { color: 'hsl(217 32% 12%)' },
-        horzLines: { color: 'hsl(217 32% 12%)' },
+        vertLines: { color: CHART_COLORS.grid },
+        horzLines: { color: CHART_COLORS.grid },
       },
       crosshair: { mode: 1 },
-      rightPriceScale: { borderColor: 'hsl(217 32% 17%)' },
-      timeScale: { borderColor: 'hsl(217 32% 17%)', timeVisible: true, secondsVisible: false },
-      width: containerRef.current.clientWidth,
+      rightPriceScale: { borderColor: CHART_COLORS.border },
+      timeScale: { borderColor: CHART_COLORS.border, timeVisible: true, secondsVisible: false },
+      width: containerWidth,
       height: height - 80,
     })
 
