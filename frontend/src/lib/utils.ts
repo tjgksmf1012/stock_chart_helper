@@ -28,10 +28,10 @@ export function fmtDateTime(value: string | null | undefined): string {
 
 export const STATE_LABELS: Record<string, string> = {
   forming: '형성 중',
-  armed: '확인 직전',
+  armed: '완성 임박',
   confirmed: '확인 완료',
   invalidated: '무효화',
-  played_out: '전개 완료',
+  played_out: '목표 달성',
 }
 
 export const STATE_COLORS: Record<string, string> = {
@@ -54,7 +54,7 @@ export const PATTERN_NAMES: Record<string, string> = {
   rising_channel: '상승 채널',
   falling_channel: '하락 채널',
   cup_and_handle: '컵 앤 핸들',
-  rounding_bottom: '라운딩 바텀',
+  rounding_bottom: '라운딩 바닥',
 }
 
 export const DIRECTION_LABELS: Record<string, string> = {

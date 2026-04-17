@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import type { Timeframe } from '@/types/api'
+import { DEFAULT_TIMEFRAME } from '@/lib/timeframes'
 
 interface WatchlistItem {
   code: string
@@ -10,10 +12,10 @@ interface WatchlistItem {
 
 interface AppStore {
   selectedSymbol: string | null
-  selectedTimeframe: '1d' | '60m' | '15m'
+  selectedTimeframe: Timeframe
   watchlist: WatchlistItem[]
   setSymbol: (code: string) => void
-  setTimeframe: (tf: '1d' | '60m' | '15m') => void
+  setTimeframe: (tf: Timeframe) => void
   addToWatchlist: (item: Omit<WatchlistItem, 'addedAt'>) => void
   removeFromWatchlist: (code: string) => void
   isWatched: (code: string) => boolean
@@ -23,7 +25,7 @@ export const useAppStore = create<AppStore>()(
   persist(
     (set, get) => ({
       selectedSymbol: null,
-      selectedTimeframe: '1d',
+      selectedTimeframe: DEFAULT_TIMEFRAME,
       watchlist: [],
 
       setSymbol: (code) => set({ selectedSymbol: code }),

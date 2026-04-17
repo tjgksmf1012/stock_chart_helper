@@ -47,21 +47,37 @@ class PatternInfo(BaseModel):
     is_provisional: bool
     start_dt: str
     end_dt: str | None
+    recency_score: float = 0.0
+    completion_proximity: float = 0.0
+    bars_since_signal: int | None = None
 
 
 class AnalysisResult(BaseModel):
     symbol: SymbolInfo
     timeframe: str
+    timeframe_label: str | None = None
+    data_source: str | None = None
+    data_quality: float = 0.0
+    source_note: str | None = None
+    fetch_status: str | None = None
+    fetch_message: str | None = None
     p_up: float
     p_down: float
     textbook_similarity: float
     pattern_confirmation_score: float
     confidence: float
     entry_score: float
+    completion_proximity: float = 0.0
+    recency_score: float = 0.0
+    bars_since_signal: int | None = None
+    liquidity_score: float = 0.0
+    avg_turnover_billion: float = 0.0
     no_signal_flag: bool
     no_signal_reason: str
     reason_summary: str
     sample_size: int
+    stats_timeframe: str | None = None
+    available_bars: int = 0
     patterns: list[PatternInfo]
     is_provisional: bool
     updated_at: str
@@ -70,6 +86,13 @@ class AnalysisResult(BaseModel):
 class DashboardItem(BaseModel):
     rank: int
     symbol: SymbolInfo
+    timeframe: str | None = None
+    timeframe_label: str | None = None
+    data_source: str | None = None
+    data_quality: float = 0.0
+    source_note: str | None = None
+    fetch_status: str | None = None
+    fetch_message: str | None = None
     pattern_type: str | None
     state: str | None
     p_up: float
@@ -77,12 +100,22 @@ class DashboardItem(BaseModel):
     textbook_similarity: float
     confidence: float
     entry_score: float
+    completion_proximity: float = 0.0
+    recency_score: float = 0.0
+    bars_since_signal: int | None = None
+    liquidity_score: float = 0.0
+    avg_turnover_billion: float = 0.0
     no_signal_flag: bool
     reason_summary: str
+    sample_size: int | None = None
+    stats_timeframe: str | None = None
+    available_bars: int = 0
 
 
 class DashboardResponse(BaseModel):
     category: str
+    timeframe: str | None = None
+    timeframe_label: str | None = None
     items: list[DashboardItem]
     generated_at: str
 
@@ -90,7 +123,10 @@ class DashboardResponse(BaseModel):
 class ScanStatusResponse(BaseModel):
     status: str
     is_running: bool
+    timeframe: str | None = None
     source: str | None = None
+    candidate_source: str | None = None
+    candidate_count: int | None = None
     cached_result_count: int = 0
     universe_size: int | None = None
     last_started_at: str | None = None

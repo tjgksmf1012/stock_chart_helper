@@ -2,6 +2,7 @@ from fastapi import APIRouter
 from ..schemas import ScreenerRequest, DashboardItem
 from .dashboard import _make_item
 from ...services.scanner import get_scan_results
+from ...services.timeframe_service import DEFAULT_TIMEFRAME
 
 router = APIRouter(prefix="/screeners", tags=["screener"])
 
@@ -16,7 +17,8 @@ SORT_KEYS = {
 
 @router.post("/run")
 async def run_screener(req: ScreenerRequest) -> list[DashboardItem]:
-    data = await get_scan_results()
+    selected_timeframe = req.timeframes[0] if req.timeframes else DEFAULT_TIMEFRAME
+    data = await get_scan_results(timeframe=selected_timeframe)
 
     filtered = data
     if req.exclude_no_signal:
