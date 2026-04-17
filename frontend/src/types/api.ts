@@ -7,6 +7,17 @@ export interface SymbolInfo {
   is_in_universe: boolean
 }
 
+export interface PriceInfo {
+  code: string
+  close: number
+  prev_close: number
+  change: number
+  change_pct: number
+  volume: number
+  source: 'kis' | 'pykrx' | 'none'
+  timestamp: string | null
+}
+
 export interface OHLCVBar {
   date: string
   open: number

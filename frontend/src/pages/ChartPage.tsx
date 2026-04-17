@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Loader2, Search } from 'lucide-react'
+import { ArrowLeft, Loader2, Search, Star, TrendingUp, TrendingDown } from 'lucide-react'
 
 import { Badge } from '@/components/ui/Badge'
 import { AnalysisPanel } from '@/components/chart/AnalysisPanel'
 import { CandleChart } from '@/components/chart/CandleChart'
 import { symbolsApi } from '@/lib/api'
-import { fmtDateTime, fmtNumber } from '@/lib/utils'
+import { cn, fmtDateTime, fmtNumber, fmtPrice, fmtPct } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
 
 const TIMEFRAMES = [
@@ -25,9 +25,10 @@ function getBarLookbackDays(timeframe: '1d' | '60m' | '15m') {
 export default function ChartPage() {
   const { symbol } = useParams<{ symbol: string }>()
   const nav = useNavigate()
-  const { selectedTimeframe, setTimeframe } = useAppStore()
+  const { selectedTimeframe, setTimeframe, addToWatchlist, removeFromWatchlist, isWatched } = useAppStore()
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<Array<{ code: string; name: string; market: string }>>([])
+  const watched = symbol ? isWatched(symbol) : false
 
   const barsQ = useQuery({
     queryKey: ['bars', symbol, selectedTimeframe],
@@ -41,6 +42,14 @@ export default function ChartPage() {
     queryFn: () => symbolsApi.getAnalysis(symbol!, selectedTimeframe),
     enabled: !!symbol,
     staleTime: 300_000,
+  })
+
+  const priceQ = useQuery({
+    queryKey: ['price', symbol],
+    queryFn: () => symbolsApi.getPrice(symbol!),
+    enabled: !!symbol,
+    staleTime: 60_000,
+    refetchInterval: 120_000,
   })
 
   const handleSearch = async (query: string) => {
@@ -111,14 +120,38 @@ export default function ChartPage() {
         <div className="rounded-xl border border-border bg-card p-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="space-y-1">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="text-lg font-bold">{analysisQ.data.symbol.name}</h1>
                 <span className="font-mono text-sm text-muted-foreground">{symbol}</span>
                 <span className="text-xs text-muted-foreground">{analysisQ.data.symbol.market}</span>
                 {analysisQ.data.is_provisional && <Badge variant="warning">잠정</Badge>}
+                {/* Watch button */}
+                <button
+                  onClick={() => {
+                    if (!symbol || !analysisQ.data) return
+                    if (watched) removeFromWatchlist(symbol)
+                    else addToWatchlist({ code: symbol, name: analysisQ.data.symbol.name, market: analysisQ.data.symbol.market })
+                  }}
+                  className={cn('flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors', watched ? 'bg-yellow-400/15 text-yellow-400 hover:bg-yellow-400/25' : 'text-muted-foreground hover:text-yellow-400 hover:bg-yellow-400/10')}
+                >
+                  <Star size={12} className={watched ? 'fill-yellow-400' : ''} />
+                  {watched ? '관심 종목' : '추가'}
+                </button>
               </div>
+              {/* Current price */}
+              {priceQ.data && priceQ.data.close > 0 && (
+                <div className="flex items-center gap-3">
+                  <span className="font-mono text-xl font-bold">{fmtPrice(priceQ.data.close)}</span>
+                  <span className={cn('flex items-center gap-0.5 text-sm font-medium', priceQ.data.change >= 0 ? 'text-emerald-400' : 'text-red-400')}>
+                    {priceQ.data.change >= 0 ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
+                    {priceQ.data.change >= 0 ? '+' : ''}{fmtPrice(priceQ.data.change)}
+                    <span className="text-xs">({priceQ.data.change >= 0 ? '+' : ''}{fmtPct(priceQ.data.change_pct)})</span>
+                  </span>
+                  <span className="text-xs text-muted-foreground">{priceQ.data.source === 'kis' ? '실시간' : '전일 종가'}</span>
+                </div>
+              )}
               <p className="text-xs text-muted-foreground">
-                최근 업데이트 {fmtDateTime(analysisQ.data.updated_at)}
+                분석 업데이트 {fmtDateTime(analysisQ.data.updated_at)}
               </p>
             </div>
 

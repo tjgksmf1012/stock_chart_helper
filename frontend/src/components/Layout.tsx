@@ -1,16 +1,20 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { BarChart2, BookOpen, LayoutDashboard, SlidersHorizontal } from 'lucide-react'
+import { BarChart2, BookOpen, LayoutDashboard, SlidersHorizontal, Star } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
+import { useAppStore } from '@/store/app'
 
 const NAV_ITEMS = [
   { to: '/', label: '대시보드', icon: LayoutDashboard, end: true },
   { to: '/chart', label: '차트 분석', icon: BarChart2, end: false },
+  { to: '/watchlist', label: '관심 종목', icon: Star, end: true },
   { to: '/library', label: '패턴 라이브러리', icon: BookOpen, end: true },
   { to: '/screener', label: '스크리너', icon: SlidersHorizontal, end: true },
 ]
 
 export function Layout() {
+  const { watchlist } = useAppStore()
+
   return (
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur">
@@ -26,7 +30,7 @@ export function Layout() {
                 to={item.to}
                 end={item.end}
                 className={({ isActive }) => cn(
-                  'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs transition-colors',
+                  'relative flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs transition-colors',
                   isActive
                     ? 'bg-primary/15 text-primary'
                     : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
@@ -34,6 +38,11 @@ export function Layout() {
               >
                 <item.icon size={13} />
                 {item.label}
+                {item.to === '/watchlist' && watchlist.length > 0 && (
+                  <span className="ml-0.5 rounded-full bg-yellow-400/20 px-1 py-0.5 text-[10px] font-medium text-yellow-400 leading-none">
+                    {watchlist.length}
+                  </span>
+                )}
               </NavLink>
             ))}
           </nav>

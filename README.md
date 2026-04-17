@@ -18,7 +18,7 @@
 - Chart: lightweight-charts
 - Data:
   - Daily: pykrx, FinanceDataReader fallback
-  - Intraday: Yahoo Finance fallback
+  - Intraday: KIS API (today minute bars) + Yahoo Finance fallback
 - Cache: Redis fallback + in-memory cache
 
 ## Run
@@ -49,6 +49,24 @@ npm install
 npm run dev
 ```
 
+## KIS Setup
+
+실시간 분봉 정확도를 높이려면 `backend/.env`에 KIS API 키를 넣어주세요.
+
+```env
+KIS_APP_KEY=your_app_key
+KIS_APP_SECRET=your_app_secret
+KIS_ACCOUNT_NO=12345678-01
+KIS_BASE_URL=https://openapi.koreainvestment.com:9443
+```
+
+현재 연동 방식은 다음과 같습니다.
+
+- 오늘 장중 1분 데이터: KIS API 우선 사용
+- 15분 / 60분 차트: KIS 1분 데이터를 리샘플링
+- 과거 장중 히스토리: Yahoo Finance fallback 유지
+- KIS 미설정 또는 호출 실패 시: 기존 Yahoo fallback 유지
+
 ## URLs
 
 - Frontend: http://localhost:5173
@@ -58,11 +76,11 @@ npm run dev
 
 현재 작업 브랜치:
 
-- `codex/scan-status-ui`
+- `codex/kis-api-integration`
 
 ## Notes
 
-- 15분 / 60분 차트는 현재 Yahoo Finance 기반 분봉 fallback입니다.
-- KIS API 기반 실시간 데이터 연동은 아직 미완성입니다.
+- 15분 / 60분 차트는 KIS 오늘 분봉 + Yahoo Finance 히스토리를 합쳐서 보여줍니다.
+- KIS 분봉 API는 당일 데이터 중심이라, 오래된 분봉 히스토리는 fallback 소스에 의존합니다.
 - 확률 엔진은 현재 룰 기반 MVP 버전입니다.
 - 이 프로젝트는 투자 권유 서비스가 아니라 분석 보조 도구입니다.

@@ -42,6 +42,7 @@ def _start_scheduler() -> None:
         from apscheduler.triggers.cron import CronTrigger
 
         from .services.scanner import run_scan
+        from .services.backtest_engine import run_backtest
 
         scheduler = AsyncIOScheduler(timezone="Asia/Seoul")
 
@@ -64,8 +65,16 @@ def _start_scheduler() -> None:
             replace_existing=True,
         )
 
+        # Weekly backtest: Sunday 02:00 KST
+        scheduler.add_job(
+            run_backtest,
+            CronTrigger(day_of_week="sun", hour=2, minute=0, timezone="Asia/Seoul"),
+            id="weekly_backtest",
+            replace_existing=True,
+        )
+
         scheduler.start()
-        logger.info("APScheduler started", jobs=["morning_scan", "midday_scan", "close_scan"])
+        logger.info("APScheduler started", jobs=["morning_scan", "midday_scan", "close_scan", "weekly_backtest"])
     except ImportError:
         logger.warning("APScheduler not installed; scheduled scans are disabled")
     except Exception as exc:
@@ -87,6 +96,8 @@ async def on_startup():
     _start_scheduler()
 
     from .services.scanner import get_scan_results
+    from .services.backtest_engine import get_win_rates
 
     asyncio.create_task(get_scan_results())
-    logger.info("Background scan task queued")
+    asyncio.create_task(get_win_rates())   # warm backtest cache
+    logger.info("Background scan + backtest tasks queued")
