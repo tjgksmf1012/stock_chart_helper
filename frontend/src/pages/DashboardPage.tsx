@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Activity, Loader2, RefreshCw } from 'lucide-react'
 
-import { Card } from '@/components/ui/Card'
 import { DashboardSection } from '@/components/dashboard/DashboardSection'
+import { Card } from '@/components/ui/Card'
 import { dashboardApi } from '@/lib/api'
 import { fmtDateTime } from '@/lib/utils'
 
