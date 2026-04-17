@@ -1,6 +1,6 @@
 import type { MouseEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Layers3, Star } from 'lucide-react'
+import { AlertTriangle, Layers3, Star } from 'lucide-react'
 
 import type { DashboardItem } from '@/types/api'
 import { Badge } from '@/components/ui/Badge'
@@ -18,8 +18,8 @@ export function DashboardCard({ item }: DashboardCardProps) {
   const { addToWatchlist, removeFromWatchlist, isWatched, setTimeframe } = useAppStore()
   const watched = isWatched(item.symbol.code)
 
-  const toggleWatch = (e: MouseEvent) => {
-    e.stopPropagation()
+  const toggleWatch = (event: MouseEvent) => {
+    event.stopPropagation()
     if (watched) {
       removeFromWatchlist(item.symbol.code)
     } else {
@@ -44,24 +44,28 @@ export function DashboardCard({ item }: DashboardCardProps) {
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
             <span>{item.symbol.market}</span>
-            <span>•</span>
+            <span>·</span>
             <span>{item.timeframe_label}</span>
             <Badge variant={item.data_quality >= 0.8 ? 'bullish' : item.data_quality >= 0.6 ? 'muted' : 'warning'}>
               품질 {fmtPct(item.data_quality, 0)}
             </Badge>
-            <Badge variant={item.confluence_score >= 0.7 ? 'bullish' : item.confluence_score >= 0.5 ? 'muted' : 'warning'}>
+            <Badge
+              variant={item.confluence_score >= 0.7 ? 'bullish' : item.confluence_score >= 0.5 ? 'muted' : 'warning'}
+            >
               합산 {fmtPct(item.confluence_score, 0)}
             </Badge>
+            <Badge
+              variant={item.sample_reliability >= 0.65 ? 'bullish' : item.sample_reliability >= 0.45 ? 'muted' : 'warning'}
+            >
+              표본 {fmtPct(item.sample_reliability, 0)}
+            </Badge>
           </div>
+
           {item.pattern_type ? (
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              <span className="text-xs text-muted-foreground">
-                {PATTERN_NAMES[item.pattern_type] ?? item.pattern_type}
-              </span>
+              <span className="text-xs text-muted-foreground">{PATTERN_NAMES[item.pattern_type] ?? item.pattern_type}</span>
               {item.state && (
-                <span className={cn('rounded px-1 py-0.5 text-xs', STATE_COLORS[item.state])}>
-                  {STATE_LABELS[item.state]}
-                </span>
+                <span className={cn('rounded px-1 py-0.5 text-xs', STATE_COLORS[item.state])}>{STATE_LABELS[item.state]}</span>
               )}
             </div>
           ) : (
@@ -94,6 +98,8 @@ export function DashboardCard({ item }: DashboardCardProps) {
         <span className="text-right">신선도 {fmtPct(item.recency_score)}</span>
         <span>거래대금 {fmtTurnoverBillion(item.avg_turnover_billion)}</span>
         <span className="text-right">표본 {item.sample_size}건</span>
+        <span>보정 승률 {fmtPct(item.empirical_win_rate)}</span>
+        <span className="text-right">{item.fetch_status_label}</span>
       </div>
 
       <div className="rounded-lg border border-border bg-background/60 p-2.5">
@@ -104,6 +110,16 @@ export function DashboardCard({ item }: DashboardCardProps) {
         <p className="mt-1 text-xs text-muted-foreground">{item.confluence_summary}</p>
         <p className="mt-1 text-xs leading-relaxed text-foreground/90">{item.scenario_text}</p>
       </div>
+
+      {(item.fetch_message || item.no_signal_flag) && (
+        <div className="rounded-lg border border-border bg-background/60 p-2.5">
+          <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+            <AlertTriangle size={12} />
+            데이터 메모
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">{item.fetch_message || item.source_note}</p>
+        </div>
+      )}
 
       <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">{item.reason_summary}</p>
 

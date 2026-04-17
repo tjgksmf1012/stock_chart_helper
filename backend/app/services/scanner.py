@@ -122,10 +122,14 @@ async def get_scan_status(timeframe: str = DEFAULT_TIMEFRAME) -> dict[str, Any]:
 async def _fetch_universe_codes(limit: int = 100) -> list[tuple[str, str, str]]:
     fetcher = get_data_fetcher()
     universe = await fetcher.get_universe()
-    universe_names = {
-        str(row["code"]): row.get("name", row["code"]) or row["code"]
-        for _, row in universe.iterrows()
-    } if not universe.empty else {}
+    universe_names = (
+        {
+            str(row["code"]): row.get("name", row["code"]) or row["code"]
+            for _, row in universe.iterrows()
+        }
+        if not universe.empty
+        else {}
+    )
 
     try:
         from pykrx import stock as krx
@@ -167,11 +171,12 @@ async def _build_confluence(
         own_direction = _direction_label(_direction_score(primary_row))
         return {
             "confluence_score": 0.5,
-            "confluence_summary": f"{timeframe_label(timeframe)} 단일 신호 기준입니다.",
+            "confluence_summary": f"{timeframe_label(timeframe)} 단독 신호 기준입니다.",
             "scenario_text": f"{timeframe_label(timeframe)} 기준 {own_direction} 시나리오를 단독으로 해석한 결과입니다.",
             "composite_score": round(
-                0.70 * float(primary_row.get("entry_score", 0.0))
-                + 0.20 * float(primary_row.get("data_quality", 0.0))
+                0.66 * float(primary_row.get("entry_score", 0.0))
+                + 0.12 * float(primary_row.get("sample_reliability", 0.0))
+                + 0.12 * float(primary_row.get("data_quality", 0.0))
                 + 0.10 * float(primary_row.get("recency_score", 0.0)),
                 3,
             ),
@@ -214,16 +219,23 @@ async def _build_confluence(
     own_direction = _direction_label(primary_direction)
 
     if confluence_score >= 0.74:
-        scenario_text = f"{timeframe_label(timeframe)} 신호와 상위 축이 같은 방향이라 {own_direction} 추세 추종형으로 보기 좋습니다."
+        scenario_text = (
+            f"{timeframe_label(timeframe)} 신호와 상위 타임프레임 방향이 비슷해 {own_direction} 추세 추종형으로 보기 좋습니다."
+        )
     elif confluence_score >= 0.56:
-        scenario_text = f"{timeframe_label(timeframe)} 신호는 유지되지만 상위 축 정렬은 절반 정도라 보수적으로 확인하는 편이 좋습니다."
+        scenario_text = (
+            f"{timeframe_label(timeframe)} 신호는 유지되지만 상위 축 정렬은 절반 정도입니다. 무효화 기준을 우선 보는 편이 좋습니다."
+        )
     else:
-        scenario_text = f"{timeframe_label(timeframe)} 신호와 상위 축이 엇갈려 단기 반등·단기 트리거 정도로 보는 편이 낫습니다."
+        scenario_text = (
+            f"{timeframe_label(timeframe)} 신호와 주변 타임프레임이 엇갈립니다. 추세 매매보다 짧은 트리거 확인용으로 보는 편이 낫습니다."
+        )
 
     composite_score = (
-        0.52 * float(primary_row.get("entry_score", 0.0))
-        + 0.20 * confluence_score
-        + 0.14 * float(primary_row.get("data_quality", 0.0))
+        0.46 * float(primary_row.get("entry_score", 0.0))
+        + 0.18 * confluence_score
+        + 0.12 * float(primary_row.get("sample_reliability", 0.0))
+        + 0.10 * float(primary_row.get("data_quality", 0.0))
         + 0.08 * float(primary_row.get("recency_score", 0.0))
         + 0.06 * float(primary_row.get("completion_proximity", 0.0))
     )
@@ -286,10 +298,13 @@ async def _analyze_one(
             "data_quality": analysis.data_quality,
             "source_note": analysis.source_note,
             "fetch_status": analysis.fetch_status,
+            "fetch_status_label": analysis.fetch_status_label,
             "fetch_message": analysis.fetch_message,
             "liquidity_score": analysis.liquidity_score,
             "avg_turnover_billion": analysis.avg_turnover_billion,
             "sample_size": analysis.sample_size,
+            "empirical_win_rate": analysis.empirical_win_rate,
+            "sample_reliability": analysis.sample_reliability,
             "stats_timeframe": analysis.stats_timeframe,
             "available_bars": analysis.available_bars,
         }
@@ -302,7 +317,10 @@ async def _analyze_one(
                     "confluence_score": 0.5,
                     "confluence_summary": f"{timeframe_label(timeframe)} 단독 분석",
                     "scenario_text": f"{timeframe_label(timeframe)} 신호만 기준으로 계산한 보조 결과입니다.",
-                    "composite_score": round(float(result["entry_score"]), 3),
+                    "composite_score": round(
+                        0.75 * float(result["entry_score"]) + 0.25 * float(result["sample_reliability"]),
+                        3,
+                    ),
                 }
             )
 
@@ -314,18 +332,20 @@ async def _analyze_one(
 
 
 async def _select_candidates(limit: int, timeframe: str) -> tuple[list[tuple[str, str, str]], str]:
-    if timeframe == "1d" or timeframe in {"1wk", "1mo"}:
+    if timeframe in {"1d", "1wk", "1mo"}:
         return await _fetch_universe_codes(limit), "krx_universe"
 
     seed_limit = max(settings.intraday_seed_limit, limit * settings.intraday_seed_multiplier)
     daily_candidates = await get_scan_results("1d")
     daily_candidates = [
-        row for row in daily_candidates
+        row
+        for row in daily_candidates
         if row.get("entry_score", 0) >= 0.45 and row.get("confidence", 0) >= 0.30
     ]
     daily_candidates.sort(
         key=lambda row: (
             row.get("composite_score", 0),
+            row.get("sample_reliability", 0),
             row.get("entry_score", 0),
             row.get("data_quality", 0),
             row.get("liquidity_score", 0),
@@ -334,10 +354,7 @@ async def _select_candidates(limit: int, timeframe: str) -> tuple[list[tuple[str
     )
 
     if daily_candidates:
-        selected = [
-            (row["code"], row["name"], row.get("market", "KRX"))
-            for row in daily_candidates[:seed_limit]
-        ]
+        selected = [(row["code"], row["name"], row.get("market", "KRX")) for row in daily_candidates[:seed_limit]]
         return selected, "daily_seed"
 
     return await _fetch_universe_codes(seed_limit), "krx_universe_fallback"
@@ -405,6 +422,7 @@ async def run_scan(
                 key=lambda row: (
                     0 if row["no_signal_flag"] else 1,
                     row.get("composite_score", 0),
+                    row.get("sample_reliability", 0),
                     row.get("entry_score", 0),
                     row.get("data_quality", 0),
                     row.get("liquidity_score", 0),
@@ -466,11 +484,7 @@ async def get_scan_results(timeframe: str = DEFAULT_TIMEFRAME) -> list[dict[str,
     cache_key = _full_scan_cache_key(timeframe)
     cached = await cache_get(cache_key)
     if cached:
-        _update_scan_status(
-            timeframe,
-            status="ready",
-            cached_result_count=len(cached),
-        )
+        _update_scan_status(timeframe, status="ready", cached_result_count=len(cached))
         return cached
 
     _update_scan_status(timeframe, status="warming", is_running=False, source="fallback")
@@ -480,7 +494,13 @@ async def get_scan_results(timeframe: str = DEFAULT_TIMEFRAME) -> list[dict[str,
         return_exceptions=True,
     )
     results = [item for item in quick if isinstance(item, dict)]
-    results.sort(key=lambda row: row.get("composite_score", row.get("entry_score", 0)), reverse=True)
+    results.sort(
+        key=lambda row: (
+            row.get("composite_score", row.get("entry_score", 0)),
+            row.get("sample_reliability", 0),
+        ),
+        reverse=True,
+    )
     await cache_set(cache_key, results, ttl=300)
     _update_scan_status(
         timeframe,

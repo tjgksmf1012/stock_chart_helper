@@ -69,13 +69,18 @@ DAILY_RESAMPLE_RULES = {
 }
 
 FETCH_STATUS_MESSAGES = {
-    "live_ok": "Live intraday bars loaded successfully.",
-    "live_augmented_by_store": "Live intraday bars loaded and gaps were filled with stored bars.",
-    "stored_fallback": "Stored intraday bars were used because live providers were unavailable.",
-    "stored_empty": "No previously stored intraday bars are available.",
-    "intraday_rate_limited": "Yahoo Finance temporarily limited intraday requests.",
-    "intraday_unavailable": "Live intraday data is temporarily unavailable from the current providers.",
-    "intraday_empty": "The providers returned no intraday bars for this symbol and timeframe.",
+    "live_ok": "실시간 분봉을 정상적으로 불러왔습니다.",
+    "live_augmented_by_store": "실시간 분봉을 불러왔고 누락 구간은 저장된 분봉으로 보완했습니다.",
+    "stored_fallback": "실시간 제공처 응답이 불안정해 저장된 분봉을 대신 사용했습니다.",
+    "stored_empty": "이 종목에 대해 이전에 저장된 분봉이 없습니다.",
+    "intraday_rate_limited": "야후 분봉 요청 제한이 걸려 현재 응답이 불안정합니다.",
+    "intraday_unavailable": "현재 사용 가능한 분봉 제공처에서 응답을 주지 않았습니다.",
+    "intraday_empty": "요청한 종목과 타임프레임에 대해 제공된 분봉 바 수가 부족합니다.",
+    "yahoo_symbol_missing": "이 종목의 야후 심볼 매핑을 찾지 못했습니다.",
+    "yahoo_empty": "야후에서 해당 종목 분봉을 반환하지 않았습니다.",
+    "kis_not_configured": "KIS API가 설정되지 않아 공개 분봉 소스만 사용 가능합니다.",
+    "kis_error": "KIS API 요청이 실패해 무시했습니다.",
+    "kis_empty": "KIS에서 해당 종목 분봉을 반환하지 않았습니다.",
 }
 
 
@@ -170,7 +175,7 @@ class KRXDataFetcher:
             return self._empty_frame(
                 data_source="yahoo_fallback",
                 fetch_status="yahoo_symbol_missing",
-                fetch_message="Yahoo Finance symbol mapping is unavailable for this stock.",
+                fetch_message=FETCH_STATUS_MESSAGES["yahoo_symbol_missing"],
             )
 
         for yahoo_symbol in candidates:
@@ -208,7 +213,7 @@ class KRXDataFetcher:
         return self._empty_frame(
             data_source="yahoo_fallback",
             fetch_status="yahoo_empty",
-            fetch_message="Yahoo Finance returned no intraday bars for this symbol.",
+            fetch_message=FETCH_STATUS_MESSAGES["yahoo_empty"],
         )
 
     async def _get_kis_intraday_ohlcv(self, code: str, timeframe: str) -> pd.DataFrame:
@@ -218,7 +223,7 @@ class KRXDataFetcher:
             return self._empty_frame(
                 data_source="kis_intraday",
                 fetch_status="kis_not_configured",
-                fetch_message="KIS API is not configured in this environment.",
+                fetch_message=FETCH_STATUS_MESSAGES["kis_not_configured"],
             )
 
         try:
@@ -228,14 +233,14 @@ class KRXDataFetcher:
             return self._empty_frame(
                 data_source="kis_intraday",
                 fetch_status="kis_error",
-                fetch_message="KIS intraday request failed and was ignored.",
+                fetch_message=FETCH_STATUS_MESSAGES["kis_error"],
             )
 
         if minute_bars.empty:
             return self._empty_frame(
                 data_source="kis_intraday",
                 fetch_status="kis_empty",
-                fetch_message="KIS returned no intraday bars for this request.",
+                fetch_message=FETCH_STATUS_MESSAGES["kis_empty"],
             )
 
         if timeframe == "1m":
@@ -243,13 +248,13 @@ class KRXDataFetcher:
                 minute_bars.reset_index(drop=True),
                 data_source="kis_intraday",
                 fetch_status="live_ok",
-                fetch_message="KIS intraday bars loaded successfully.",
+                fetch_message="KIS 분봉을 정상적으로 불러왔습니다.",
             )
         return self._with_attrs(
             self._resample_intraday_frame(minute_bars, timeframe),
             data_source="kis_intraday",
             fetch_status="live_ok",
-            fetch_message="KIS intraday bars loaded successfully.",
+            fetch_message="KIS 분봉을 정상적으로 불러왔습니다.",
         )
 
     def _resample_intraday_frame(self, df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
@@ -311,7 +316,7 @@ class KRXDataFetcher:
             combined.reset_index(drop=True),
             data_source="hybrid_intraday",
             fetch_status="live_ok",
-            fetch_message="Historical bars came from Yahoo and recent bars came from KIS.",
+            fetch_message="과거 구간은 야후, 최근 구간은 KIS를 사용해 분봉을 구성했습니다.",
         )
 
     def _combine_intraday_frames(self, stored_df: pd.DataFrame, live_df: pd.DataFrame) -> pd.DataFrame:
@@ -326,18 +331,26 @@ class KRXDataFetcher:
 
     def _combine_intraday_failure(self, yahoo_df: pd.DataFrame, kis_df: pd.DataFrame) -> tuple[str, str]:
         statuses = {str(yahoo_df.attrs.get("fetch_status") or ""), str(kis_df.attrs.get("fetch_status") or "")}
+        if "yahoo_symbol_missing" in statuses:
+            return "yahoo_symbol_missing", FETCH_STATUS_MESSAGES["yahoo_symbol_missing"]
         if "yahoo_rate_limited" in statuses:
             return "intraday_rate_limited", FETCH_STATUS_MESSAGES["intraday_rate_limited"]
-        if "yahoo_empty" in statuses and ("kis_not_configured" in statuses or "kis_empty" in statuses):
+        if "yahoo_empty" in statuses and "kis_not_configured" in statuses:
+            return "intraday_empty", f"{FETCH_STATUS_MESSAGES['yahoo_empty']} {FETCH_STATUS_MESSAGES['kis_not_configured']}"
+        if "yahoo_empty" in statuses and "kis_empty" in statuses:
+            return "intraday_empty", f"{FETCH_STATUS_MESSAGES['yahoo_empty']} {FETCH_STATUS_MESSAGES['kis_empty']}"
+        if "kis_error" in statuses and "yahoo_empty" in statuses:
+            return "intraday_unavailable", f"{FETCH_STATUS_MESSAGES['yahoo_empty']} {FETCH_STATUS_MESSAGES['kis_error']}"
+        if "yahoo_empty" in statuses:
             return "intraday_empty", FETCH_STATUS_MESSAGES["intraday_empty"]
         return "intraday_unavailable", FETCH_STATUS_MESSAGES["intraday_unavailable"]
 
     def _stored_fallback_message(self, yahoo_df: pd.DataFrame, kis_df: pd.DataFrame, stored_df: pd.DataFrame) -> str:
         age_minutes = stored_df.attrs.get("storage_age_minutes")
-        age_text = f" Last successful cache refresh: about {age_minutes} minutes ago." if isinstance(age_minutes, int) else ""
+        age_text = f" 마지막 저장 갱신은 약 {age_minutes}분 전입니다." if isinstance(age_minutes, int) else ""
         failure_status, base_message = self._combine_intraday_failure(yahoo_df, kis_df)
         if failure_status == "intraday_rate_limited":
-            return f"{FETCH_STATUS_MESSAGES['stored_fallback']} Yahoo was rate-limited.{age_text}"
+            return f"{FETCH_STATUS_MESSAGES['stored_fallback']} 야후 요청 제한이 감지됐습니다.{age_text}"
         return f"{FETCH_STATUS_MESSAGES['stored_fallback']} {base_message}{age_text}"
 
     async def _fdr_fallback(self, code: str, start: date, end: date) -> pd.DataFrame:
@@ -358,7 +371,7 @@ class KRXDataFetcher:
             return self._empty_frame(
                 data_source="fdr_daily",
                 fetch_status="daily_error",
-                fetch_message="FinanceDataReader daily fallback failed.",
+                fetch_message="FinanceDataReader 일봉 보조 수집이 실패했습니다.",
             )
 
     async def get_universe(self) -> pd.DataFrame:

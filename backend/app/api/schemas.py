@@ -66,6 +66,8 @@ class AnalysisResult(BaseModel):
     no_signal_reason: str
     reason_summary: str
     sample_size: int
+    empirical_win_rate: float
+    sample_reliability: float
     patterns: list[PatternInfo]
     is_provisional: bool
     updated_at: str
@@ -73,6 +75,7 @@ class AnalysisResult(BaseModel):
     data_quality: float
     source_note: str
     fetch_status: str
+    fetch_status_label: str
     fetch_message: str
     liquidity_score: float
     avg_turnover_billion: float
@@ -105,8 +108,11 @@ class DashboardItem(BaseModel):
     liquidity_score: float = 0.0
     avg_turnover_billion: float = 0.0
     sample_size: int = 0
+    empirical_win_rate: float = 0.5
+    sample_reliability: float = 0.0
     stats_timeframe: str = "1d"
     available_bars: int = 0
+    fetch_status_label: str = "상태 정보 없음"
     confluence_score: float = 0.0
     confluence_summary: str = ""
     scenario_text: str = ""

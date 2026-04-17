@@ -29,6 +29,26 @@ _BEARISH_PATTERNS = {
     "descending_triangle",
 }
 
+_FETCH_STATUS_LABELS = {
+    "live_ok": "실시간 수집 성공",
+    "live_augmented_by_store": "실시간과 저장 분봉 결합",
+    "stored_fallback": "저장 분봉 대체",
+    "stored_empty": "저장 분봉 없음",
+    "intraday_rate_limited": "분봉 요청 제한",
+    "intraday_unavailable": "분봉 제공처 응답 없음",
+    "intraday_empty": "분봉 바 수 부족",
+    "yahoo_symbol_missing": "야후 심볼 매핑 실패",
+    "yahoo_rate_limited": "야후 요청 제한",
+    "yahoo_empty": "야후 분봉 없음",
+    "kis_not_configured": "KIS 미설정",
+    "kis_error": "KIS 요청 실패",
+    "kis_empty": "KIS 분봉 없음",
+    "daily_ok": "일봉 수집 성공",
+    "daily_empty": "일봉 바 수 부족",
+    "daily_error": "일봉 수집 실패",
+    "unknown": "상태 정보 없음",
+}
+
 
 def _is_bullish(pattern_type: str) -> bool:
     return pattern_type in _BULLISH_PATTERNS
@@ -197,6 +217,10 @@ def _stats_timeframe(timeframe: str) -> str:
     return "1d"
 
 
+def _fetch_status_label(fetch_status: str) -> str:
+    return _FETCH_STATUS_LABELS.get(fetch_status, _FETCH_STATUS_LABELS["unknown"])
+
+
 def _data_profile(df: pd.DataFrame, timeframe: str) -> dict[str, Any]:
     source = str(df.attrs.get("data_source") or "unknown")
     fetch_status = str(df.attrs.get("fetch_status") or "unknown")
@@ -207,36 +231,42 @@ def _data_profile(df: pd.DataFrame, timeframe: str) -> dict[str, Any]:
     if timeframe in {"1mo", "1wk", "1d"}:
         if source == "pykrx_daily":
             quality = 0.96
-            note = "KRX 일봉 데이터를 기준으로 재샘플링해 신뢰도가 높은 편입니다."
+            note = "KRX 일봉 데이터를 기준으로 사용하고 있어 상대적으로 신뢰도가 높은 편입니다."
         elif source == "fdr_daily":
             quality = 0.90
-            note = "FinanceDataReader 일봉 데이터를 사용했습니다."
+            note = "FinanceDataReader 일봉 데이터를 보조 소스로 사용했습니다."
         else:
             quality = 0.84
-            note = "일봉 계열 데이터지만 주 공급원이 보조 소스입니다."
+            note = "일봉 계열 데이터이지만 공급처가 보조 소스라 해석을 한 단계 보수적으로 보는 편이 좋습니다."
     else:
         if source == "kis_intraday":
             quality = 0.94
-            note = "KIS 장중 데이터를 직접 사용했습니다."
+            note = "KIS 분봉 데이터를 직접 사용했습니다."
         elif source == "hybrid_intraday":
             quality = 0.82
-            note = "최근 장중은 KIS, 과거 구간은 보조 소스를 섞어 사용했습니다."
+            note = "최근 분봉은 KIS, 과거 구간은 보조 소스를 섞어 사용했습니다."
         elif source in {"intraday_store", "yahoo_fallback"}:
             quality = 0.62 if timeframe in {"60m", "30m", "15m"} else 0.45
-            note = "분봉은 공개 소스와 저장 캐시에 의존하므로 일봉보다 보수적으로 해석해야 합니다."
+            note = "분봉은 공개 소스와 로컬 저장 캐시에 의존하므로 일봉보다 보수적으로 해석해야 합니다."
         else:
             quality = 0.52
-            note = "분봉 데이터 품질이 제한적이라 No Signal로 떨어질 가능성이 큽니다."
+            note = "분봉 데이터 품질이 제한적이라 No Signal로 떨어질 가능성이 높습니다."
 
     if fetch_status == "stored_fallback":
         quality -= 0.08
-        note = "실시간 공급원이 비어 저장된 분봉 캐시를 사용했습니다."
-    elif fetch_status == "intraday_rate_limited":
+        note = "실시간 분봉 공급이 비어 저장된 분봉 캐시를 대신 사용했습니다."
+    elif fetch_status in {"intraday_rate_limited", "yahoo_rate_limited"}:
         quality -= 0.12
-        note = "분봉 공급원이 일시적으로 제한되어 저장 데이터 또는 빈 응답을 사용했습니다."
-    elif fetch_status in {"intraday_empty", "stored_empty", "intraday_unavailable"}:
+        note = "분봉 제공처 요청 제한이 걸려 저장 데이터 또는 일부 응답만 반영됐습니다."
+    elif fetch_status in {"intraday_empty", "stored_empty", "intraday_unavailable", "yahoo_empty"}:
         quality -= 0.18
-        note = "분봉 공급원에서 사용할 수 있는 바 수가 충분하지 않았습니다."
+        note = "현재 요청한 타임프레임에서 사용 가능한 분봉 바 수가 충분하지 않습니다."
+    elif fetch_status == "yahoo_symbol_missing":
+        quality -= 0.14
+        note = "해당 종목의 야후 심볼 매핑이 불안정해 분봉 공급이 끊겼습니다."
+    elif fetch_status == "kis_not_configured":
+        quality -= 0.06
+        note = "KIS가 설정되지 않아 공개 소스만으로 분봉을 계산하고 있습니다."
 
     if stored_source:
         note = f"{note} 저장 원본: {stored_source}."
@@ -247,6 +277,7 @@ def _data_profile(df: pd.DataFrame, timeframe: str) -> dict[str, Any]:
         "data_quality": round(quality, 3),
         "source_note": note,
         "fetch_status": fetch_status,
+        "fetch_status_label": _fetch_status_label(fetch_status),
         "fetch_message": fetch_message,
         "available_bars": available_bars,
     }
@@ -260,24 +291,20 @@ def _pattern_rank_score(pattern: PatternResult, completion_proximity: float, rec
         "played_out": -0.20,
         "invalidated": -0.35,
     }.get(pattern.state, 0.0)
-    return (
-        0.52 * pattern.textbook_similarity
-        + 0.18 * completion_proximity
-        + 0.18 * recency_score
-        + state_bonus
-    )
+    return 0.52 * pattern.textbook_similarity + 0.18 * completion_proximity + 0.18 * recency_score + state_bonus
 
 
-def _no_signal_text(timeframe: str, available_bars: int, source_note: str) -> tuple[str, str]:
+def _no_signal_text(timeframe: str, available_bars: int, source_note: str, fetch_message: str) -> tuple[str, str]:
     label = timeframe_label(timeframe)
+    suffix = f" {fetch_message}" if fetch_message else ""
     if is_intraday_timeframe(timeframe):
         return (
             "분봉 데이터를 충분히 확보하지 못했습니다.",
-            f"{label} 기준으로 확보된 바 수가 {available_bars}개뿐이거나 소스 품질이 낮아 패턴을 신뢰성 있게 계산하지 못했습니다. {source_note}",
+            f"{label} 기준으로 사용 가능한 바 수가 {available_bars}개라 패턴과 확률을 안정적으로 계산하기 어렵습니다. {source_note}{suffix}",
         )
     return (
-        "패턴이 뚜렷하지 않습니다.",
-        f"{label} 기준으로는 교과서형 패턴이 충분히 선명하지 않아 확률을 강하게 제시하지 않았습니다.",
+        "뚜렷한 패턴 신호가 약합니다.",
+        f"{label} 기준으로는 교과서형 패턴이 충분히 선명하지 않아 확률을 강하게 제시하지 않았습니다.{suffix}",
     )
 
 
@@ -287,7 +314,12 @@ def build_no_signal_snapshot(
     df: pd.DataFrame,
 ) -> AnalysisResult:
     profile = _data_profile(df, timeframe)
-    no_signal_reason, reason_summary = _no_signal_text(timeframe, profile["available_bars"], profile["source_note"])
+    no_signal_reason, reason_summary = _no_signal_text(
+        timeframe,
+        profile["available_bars"],
+        profile["source_note"],
+        profile["fetch_message"],
+    )
     return AnalysisResult(
         symbol=symbol,
         timeframe=timeframe,
@@ -304,6 +336,8 @@ def build_no_signal_snapshot(
         no_signal_reason=no_signal_reason,
         reason_summary=reason_summary,
         sample_size=0,
+        empirical_win_rate=0.5,
+        sample_reliability=0.0,
         patterns=[],
         is_provisional=True,
         updated_at=datetime.utcnow().isoformat(),
@@ -311,6 +345,7 @@ def build_no_signal_snapshot(
         data_quality=profile["data_quality"],
         source_note=profile["source_note"],
         fetch_status=profile["fetch_status"],
+        fetch_status_label=profile["fetch_status_label"],
         fetch_message=profile["fetch_message"],
         liquidity_score=0.0,
         avg_turnover_billion=0.0,
@@ -343,10 +378,7 @@ async def analyze_symbol_dataframe(
         completion = _completion_proximity(refreshed, current_close)
         patterns_with_meta.append((refreshed, completion, recency, bars_since_signal))
 
-    patterns_with_meta.sort(
-        key=lambda item: _pattern_rank_score(item[0], item[1], item[2]),
-        reverse=True,
-    )
+    patterns_with_meta.sort(key=lambda item: _pattern_rank_score(item[0], item[1], item[2]), reverse=True)
     best_pattern, best_completion, best_recency, bars_since_signal = patterns_with_meta[0]
 
     turnover_billion = _average_turnover_billion(df)
@@ -355,6 +387,8 @@ async def analyze_symbol_dataframe(
     stats = await get_pattern_stats(best_pattern.pattern_type, stats_timeframe)
     similar_win_rate = float(stats.get("win_rate", 0.55))
     sample_size = int(stats.get("sample_size", 0))
+    wins = int(stats.get("wins", 0))
+    total = int(stats.get("total", sample_size))
     regime_match = _regime_match(df, best_pattern.pattern_type)
 
     risk_penalty = 0.0
@@ -376,6 +410,8 @@ async def analyze_symbol_dataframe(
         risk_penalty=risk_penalty,
         completion_proximity=best_completion,
         recency_score=best_recency,
+        wins=wins,
+        total=total,
     )
 
     pattern_infos: list[PatternInfo] = []
@@ -398,7 +434,7 @@ async def analyze_symbol_dataframe(
         )
 
     if probability.no_signal_flag and not probability.no_signal_reason:
-        probability.no_signal_reason = "신호 최신성이나 데이터 품질이 기준에 미달했습니다."
+        probability.no_signal_reason = "표본 신뢰도, 신호 최신성, 데이터 품질이 기준치에 미달했습니다."
 
     return AnalysisResult(
         symbol=symbol,
@@ -416,6 +452,8 @@ async def analyze_symbol_dataframe(
         no_signal_reason=probability.no_signal_reason,
         reason_summary=probability.reason_summary,
         sample_size=probability.sample_size,
+        empirical_win_rate=probability.empirical_win_rate,
+        sample_reliability=probability.sample_reliability,
         patterns=pattern_infos,
         is_provisional=best_pattern.is_provisional,
         updated_at=datetime.utcnow().isoformat(),
@@ -423,6 +461,7 @@ async def analyze_symbol_dataframe(
         data_quality=profile["data_quality"],
         source_note=profile["source_note"],
         fetch_status=profile["fetch_status"],
+        fetch_status_label=profile["fetch_status_label"],
         fetch_message=profile["fetch_message"],
         liquidity_score=round(liquidity, 3),
         avg_turnover_billion=round(turnover_billion, 2),

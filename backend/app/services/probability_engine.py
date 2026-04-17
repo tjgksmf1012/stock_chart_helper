@@ -24,6 +24,8 @@ class ProbabilityOutput:
     no_signal_reason: str
     reason_summary: str
     sample_size: int
+    empirical_win_rate: float
+    sample_reliability: float
 
 
 _STATE_CONFIRMATION_SCORE = {
@@ -89,6 +91,32 @@ def _sample_size_score(sample_size: int) -> float:
     return min(1.0, math.log(sample_size + 1) / math.log(401))
 
 
+def _sample_reliability(sample_size: int, win_rate: float) -> float:
+    if sample_size <= 0:
+        return 0.0
+
+    coverage = min(1.0, math.log(sample_size + 1) / math.log(251))
+    variance = max(0.0001, win_rate * (1 - win_rate))
+    interval_width = 1.96 * math.sqrt(variance / max(sample_size, 1)) * 2
+    stability = max(0.0, min(1.0, 1 - interval_width / 0.55))
+    return max(0.0, min(1.0, 0.55 * coverage + 0.45 * stability))
+
+
+def _bayesian_success_rate(successes: int | None, total: int | None, prior_rate: float, prior_strength: float = 18.0) -> float:
+    if not total or total <= 0 or successes is None:
+        return prior_rate
+    return (successes + prior_rate * prior_strength) / (total + prior_strength)
+
+
+def _directional_empirical_prob(pattern: PatternResult, posterior_success_rate: float) -> tuple[float, float]:
+    if pattern.pattern_type in _BULLISH_PATTERNS:
+        return posterior_success_rate, 1 - posterior_success_rate
+    if pattern.pattern_type in _BEARISH_PATTERNS:
+        return 1 - posterior_success_rate, posterior_success_rate
+    neutral = 0.5 + (posterior_success_rate - 0.5) * 0.35
+    return neutral, 1 - neutral
+
+
 def compute_probability(
     pattern: PatternResult,
     similar_win_rate: float = 0.55,
@@ -100,6 +128,8 @@ def compute_probability(
     risk_penalty: float = 0.0,
     completion_proximity: float = 0.5,
     recency_score: float = 0.5,
+    wins: int | None = None,
+    total: int | None = None,
 ) -> ProbabilityOutput:
     if pattern.state in ("invalidated", "played_out"):
         return ProbabilityOutput(
@@ -112,12 +142,14 @@ def compute_probability(
             completion_proximity=0.0,
             recency_score=0.0,
             no_signal_flag=True,
-            no_signal_reason=f"패턴 상태가 {pattern.state}로 판정되었습니다.",
-            reason_summary=f"{pattern.pattern_type} 패턴은 이미 {pattern.state} 상태로 재평가되어 현재 유효 신호로 보기 어렵습니다.",
+            no_signal_reason=f"패턴 상태가 {pattern.state}로 재판정되었습니다.",
+            reason_summary=f"{pattern.pattern_type} 패턴은 이미 {pattern.state} 상태로 평가되어 현재 유효 신호로 보기 어렵습니다.",
             sample_size=sample_size,
+            empirical_win_rate=similar_win_rate,
+            sample_reliability=0.0,
         )
 
-    if sample_size < 10:
+    if sample_size < 6:
         return ProbabilityOutput(
             p_up=0.5,
             p_down=0.5,
@@ -128,77 +160,92 @@ def compute_probability(
             completion_proximity=completion_proximity,
             recency_score=recency_score,
             no_signal_flag=True,
-            no_signal_reason="유사 패턴 표본 수가 아직 부족합니다.",
-            reason_summary=f"현재 통계에 쌓인 유사 패턴 표본이 {sample_size}건이라 확률을 강하게 제시하기에는 부족합니다.",
+            no_signal_reason="유사 패턴 표본 수가 아직 너무 적습니다.",
+            reason_summary=f"현재 통계에 잡힌 유사 패턴 표본이 {sample_size}건이라 확률을 강하게 제시하기에는 근거가 부족합니다.",
             sample_size=sample_size,
+            empirical_win_rate=similar_win_rate,
+            sample_reliability=0.0,
         )
 
     rule_up, rule_down = _rule_engine_prob(pattern)
     pattern_confirmation = _STATE_CONFIRMATION_SCORE.get(pattern.state, 0.3)
-    ml_prob = 0.5
+    posterior_success_rate = _bayesian_success_rate(wins, total, similar_win_rate)
+    empirical_up, empirical_down = _directional_empirical_prob(pattern, posterior_success_rate)
+    sample_reliability = _sample_reliability(sample_size, posterior_success_rate)
+    size_score = _sample_size_score(sample_size)
 
     p_up_raw = (
         0.30 * rule_up
-        + 0.25 * similar_win_rate
-        + 0.20 * ml_prob
-        + 0.15 * pattern_confirmation
-        + 0.05 * regime_match
-        + 0.05 * completion_proximity
+        + 0.28 * empirical_up
+        + 0.14 * pattern_confirmation
+        + 0.08 * regime_match
+        + 0.07 * completion_proximity
+        + 0.07 * recency_score
+        + 0.06 * data_quality
     )
     p_down_raw = (
         0.30 * rule_down
-        + 0.25 * (1 - similar_win_rate)
-        + 0.20 * (1 - ml_prob)
-        + 0.15 * (1 - pattern_confirmation)
-        + 0.05 * (1 - regime_match)
-        + 0.05 * (1 - completion_proximity)
+        + 0.28 * empirical_down
+        + 0.14 * (1 - pattern_confirmation)
+        + 0.08 * (1 - regime_match)
+        + 0.07 * (1 - completion_proximity)
+        + 0.07 * (1 - recency_score)
+        + 0.06 * (1 - data_quality)
     )
 
     p_up = _logistic_calibrate(p_up_raw)
     p_down = _logistic_calibrate(p_down_raw)
-    total = p_up + p_down
-    p_up, p_down = p_up / total, p_down / total
+    total_prob = p_up + p_down
+    p_up, p_down = p_up / total_prob, p_down / total_prob
 
-    size_score = _sample_size_score(sample_size)
     confidence = (
-        0.22 * size_score
-        + 0.22 * pattern.textbook_similarity
-        + 0.16 * multi_tf_agreement
-        + 0.12 * regime_match
+        0.20 * sample_reliability
+        + 0.14 * size_score
+        + 0.18 * pattern.textbook_similarity
+        + 0.14 * multi_tf_agreement
+        + 0.10 * regime_match
         + 0.10 * data_quality
-        + 0.18 * recency_score
+        + 0.14 * recency_score
     )
     confidence = max(0.0, min(1.0, confidence))
 
     direction_prob = max(p_up, p_down)
     entry_score = (
-        0.24 * direction_prob
-        + 0.15 * pattern.textbook_similarity
-        + 0.15 * pattern_confirmation
-        + 0.10 * similar_win_rate
+        0.22 * direction_prob
+        + 0.14 * pattern.textbook_similarity
+        + 0.12 * pattern_confirmation
+        + 0.10 * posterior_success_rate
         + 0.10 * liquidity_score
         + 0.08 * multi_tf_agreement
-        + 0.06 * data_quality
-        + 0.12 * completion_proximity
-        + 0.12 * recency_score
-        - 0.15 * risk_penalty
+        + 0.07 * data_quality
+        + 0.07 * sample_reliability
+        + 0.10 * completion_proximity
+        + 0.10 * recency_score
+        - 0.16 * risk_penalty
     )
     entry_score = max(0.0, min(1.0, entry_score))
 
+    wins_text = f"{wins}/{total}" if wins is not None and total is not None and total > 0 else f"{sample_size}건"
     summary = (
         f"{pattern.pattern_type} 패턴 / 교과서 유사도 {pattern.textbook_similarity:.0%} / "
         f"상태 {pattern.state} / 완성 임박도 {completion_proximity:.0%} / "
-        f"신호 신선도 {recency_score:.0%} / 유사 패턴 {sample_size}건 중 승률 {similar_win_rate:.0%} / "
+        f"신호 신선도 {recency_score:.0%} / 표본 {wins_text} / "
+        f"보정 승률 {posterior_success_rate:.0%} / 표본 신뢰도 {sample_reliability:.0%} / "
         f"신뢰도 {confidence:.0%}"
     )
 
     no_signal = (
-        confidence < 0.30
+        confidence < 0.32
         or pattern.textbook_similarity < 0.40
         or recency_score < 0.15
-        or (data_quality < 0.60 and confidence < 0.72)
+        or sample_reliability < 0.16
+        or (data_quality < 0.60 and confidence < 0.74)
     )
-    no_signal_reason = "" if not no_signal else "신호 최신성이나 신뢰도가 기준치에 미달해 보수적으로 No Signal로 분류했습니다."
+    no_signal_reason = (
+        ""
+        if not no_signal
+        else "표본 신뢰도, 신호 최신성, 데이터 품질을 합산했을 때 기준치를 넘지 못해 보수적으로 No Signal로 분류했습니다."
+    )
 
     return ProbabilityOutput(
         p_up=round(p_up, 3),
@@ -213,4 +260,6 @@ def compute_probability(
         no_signal_reason=no_signal_reason,
         reason_summary=summary,
         sample_size=sample_size,
+        empirical_win_rate=round(posterior_success_rate, 3),
+        sample_reliability=round(sample_reliability, 3),
     )

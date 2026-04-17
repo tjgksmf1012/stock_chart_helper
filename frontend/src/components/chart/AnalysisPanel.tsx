@@ -37,6 +37,7 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
         <p className="text-xs text-muted-foreground">{analysis.reason_summary}</p>
         <div className="rounded-lg border border-border bg-background/60 p-3 text-xs text-muted-foreground">
           <div>데이터 품질 {fmtPct(analysis.data_quality, 0)}</div>
+          <div className="mt-1">데이터 상태 {analysis.fetch_status_label}</div>
           <div className="mt-1">{analysis.source_note}</div>
           {analysis.fetch_message && <div className="mt-1">{analysis.fetch_message}</div>}
         </div>
@@ -116,6 +117,8 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
           <StatRow label="완성 임박도" value={fmtPct(analysis.completion_proximity)} />
           <StatRow label="신호 신선도" value={fmtPct(analysis.recency_score)} />
           <StatRow label="유사 패턴 표본 수" value={`${analysis.sample_size}건`} />
+          <StatRow label="보정 승률" value={fmtPct(analysis.empirical_win_rate)} />
+          <StatRow label="표본 신뢰도" value={fmtPct(analysis.sample_reliability)} />
         </div>
       </Card>
 
@@ -129,6 +132,7 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
         <div className="space-y-2">
           <StatRow label="타임프레임" value={analysis.timeframe_label} />
           <StatRow label="데이터 출처" value={analysis.data_source} />
+          <StatRow label="데이터 상태" value={analysis.fetch_status_label} />
           <StatRow label="데이터 품질" value={fmtPct(analysis.data_quality, 0)} />
           <StatRow label="평균 거래대금" value={fmtTurnoverBillion(analysis.avg_turnover_billion)} />
           <StatRow label="유동성 점수" value={fmtPct(analysis.liquidity_score)} />

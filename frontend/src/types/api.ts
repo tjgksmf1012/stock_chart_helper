@@ -61,6 +61,8 @@ export interface AnalysisResult {
   no_signal_reason: string
   reason_summary: string
   sample_size: number
+  empirical_win_rate: number
+  sample_reliability: number
   patterns: PatternInfo[]
   is_provisional: boolean
   updated_at: string
@@ -68,6 +70,7 @@ export interface AnalysisResult {
   data_quality: number
   source_note: string
   fetch_status: string
+  fetch_status_label: string
   fetch_message: string
   liquidity_score: number
   avg_turnover_billion: number
@@ -96,10 +99,13 @@ export interface DashboardItem {
   data_quality: number
   source_note: string
   fetch_status: string
+  fetch_status_label: string
   fetch_message: string
   liquidity_score: number
   avg_turnover_billion: number
   sample_size: number
+  empirical_win_rate: number
+  sample_reliability: number
   stats_timeframe: string
   available_bars: number
   confluence_score: number

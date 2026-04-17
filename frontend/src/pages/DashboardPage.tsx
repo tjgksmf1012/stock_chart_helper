@@ -72,7 +72,7 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-xl font-bold">대시보드</h1>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            KRX 기준으로 타임프레임별 상승 확률, 패턴 완성 임박도, 신호 신선도와 상위 축 정렬까지 함께 봅니다.
+            KRX 기준으로 타임프레임별 상승 확률, 패턴 완성 임박도, 신호 신선도, 상위 타임프레임 정렬까지 함께 봅니다.
           </p>
         </div>
         <div className="flex flex-wrap gap-1">
@@ -97,8 +97,8 @@ export default function DashboardPage() {
         <div className="space-y-1">
           <div className="text-sm font-semibold">멀티 타임프레임 합산 점수 반영</div>
           <p className="text-xs leading-relaxed text-muted-foreground">
-            이제 카드 순서는 단순 확률만이 아니라 상위 타임프레임 정렬, 데이터 품질, 신호 신선도를 함께 반영합니다.
-            같은 일봉 상승 신호라도 주봉·월봉이 같이 받쳐주는 종목이 위로 올라오고, 분봉만 잠깐 예쁜 종목은 과하게 뜨지 않도록 눌렀습니다.
+            카드 순서는 단순 상승 확률만이 아니라 상위 축 정렬, 표본 신뢰도, 데이터 품질, 신호 신선도를 같이 반영합니다.
+            같은 일봉 신호라도 주봉과 월봉이 받쳐주는 종목이 더 위로 올라오고, 분봉만 잠깐 예쁜 종목은 아래로 밀리도록 조정했습니다.
           </p>
         </div>
       </Card>
@@ -107,10 +107,10 @@ export default function DashboardPage() {
         <Card className="flex items-start gap-3 border-yellow-500/30 bg-yellow-500/5 p-4">
           <AlertTriangle size={16} className="mt-0.5 text-yellow-400" />
           <div className="space-y-1">
-            <div className="text-sm font-semibold text-yellow-300">분봉은 여전히 보수적으로 해석합니다</div>
+            <div className="text-sm font-semibold text-yellow-300">분봉은 보수적으로 해석합니다.</div>
             <p className="text-xs leading-relaxed text-muted-foreground">
-              현재 {timeframeLabel(timeframe)} 스캔은 일봉 상위 후보를 먼저 고른 뒤 분봉으로 내려가는 방식입니다.
-              공개 소스와 저장 캐시에 의존하므로 일봉·주봉보다 No Signal 비율이 높고, 상위 축이 엇갈리면 합산 점수도 더 빠르게 깎입니다.
+              현재 {timeframeLabel(timeframe)} 스캔은 일봉 상위 후보를 먼저 추린 뒤 분봉으로 내려가는 방식입니다. 공개 소스와 저장 캐시에
+              의존하는 분봉은 일봉·주봉보다 No Signal 비율이 높고, 요청 제한이나 바 수 부족이 생기면 표본 신뢰도와 데이터 품질 점수가 더 빠르게 내려갑니다.
             </p>
           </div>
         </Card>
@@ -124,7 +124,7 @@ export default function DashboardPage() {
               {timeframeLabel(timeframe)} 스캔 상태
             </div>
             <p className="text-xs text-muted-foreground">
-              최근 스캔 상태와 후보 선정 방식을 확인하고, 필요하면 이 타임프레임 기준으로 다시 실행할 수 있습니다.
+              최근 스캔 상태와 후보 선정 방식을 확인하고, 필요하면 현재 타임프레임 기준으로 다시 스캔할 수 있습니다.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -157,10 +157,7 @@ export default function DashboardPage() {
           <StatusCell label="후보 선정" value={candidateSourceLabel(statusQ.data?.candidate_source)} />
           <StatusCell label="후보 개수" value={statusQ.data?.candidate_count ? `${statusQ.data.candidate_count}개` : '-'} />
           <StatusCell label="최근 실행 주체" value={sourceLabel(statusQ.data?.source)} />
-          <StatusCell
-            label="소요 시간"
-            value={statusQ.data?.duration_ms ? `${(statusQ.data.duration_ms / 1000).toFixed(1)}초` : '-'}
-          />
+          <StatusCell label="소요 시간" value={statusQ.data?.duration_ms ? `${(statusQ.data.duration_ms / 1000).toFixed(1)}초` : '-'} />
         </div>
 
         {statusQ.data?.last_error && (
@@ -172,35 +169,35 @@ export default function DashboardPage() {
 
       <DashboardSection
         title="상승 확률 상위"
-        subtitle="확률, 데이터 품질, 상위 타임프레임 정렬이 함께 받쳐주는 종목입니다."
+        subtitle="상승 확률, 표본 신뢰도, 상위 타임프레임 정렬을 함께 반영해 추세 후보를 고른 결과입니다."
         data={longQ.data}
         isLoading={longQ.isLoading}
       />
 
       <DashboardSection
         title="패턴 완성 임박"
-        subtitle="교과서 유사도와 완성 임박도가 높고, 상위 축과 덜 충돌하는 종목입니다."
+        subtitle="교과서 유사도와 완성 임박도가 높고, 상위 축과의 충돌이 비교적 적은 종목들입니다."
         data={armedQ.data}
         isLoading={armedQ.isLoading}
       />
 
       <DashboardSection
         title="교과서형 패턴"
-        subtitle="형태가 가장 깔끔하게 잡힌 패턴 위주로 보여줍니다."
+        subtitle="형태가 가장 깔끔한 패턴을 우선 보여줍니다. 단, 표본 신뢰도와 데이터 품질도 함께 보세요."
         data={simQ.data}
         isLoading={simQ.isLoading}
       />
 
       <DashboardSection
         title="하락 확률 상위"
-        subtitle="약세형 패턴과 하락 방향 정렬이 함께 나오는 종목입니다."
+        subtitle="약세 패턴과 하락 방향 정렬이 함께 나오는 종목들입니다."
         data={shortQ.data}
         isLoading={shortQ.isLoading}
       />
 
       <DashboardSection
         title="No Signal / 관망"
-        subtitle="패턴이 오래됐거나, 데이터 품질이 낮거나, 상위 축과 크게 엇갈리는 종목입니다."
+        subtitle="데이터 품질이 낮거나 표본 신뢰도가 약해 보수적으로 관망으로 분류한 종목들입니다."
         data={noSigQ.data}
         isLoading={noSigQ.isLoading}
       />

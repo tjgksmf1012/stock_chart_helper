@@ -23,10 +23,12 @@ export function DashboardSection({ title, subtitle, data, isLoading }: Dashboard
           <Loader2 size={18} className="animate-spin" />
         </div>
       ) : !data || data.items.length === 0 ? (
-        <p className="py-4 text-center text-xs text-muted-foreground">조건에 맞는 종목이 없습니다.</p>
+        <p className="py-4 text-center text-xs text-muted-foreground">조건에 맞는 종목이 아직 없습니다.</p>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {data.items.map(item => <DashboardCard key={`${item.timeframe}-${item.symbol.code}`} item={item} />)}
+          {data.items.map(item => (
+            <DashboardCard key={`${item.timeframe}-${item.symbol.code}`} item={item} />
+          ))}
         </div>
       )}
     </div>
