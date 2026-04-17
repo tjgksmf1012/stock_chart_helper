@@ -1,17 +1,27 @@
-import { AlertCircle, TrendingDown, TrendingUp } from 'lucide-react'
+import { AlertCircle, ShieldAlert, Target, TrendingDown, TrendingUp } from 'lucide-react'
 
-import type { AnalysisResult } from '@/types/api'
+import type { AnalysisResult, PatternInfo } from '@/types/api'
 import { Badge } from '@/components/ui/Badge'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { ProbBar } from '@/components/ui/ProbBar'
 import { StatRow } from '@/components/ui/StatRow'
-import { cn, fmtPct, fmtPrice, PATTERN_NAMES, STATE_COLORS, STATE_LABELS } from '@/lib/utils'
+import {
+  cn,
+  fmtPct,
+  fmtPrice,
+  getPatternBias,
+  PATTERN_NAMES,
+  STATE_COLORS,
+  STATE_LABELS,
+} from '@/lib/utils'
 
 interface AnalysisPanelProps {
   analysis: AnalysisResult
 }
 
 export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
+  const bestPattern = analysis.patterns[0]
+
   if (analysis.no_signal_flag) {
     return (
       <Card className="space-y-3">
@@ -45,6 +55,32 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
           <p className="text-xs leading-relaxed text-muted-foreground">{analysis.reason_summary}</p>
         </div>
       </Card>
+
+      {bestPattern && (
+        <Card className="space-y-3">
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <Target size={15} className="text-primary" />
+            전략 힌트
+          </div>
+          <div className="rounded-lg border border-border bg-background/60 p-3">
+            <div className="flex items-center gap-2">
+              <Badge variant={badgeVariant(bestPattern)}>{PATTERN_NAMES[bestPattern.pattern_type] ?? bestPattern.pattern_type}</Badge>
+              <span className={cn('rounded px-1.5 py-0.5 text-xs', STATE_COLORS[bestPattern.state])}>
+                {STATE_LABELS[bestPattern.state]}
+              </span>
+            </div>
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{patternActionText(bestPattern, analysis)}</p>
+          </div>
+          <div className="space-y-2">
+            {bestPattern.target_level && (
+              <StatRow label="우선 목표가" value={<span className="text-green-400">{fmtPrice(bestPattern.target_level)}</span>} />
+            )}
+            {bestPattern.invalidation_level && (
+              <StatRow label="리스크 기준" value={<span className="text-red-400">{fmtPrice(bestPattern.invalidation_level)}</span>} />
+            )}
+          </div>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
@@ -95,6 +131,43 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
           </div>
         </Card>
       )}
+
+      <Card className="space-y-3">
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          <ShieldAlert size={15} className="text-orange-400" />
+          해석 주의
+        </div>
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          이 화면은 패턴 기반 해석 도구입니다. 확률과 유사도가 높아도 추세 급변, 뉴스, 거래량 왜곡으로 결과가 달라질 수 있으니
+          목선과 무효화 기준을 함께 보면서 판단하는 편이 안전합니다.
+        </p>
+      </Card>
     </div>
   )
+}
+
+function badgeVariant(pattern: PatternInfo): 'bullish' | 'bearish' | 'neutral' {
+  return getPatternBias(pattern.pattern_type)
+}
+
+function patternActionText(pattern: PatternInfo, analysis: AnalysisResult): string {
+  const bias = getPatternBias(pattern.pattern_type)
+
+  if (pattern.state === 'forming') {
+    return bias === 'bullish'
+      ? '아직 패턴이 완성되기 전 단계입니다. 목선 돌파와 거래량 확대가 나오는지 관찰하는 편이 좋습니다.'
+      : '아직 패턴이 완성되기 전 단계입니다. 지지 이탈이나 추세 약화가 실제로 확인되는지 더 지켜보는 편이 좋습니다.'
+  }
+
+  if (pattern.state === 'armed') {
+    return bias === 'bullish'
+      ? '확인 직전 구간입니다. 돌파가 나오면 추격보다 눌림 재확인을 보는 접근이 더 안정적입니다.'
+      : '이탈 직전 구간입니다. 급한 진입보다 지지 붕괴와 반등 실패가 같이 나오는지 확인하는 편이 좋습니다.'
+  }
+
+  if (analysis.p_up >= 0.6) {
+    return '이미 확인된 패턴으로 해석되고 있습니다. 다만 목표가보다 먼저 무효화 기준을 지키는지가 더 중요합니다.'
+  }
+
+  return '패턴은 감지되었지만 확신 구간은 아닙니다. 확률, 유사도, 무효화 기준을 함께 보며 보수적으로 접근하는 편이 좋습니다.'
 }

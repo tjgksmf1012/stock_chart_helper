@@ -3,9 +3,11 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Loader2, Search } from 'lucide-react'
 
+import { Badge } from '@/components/ui/Badge'
 import { AnalysisPanel } from '@/components/chart/AnalysisPanel'
 import { CandleChart } from '@/components/chart/CandleChart'
 import { symbolsApi } from '@/lib/api'
+import { fmtDateTime, fmtNumber } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
 
 const TIMEFRAMES = [
@@ -100,13 +102,30 @@ export default function ChartPage() {
       </div>
 
       {analysisQ.data && (
-        <div className="flex items-center gap-3">
-          <h1 className="text-lg font-bold">{analysisQ.data.symbol.name}</h1>
-          <span className="font-mono text-sm text-muted-foreground">{symbol}</span>
-          <span className="text-xs text-muted-foreground">{analysisQ.data.symbol.market}</span>
-          {analysisQ.data.is_provisional && (
-            <span className="rounded bg-orange-400/15 px-1.5 py-0.5 text-xs text-orange-400">잠정</span>
-          )}
+        <div className="rounded-xl border border-border bg-card p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="space-y-1">
+              <div className="flex items-center gap-3">
+                <h1 className="text-lg font-bold">{analysisQ.data.symbol.name}</h1>
+                <span className="font-mono text-sm text-muted-foreground">{symbol}</span>
+                <span className="text-xs text-muted-foreground">{analysisQ.data.symbol.market}</span>
+                {analysisQ.data.is_provisional && <Badge variant="warning">잠정</Badge>}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                최근 업데이트 {fmtDateTime(analysisQ.data.updated_at)}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-right sm:grid-cols-4">
+              <MetricCell label="상승 확률" value={`${(analysisQ.data.p_up * 100).toFixed(0)}%`} tone="text-green-400" />
+              <MetricCell label="하락 확률" value={`${(analysisQ.data.p_down * 100).toFixed(0)}%`} tone="text-red-400" />
+              <MetricCell label="신뢰도" value={`${(analysisQ.data.confidence * 100).toFixed(0)}%`} />
+              <MetricCell
+                label="시총"
+                value={analysisQ.data.symbol.market_cap ? `${fmtNumber(analysisQ.data.symbol.market_cap)}억` : '-'}
+              />
+            </div>
+          </div>
         </div>
       )}
 
@@ -116,7 +135,7 @@ export default function ChartPage() {
           <p className="text-sm">검색창에서 종목을 선택해 차트 분석을 시작하세요.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_300px]">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_320px]">
           <div>
             {barsQ.isLoading ? (
               <div className="flex h-96 items-center justify-center rounded-lg bg-card">
@@ -146,6 +165,15 @@ export default function ChartPage() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function MetricCell({ label, value, tone }: { label: string; value: string; tone?: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-background/60 p-3">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className={`mt-1 text-sm font-semibold ${tone ?? 'text-foreground'}`}>{value}</div>
     </div>
   )
 }

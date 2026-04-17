@@ -62,3 +62,17 @@ export const DIRECTION_LABELS: Record<string, string> = {
   bearish: '하락형',
   neutral: '중립형',
 }
+
+export function getPatternBias(patternType: string | null | undefined): 'bullish' | 'bearish' | 'neutral' {
+  if (!patternType) return 'neutral'
+
+  if (['double_bottom', 'inverse_head_and_shoulders', 'ascending_triangle', 'cup_and_handle', 'rounding_bottom'].includes(patternType)) {
+    return 'bullish'
+  }
+
+  if (['double_top', 'head_and_shoulders', 'descending_triangle', 'falling_channel'].includes(patternType)) {
+    return 'bearish'
+  }
+
+  return 'neutral'
+}
