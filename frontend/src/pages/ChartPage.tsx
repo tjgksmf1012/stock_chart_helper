@@ -1,47 +1,37 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Loader2, Search, Star, TrendingUp, TrendingDown } from 'lucide-react'
+import { ArrowLeft, Database, Loader2, Search, Star, TrendingDown, TrendingUp } from 'lucide-react'
 
 import { Badge } from '@/components/ui/Badge'
 import { AnalysisPanel } from '@/components/chart/AnalysisPanel'
 import { CandleChart } from '@/components/chart/CandleChart'
 import { symbolsApi } from '@/lib/api'
-import { cn, fmtDateTime, fmtNumber, fmtPrice, fmtPct } from '@/lib/utils'
+import { DEFAULT_TIMEFRAME, getChartLookbackDays, TIMEFRAME_OPTIONS } from '@/lib/timeframes'
+import { cn, fmtDateTime, fmtNumber, fmtPct, fmtPrice } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
-
-const TIMEFRAMES = [
-  { value: '1d', label: '일봉' },
-  { value: '60m', label: '60분' },
-  { value: '15m', label: '15분' },
-]
-
-function getBarLookbackDays(timeframe: '1d' | '60m' | '15m') {
-  if (timeframe === '60m') return 120
-  if (timeframe === '15m') return 30
-  return 365
-}
 
 export default function ChartPage() {
   const { symbol } = useParams<{ symbol: string }>()
   const nav = useNavigate()
   const { selectedTimeframe, setTimeframe, addToWatchlist, removeFromWatchlist, isWatched } = useAppStore()
+  const timeframe = selectedTimeframe ?? DEFAULT_TIMEFRAME
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<Array<{ code: string; name: string; market: string }>>([])
   const watched = symbol ? isWatched(symbol) : false
 
   const barsQ = useQuery({
-    queryKey: ['bars', symbol, selectedTimeframe],
-    queryFn: () => symbolsApi.getBars(symbol!, selectedTimeframe, getBarLookbackDays(selectedTimeframe)),
+    queryKey: ['bars', symbol, timeframe],
+    queryFn: () => symbolsApi.getBars(symbol!, timeframe, getChartLookbackDays(timeframe)),
     enabled: !!symbol,
     staleTime: 60_000,
   })
 
   const analysisQ = useQuery({
-    queryKey: ['analysis', symbol, selectedTimeframe],
-    queryFn: () => symbolsApi.getAnalysis(symbol!, selectedTimeframe),
+    queryKey: ['analysis', symbol, timeframe],
+    queryFn: () => symbolsApi.getAnalysis(symbol!, timeframe),
     enabled: !!symbol,
-    staleTime: 300_000,
+    staleTime: 180_000,
   })
 
   const priceQ = useQuery({
@@ -62,6 +52,10 @@ export default function ChartPage() {
     const results = await symbolsApi.search(query)
     setSearchResults(results)
   }
+
+  const analysis = analysisQ.data
+  const qualityTone =
+    (analysis?.data_quality ?? 0) >= 0.8 ? 'bullish' : (analysis?.data_quality ?? 0) >= 0.6 ? 'muted' : 'warning'
 
   return (
     <div className="space-y-4">
@@ -99,13 +93,13 @@ export default function ChartPage() {
           )}
         </div>
 
-        <div className="flex gap-1">
-          {TIMEFRAMES.map(tf => (
+        <div className="flex flex-wrap gap-1">
+          {TIMEFRAME_OPTIONS.map(tf => (
             <button
               key={tf.value}
-              onClick={() => setTimeframe(tf.value as '1d' | '60m' | '15m')}
+              onClick={() => setTimeframe(tf.value)}
               className={`rounded-md px-2.5 py-1.5 text-xs transition-colors ${
-                selectedTimeframe === tf.value
+                timeframe === tf.value
                   ? 'bg-primary text-primary-foreground'
                   : 'border border-border bg-card text-muted-foreground hover:text-foreground'
               }`}
@@ -116,29 +110,32 @@ export default function ChartPage() {
         </div>
       </div>
 
-      {analysisQ.data && (
+      {analysis && (
         <div className="rounded-xl border border-border bg-card p-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="space-y-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-lg font-bold">{analysisQ.data.symbol.name}</h1>
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-lg font-bold">{analysis.symbol.name}</h1>
                 <span className="font-mono text-sm text-muted-foreground">{symbol}</span>
-                <span className="text-xs text-muted-foreground">{analysisQ.data.symbol.market}</span>
-                {analysisQ.data.is_provisional && <Badge variant="warning">잠정</Badge>}
-                {/* Watch button */}
+                <span className="text-xs text-muted-foreground">{analysis.symbol.market}</span>
+                <Badge variant={qualityTone}>{analysis.timeframe_label}</Badge>
+                <Badge variant={qualityTone}>품질 {Math.round(analysis.data_quality * 100)}%</Badge>
+                {analysis.is_provisional && <Badge variant="warning">잠정</Badge>}
                 <button
                   onClick={() => {
-                    if (!symbol || !analysisQ.data) return
+                    if (!symbol || !analysis) return
                     if (watched) removeFromWatchlist(symbol)
-                    else addToWatchlist({ code: symbol, name: analysisQ.data.symbol.name, market: analysisQ.data.symbol.market })
+                    else addToWatchlist({ code: symbol, name: analysis.symbol.name, market: analysis.symbol.market })
                   }}
-                  className={cn('flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors', watched ? 'bg-yellow-400/15 text-yellow-400 hover:bg-yellow-400/25' : 'text-muted-foreground hover:text-yellow-400 hover:bg-yellow-400/10')}
+                  className={cn(
+                    'flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors',
+                    watched ? 'bg-yellow-400/15 text-yellow-400 hover:bg-yellow-400/25' : 'text-muted-foreground hover:bg-yellow-400/10 hover:text-yellow-400',
+                  )}
                 >
                   <Star size={12} className={watched ? 'fill-yellow-400' : ''} />
                   {watched ? '관심 종목' : '추가'}
                 </button>
               </div>
-              {/* Current price */}
               {priceQ.data && priceQ.data.close > 0 && (
                 <div className="flex items-center gap-3">
                   <span className="font-mono text-xl font-bold">{fmtPrice(priceQ.data.close)}</span>
@@ -147,46 +144,51 @@ export default function ChartPage() {
                     {priceQ.data.change >= 0 ? '+' : ''}{fmtPrice(priceQ.data.change)}
                     <span className="text-xs">({priceQ.data.change >= 0 ? '+' : ''}{fmtPct(priceQ.data.change_pct)})</span>
                   </span>
-                  <span className="text-xs text-muted-foreground">{priceQ.data.source === 'kis' ? '실시간' : '전일 종가'}</span>
+                  <span className="text-xs text-muted-foreground">{priceQ.data.source === 'kis' ? '실시간' : '종가 기준'}</span>
                 </div>
               )}
-              <p className="text-xs text-muted-foreground">
-                분석 업데이트 {fmtDateTime(analysisQ.data.updated_at)}
-              </p>
+              <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                <span>분석 업데이트 {fmtDateTime(analysis.updated_at)}</span>
+                <span className="inline-flex items-center gap-1">
+                  <Database size={12} />
+                  {analysis.data_source}
+                </span>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3 text-right sm:grid-cols-4">
-              <MetricCell label="상승 확률" value={`${(analysisQ.data.p_up * 100).toFixed(0)}%`} tone="text-green-400" />
-              <MetricCell label="하락 확률" value={`${(analysisQ.data.p_down * 100).toFixed(0)}%`} tone="text-red-400" />
-              <MetricCell label="신뢰도" value={`${(analysisQ.data.confidence * 100).toFixed(0)}%`} />
-              <MetricCell
-                label="시총"
-                value={analysisQ.data.symbol.market_cap ? `${fmtNumber(analysisQ.data.symbol.market_cap)}억` : '-'}
-              />
+              <MetricCell label="상승 확률" value={`${(analysis.p_up * 100).toFixed(0)}%`} tone="text-green-400" />
+              <MetricCell label="하락 확률" value={`${(analysis.p_down * 100).toFixed(0)}%`} tone="text-red-400" />
+              <MetricCell label="신뢰도" value={`${(analysis.confidence * 100).toFixed(0)}%`} />
+              <MetricCell label="시총" value={analysis.symbol.market_cap ? `${fmtNumber(analysis.symbol.market_cap)}억` : '-'} />
             </div>
           </div>
+
+          {analysis.fetch_message && (
+            <div className="mt-3 rounded-lg border border-border bg-background/60 px-3 py-2 text-xs text-muted-foreground">
+              {analysis.fetch_message}
+            </div>
+          )}
         </div>
       )}
 
       {!symbol ? (
         <div className="flex h-80 flex-col items-center justify-center gap-3 text-muted-foreground">
           <Search size={40} className="opacity-20" />
-          <p className="text-sm">검색창에서 종목을 선택해 차트 분석을 시작하세요.</p>
+          <p className="text-sm">검색창에서 종목을 선택하면 차트 분석을 시작합니다.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_320px]">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_340px]">
           <div>
             {barsQ.isLoading ? (
               <div className="flex h-96 items-center justify-center rounded-lg bg-card">
                 <Loader2 size={24} className="animate-spin text-muted-foreground" />
               </div>
             ) : barsQ.data && barsQ.data.length > 0 ? (
-              <CandleChart bars={barsQ.data} analysis={analysisQ.data ?? null} height={480} />
+              <CandleChart bars={barsQ.data} analysis={analysis ?? null} height={480} />
             ) : (
-              <div className="flex h-96 items-center justify-center rounded-lg bg-card text-sm text-muted-foreground">
-                {selectedTimeframe === '1d'
-                  ? '차트 데이터를 불러오지 못했습니다.'
-                  : '분봉 소스를 불러오지 못했습니다. 잠시 후 다시 시도하거나 일봉으로 확인해 주세요.'}
+              <div className="flex h-96 items-center justify-center rounded-lg bg-card px-6 text-center text-sm text-muted-foreground">
+                {analysis?.fetch_message || '차트 데이터를 불러오지 못했습니다. 잠시 후 다시 시도하거나 다른 타임프레임을 확인해 주세요.'}
               </div>
             )}
           </div>
@@ -196,8 +198,8 @@ export default function ChartPage() {
               <div className="flex h-40 items-center justify-center">
                 <Loader2 size={20} className="animate-spin text-muted-foreground" />
               </div>
-            ) : analysisQ.data ? (
-              <AnalysisPanel analysis={analysisQ.data} />
+            ) : analysis ? (
+              <AnalysisPanel analysis={analysis} />
             ) : (
               <div className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
                 분석 결과를 불러오지 못했습니다.

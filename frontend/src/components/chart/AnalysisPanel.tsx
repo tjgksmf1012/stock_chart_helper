@@ -1,4 +1,4 @@
-import { AlertCircle, ShieldAlert, Target, TrendingDown, TrendingUp } from 'lucide-react'
+import { AlertCircle, Database, ShieldAlert, Target, TrendingDown, TrendingUp } from 'lucide-react'
 
 import type { AnalysisResult, PatternInfo } from '@/types/api'
 import { Badge } from '@/components/ui/Badge'
@@ -9,6 +9,7 @@ import {
   cn,
   fmtPct,
   fmtPrice,
+  fmtTurnoverBillion,
   getPatternBias,
   PATTERN_NAMES,
   STATE_COLORS,
@@ -28,10 +29,15 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
         <div className="flex items-center gap-2 text-yellow-400">
           <AlertCircle size={16} />
           <span className="text-sm font-semibold">No Signal</span>
-          {analysis.is_provisional && <Badge variant="warning" className="ml-auto">잠정</Badge>}
+          <Badge variant="muted" className="ml-auto">{analysis.timeframe_label}</Badge>
         </div>
         <p className="text-xs text-muted-foreground">{analysis.no_signal_reason}</p>
         <p className="text-xs text-muted-foreground">{analysis.reason_summary}</p>
+        <div className="rounded-lg border border-border bg-background/60 p-3 text-xs text-muted-foreground">
+          <div>데이터 품질 {fmtPct(analysis.data_quality, 0)}</div>
+          <div className="mt-1">{analysis.source_note}</div>
+          {analysis.fetch_message && <div className="mt-1">{analysis.fetch_message}</div>}
+        </div>
       </Card>
     )
   }
@@ -63,7 +69,7 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
             전략 힌트
           </div>
           <div className="rounded-lg border border-border bg-background/60 p-3">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Badge variant={badgeVariant(bestPattern)}>{PATTERN_NAMES[bestPattern.pattern_type] ?? bestPattern.pattern_type}</Badge>
               <span className={cn('rounded px-1.5 py-0.5 text-xs', STATE_COLORS[bestPattern.state])}>
                 {STATE_LABELS[bestPattern.state]}
@@ -91,7 +97,32 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
           <StatRow label="패턴 확인 점수" value={fmtPct(analysis.pattern_confirmation_score)} />
           <StatRow label="신뢰도" value={fmtPct(analysis.confidence)} />
           <StatRow label="진입 적합도" value={fmtPct(analysis.entry_score)} />
+          <StatRow label="완성 임박도" value={fmtPct(analysis.completion_proximity)} />
+          <StatRow label="신호 신선도" value={fmtPct(analysis.recency_score)} />
           <StatRow label="유사 패턴 표본 수" value={`${analysis.sample_size}건`} />
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Database size={14} className="text-primary" />
+            데이터 메모
+          </CardTitle>
+        </CardHeader>
+        <div className="space-y-2">
+          <StatRow label="타임프레임" value={analysis.timeframe_label} />
+          <StatRow label="데이터 출처" value={analysis.data_source} />
+          <StatRow label="데이터 품질" value={fmtPct(analysis.data_quality, 0)} />
+          <StatRow label="평균 거래대금" value={fmtTurnoverBillion(analysis.avg_turnover_billion)} />
+          <StatRow label="유동성 점수" value={fmtPct(analysis.liquidity_score)} />
+          <StatRow label="통계 기준" value={analysis.stats_timeframe} />
+          <StatRow label="사용 가능 바 수" value={`${analysis.available_bars}개`} />
+          {analysis.bars_since_signal !== null && (
+            <StatRow label="신호 발생 후 경과 바" value={`${analysis.bars_since_signal}개`} />
+          )}
+          <p className="pt-1 text-xs leading-relaxed text-muted-foreground">{analysis.source_note}</p>
+          {analysis.fetch_message && <p className="text-xs text-muted-foreground">{analysis.fetch_message}</p>}
         </div>
       </Card>
 
@@ -115,16 +146,10 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
                 </div>
                 {pattern.neckline && <StatRow label="목선" value={fmtPrice(pattern.neckline)} />}
                 {pattern.invalidation_level && (
-                  <StatRow
-                    label="무효화 기준"
-                    value={<span className="text-red-400">{fmtPrice(pattern.invalidation_level)}</span>}
-                  />
+                  <StatRow label="무효화 기준" value={<span className="text-red-400">{fmtPrice(pattern.invalidation_level)}</span>} />
                 )}
                 {pattern.target_level && (
-                  <StatRow
-                    label="목표가"
-                    value={<span className="text-green-400">{fmtPrice(pattern.target_level)}</span>}
-                  />
+                  <StatRow label="목표가" value={<span className="text-green-400">{fmtPrice(pattern.target_level)}</span>} />
                 )}
               </div>
             ))}
@@ -138,8 +163,8 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
           해석 주의
         </div>
         <p className="text-xs leading-relaxed text-muted-foreground">
-          이 화면은 패턴 기반 해석 보조 도구입니다. 확률과 유사도가 높아도 추세 강도, 뉴스, 거래량의 질에 따라
-          결과가 달라질 수 있으므로, 목선과 무효화 기준을 함께 보면서 보수적으로 해석하는 편이 안전합니다.
+          이 화면은 패턴 기반 해석 보조 도구입니다. 확률과 유사도가 높아도 추세, 거래대금, 뉴스, 무효화 기준에 따라 결과가 달라질 수 있으므로
+          특히 분봉은 보수적으로 해석하는 편이 좋습니다.
         </p>
       </Card>
     </div>
@@ -155,14 +180,14 @@ function patternActionText(pattern: PatternInfo, analysis: AnalysisResult): stri
 
   if (pattern.state === 'forming') {
     return bias === 'bullish'
-      ? '아직 패턴이 완성되기 전 단계입니다. 목선 돌파와 거래량 반응이 실제로 나오는지 관찰하는 편이 좋습니다.'
-      : '아직 패턴이 완성되기 전 단계입니다. 지지 이탈이나 추세 약화가 실제로 확인되는지 더 지켜보는 편이 좋습니다.'
+      ? '아직 패턴이 완성되기 전 단계입니다. 목선 돌파와 거래대금 반응이 실제로 붙는지 먼저 확인하는 편이 좋습니다.'
+      : '아직 패턴이 완성되기 전 단계입니다. 지지 이탈이나 반등 실패가 실제로 나타나는지 조금 더 지켜보는 편이 좋습니다.'
   }
 
   if (pattern.state === 'armed') {
     return bias === 'bullish'
-      ? '확인 직전 구간입니다. 성급한 추격보다 돌파가 유지되는지, 눌림이 얕은지 확인하는 접근이 더 안정적입니다.'
-      : '이탈 직전 구간입니다. 급한 진입보다 지지 붕괴와 반등 실패가 함께 나오는지 확인하는 편이 좋습니다.'
+      ? '완성 직전 구간입니다. 성급한 추격보다 돌파가 유지되는지, 눌림이 버티는지 확인한 뒤 대응하는 편이 안정적입니다.'
+      : '이탈 직전 구간입니다. 급한 진입보다 지지 붕괴와 반등 실패가 같이 나오는지 확인하는 편이 좋습니다.'
   }
 
   if (analysis.p_up >= 0.6) {

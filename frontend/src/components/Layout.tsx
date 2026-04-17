@@ -39,7 +39,7 @@ export function Layout() {
                 <item.icon size={13} />
                 {item.label}
                 {item.to === '/watchlist' && watchlist.length > 0 && (
-                  <span className="ml-0.5 rounded-full bg-yellow-400/20 px-1 py-0.5 text-[10px] font-medium text-yellow-400 leading-none">
+                  <span className="ml-0.5 rounded-full bg-yellow-400/20 px-1 py-0.5 text-[10px] font-medium leading-none text-yellow-400">
                     {watchlist.length}
                   </span>
                 )}

@@ -1,7 +1,11 @@
+from __future__ import annotations
+
 from fastapi import APIRouter
-from ..schemas import ScreenerRequest, DashboardItem
+
+from ..schemas import DashboardItem, ScreenerRequest
 from .dashboard import _make_item
 from ...services.scanner import get_scan_results
+from ...services.timeframe_service import DEFAULT_TIMEFRAME
 
 router = APIRouter(prefix="/screeners", tags=["screener"])
 
@@ -16,9 +20,12 @@ SORT_KEYS = {
 
 @router.post("/run")
 async def run_screener(req: ScreenerRequest) -> list[DashboardItem]:
-    data = await get_scan_results()
+    timeframes = req.timeframes or [DEFAULT_TIMEFRAME]
+    merged: list[dict] = []
+    for timeframe in timeframes:
+        merged.extend(await get_scan_results(timeframe))
 
-    filtered = data
+    filtered = merged
     if req.exclude_no_signal:
         filtered = [r for r in filtered if not r["no_signal_flag"]]
     if req.pattern_types:
@@ -27,6 +34,8 @@ async def run_screener(req: ScreenerRequest) -> list[DashboardItem]:
         filtered = [r for r in filtered if r.get("state") in req.states]
     if req.markets:
         filtered = [r for r in filtered if r.get("market") in req.markets]
+    if req.min_market_cap is not None:
+        filtered = [r for r in filtered if (r.get("market_cap") or 0) >= req.min_market_cap]
 
     filtered = [r for r in filtered if r["textbook_similarity"] >= req.min_textbook_similarity]
     filtered = [r for r in filtered if r["p_up"] >= req.min_p_up]

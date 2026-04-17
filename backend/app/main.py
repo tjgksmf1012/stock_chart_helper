@@ -12,8 +12,8 @@ settings = get_settings()
 
 app = FastAPI(
     title="Stock Chart Helper API",
-    description="국내 주식 차트 패턴 분석과 확률 대시보드를 제공하는 API",
-    version="0.2.0",
+    description="국내 주식 차트 패턴 분석과 확률형 대시보드를 제공하는 API",
+    version="0.3.0",
     docs_url="/docs",
 )
 
@@ -33,7 +33,7 @@ app.include_router(screener.router, prefix="/api/v1")
 
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok", "version": "0.2.0"}
+    return {"status": "ok", "version": "0.3.0"}
 
 
 def _start_scheduler() -> None:
@@ -41,31 +41,32 @@ def _start_scheduler() -> None:
         from apscheduler.schedulers.asyncio import AsyncIOScheduler
         from apscheduler.triggers.cron import CronTrigger
 
-        from .services.scanner import run_scan
         from .services.backtest_engine import run_backtest
+        from .services.scanner import run_scan
 
         scheduler = AsyncIOScheduler(timezone="Asia/Seoul")
 
         scheduler.add_job(
             run_scan,
             CronTrigger(day_of_week="mon-fri", hour=9, minute=10, timezone="Asia/Seoul"),
+            kwargs={"timeframe": "1d"},
             id="morning_scan",
             replace_existing=True,
         )
         scheduler.add_job(
             run_scan,
             CronTrigger(day_of_week="mon-fri", hour=13, minute=30, timezone="Asia/Seoul"),
+            kwargs={"timeframe": "1d"},
             id="midday_scan",
             replace_existing=True,
         )
         scheduler.add_job(
             run_scan,
             CronTrigger(day_of_week="mon-fri", hour=16, minute=0, timezone="Asia/Seoul"),
+            kwargs={"timeframe": "1d"},
             id="close_scan",
             replace_existing=True,
         )
-
-        # Weekly backtest: Sunday 02:00 KST
         scheduler.add_job(
             run_backtest,
             CronTrigger(day_of_week="sun", hour=2, minute=0, timezone="Asia/Seoul"),
@@ -95,9 +96,9 @@ async def on_startup():
 
     _start_scheduler()
 
+    from .services.backtest_engine import get_pattern_stats_map
     from .services.scanner import get_scan_results
-    from .services.backtest_engine import get_win_rates
 
-    asyncio.create_task(get_scan_results())
-    asyncio.create_task(get_win_rates())   # warm backtest cache
-    logger.info("Background scan + backtest tasks queued")
+    asyncio.create_task(get_scan_results("1d"))
+    asyncio.create_task(get_pattern_stats_map())
+    logger.info("Background scan and backtest warmup queued")
