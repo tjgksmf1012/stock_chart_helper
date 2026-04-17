@@ -107,6 +107,9 @@ class DashboardItem(BaseModel):
     sample_size: int = 0
     stats_timeframe: str = "1d"
     available_bars: int = 0
+    confluence_score: float = 0.0
+    confluence_summary: str = ""
+    scenario_text: str = ""
 
 
 class DashboardResponse(BaseModel):

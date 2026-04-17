@@ -102,6 +102,9 @@ export interface DashboardItem {
   sample_size: number
   stats_timeframe: string
   available_bars: number
+  confluence_score: number
+  confluence_summary: string
+  scenario_text: string
 }
 
 export interface DashboardResponse {

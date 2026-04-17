@@ -37,13 +37,27 @@ FALLBACK_CODES: list[tuple[str, str, str]] = [
     ("263750", "펄어비스", "KOSDAQ"),
 ]
 
+ANCHOR_TIMEFRAMES: dict[str, list[str]] = {
+    "1mo": ["1wk"],
+    "1wk": ["1mo", "1d"],
+    "1d": ["1wk", "1mo"],
+    "60m": ["1d", "1wk"],
+    "30m": ["60m", "1d"],
+    "15m": ["60m", "1d"],
+    "1m": ["15m", "60m"],
+}
+
 _scan_lock = asyncio.Lock()
 _scan_tasks: dict[str, asyncio.Task] = {}
 _scan_status: dict[str, dict[str, Any]] = {}
 
 
 def _full_scan_cache_key(timeframe: str) -> str:
-    return f"scanner:v2:full_results:{timeframe}"
+    return f"scanner:v3:full_results:{timeframe}"
+
+
+def _single_scan_cache_key(timeframe: str, code: str) -> str:
+    return f"scan:v3:result:{timeframe}:{code}"
 
 
 def _utc_now_iso() -> str:
@@ -71,6 +85,27 @@ def _status_template(timeframe: str) -> dict[str, Any]:
 def _update_scan_status(timeframe: str, **kwargs: Any) -> None:
     status = _scan_status.setdefault(timeframe, _status_template(timeframe))
     status.update(kwargs)
+
+
+def _direction_score(row: dict[str, Any]) -> float:
+    return float(row.get("p_up", 0.5)) - float(row.get("p_down", 0.5))
+
+
+def _direction_label(score: float) -> str:
+    if score >= 0.08:
+        return "상승"
+    if score <= -0.08:
+        return "하락"
+    return "중립"
+
+
+def _confluence_anchor_weights(timeframe: str) -> list[tuple[str, float]]:
+    anchors = ANCHOR_TIMEFRAMES.get(timeframe, [])
+    if len(anchors) == 2:
+        return [(anchors[0], 0.6), (anchors[1], 0.4)]
+    if len(anchors) == 1:
+        return [(anchors[0], 1.0)]
+    return []
 
 
 async def _get_cached_count(timeframe: str) -> int:
@@ -119,9 +154,98 @@ async def _fetch_universe_codes(limit: int = 100) -> list[tuple[str, str, str]]:
     return FALLBACK_CODES[:limit]
 
 
-async def _analyze_one(code: str, name: str, market: str, timeframe: str, force_refresh: bool = False) -> dict[str, Any] | None:
+async def _build_confluence(
+    code: str,
+    name: str,
+    market: str,
+    timeframe: str,
+    primary_row: dict[str, Any],
+    force_refresh: bool,
+) -> dict[str, Any]:
+    weights = _confluence_anchor_weights(timeframe)
+    if not weights:
+        own_direction = _direction_label(_direction_score(primary_row))
+        return {
+            "confluence_score": 0.5,
+            "confluence_summary": f"{timeframe_label(timeframe)} 단일 신호 기준입니다.",
+            "scenario_text": f"{timeframe_label(timeframe)} 기준 {own_direction} 시나리오를 단독으로 해석한 결과입니다.",
+            "composite_score": round(
+                0.70 * float(primary_row.get("entry_score", 0.0))
+                + 0.20 * float(primary_row.get("data_quality", 0.0))
+                + 0.10 * float(primary_row.get("recency_score", 0.0)),
+                3,
+            ),
+        }
+
+    primary_direction = _direction_score(primary_row)
+    agreement_parts: list[str] = []
+    weighted_score = 0.0
+    weighted_total = 0.0
+
+    for anchor_timeframe, weight in weights:
+        anchor_row = await _analyze_one(
+            code,
+            name,
+            market,
+            anchor_timeframe,
+            force_refresh=force_refresh,
+            include_confluence=False,
+        )
+        weighted_total += weight
+        if not anchor_row:
+            weighted_score += 0.45 * weight
+            agreement_parts.append(f"{timeframe_label(anchor_timeframe)} 데이터 없음")
+            continue
+
+        anchor_direction = _direction_score(anchor_row)
+        if anchor_row.get("no_signal_flag"):
+            anchor_score = 0.50
+        elif primary_direction * anchor_direction > 0.02:
+            anchor_score = 0.92 if abs(anchor_direction) >= 0.15 else 0.78
+        elif primary_direction * anchor_direction < -0.02:
+            anchor_score = 0.10 if abs(anchor_direction) >= 0.15 else 0.24
+        else:
+            anchor_score = 0.56
+
+        weighted_score += anchor_score * weight
+        agreement_parts.append(f"{timeframe_label(anchor_timeframe)} {_direction_label(anchor_direction)}")
+
+    confluence_score = weighted_score / weighted_total if weighted_total else 0.5
+    own_direction = _direction_label(primary_direction)
+
+    if confluence_score >= 0.74:
+        scenario_text = f"{timeframe_label(timeframe)} 신호와 상위 축이 같은 방향이라 {own_direction} 추세 추종형으로 보기 좋습니다."
+    elif confluence_score >= 0.56:
+        scenario_text = f"{timeframe_label(timeframe)} 신호는 유지되지만 상위 축 정렬은 절반 정도라 보수적으로 확인하는 편이 좋습니다."
+    else:
+        scenario_text = f"{timeframe_label(timeframe)} 신호와 상위 축이 엇갈려 단기 반등·단기 트리거 정도로 보는 편이 낫습니다."
+
+    composite_score = (
+        0.52 * float(primary_row.get("entry_score", 0.0))
+        + 0.20 * confluence_score
+        + 0.14 * float(primary_row.get("data_quality", 0.0))
+        + 0.08 * float(primary_row.get("recency_score", 0.0))
+        + 0.06 * float(primary_row.get("completion_proximity", 0.0))
+    )
+
+    return {
+        "confluence_score": round(confluence_score, 3),
+        "confluence_summary": " / ".join(agreement_parts),
+        "scenario_text": scenario_text,
+        "composite_score": round(composite_score, 3),
+    }
+
+
+async def _analyze_one(
+    code: str,
+    name: str,
+    market: str,
+    timeframe: str,
+    force_refresh: bool = False,
+    include_confluence: bool = True,
+) -> dict[str, Any] | None:
     fetcher = get_data_fetcher()
-    cache_key = f"scan:v2:result:{timeframe}:{code}"
+    cache_key = _single_scan_cache_key(timeframe, code)
     if not force_refresh:
         cached = await cache_get(cache_key)
         if cached:
@@ -141,7 +265,7 @@ async def _analyze_one(code: str, name: str, market: str, timeframe: str, force_
             is_in_universe=True,
         )
         analysis = await analyze_symbol_dataframe(symbol, timeframe, df)
-        result = {
+        result: dict[str, Any] = {
             "code": code,
             "name": name,
             "market": market,
@@ -169,6 +293,19 @@ async def _analyze_one(code: str, name: str, market: str, timeframe: str, force_
             "stats_timeframe": analysis.stats_timeframe,
             "available_bars": analysis.available_bars,
         }
+
+        if include_confluence:
+            result.update(await _build_confluence(code, name, market, timeframe, result, force_refresh))
+        else:
+            result.update(
+                {
+                    "confluence_score": 0.5,
+                    "confluence_summary": f"{timeframe_label(timeframe)} 단독 분석",
+                    "scenario_text": f"{timeframe_label(timeframe)} 신호만 기준으로 계산한 보조 결과입니다.",
+                    "composite_score": round(float(result["entry_score"]), 3),
+                }
+            )
+
         await cache_set(cache_key, result, ttl=1800)
         return result
     except Exception as exc:
@@ -188,6 +325,7 @@ async def _select_candidates(limit: int, timeframe: str) -> tuple[list[tuple[str
     ]
     daily_candidates.sort(
         key=lambda row: (
+            row.get("composite_score", 0),
             row.get("entry_score", 0),
             row.get("data_quality", 0),
             row.get("liquidity_score", 0),
@@ -266,6 +404,7 @@ async def run_scan(
             results.sort(
                 key=lambda row: (
                     0 if row["no_signal_flag"] else 1,
+                    row.get("composite_score", 0),
                     row.get("entry_score", 0),
                     row.get("data_quality", 0),
                     row.get("liquidity_score", 0),
@@ -341,7 +480,7 @@ async def get_scan_results(timeframe: str = DEFAULT_TIMEFRAME) -> list[dict[str,
         return_exceptions=True,
     )
     results = [item for item in quick if isinstance(item, dict)]
-    results.sort(key=lambda row: row.get("entry_score", 0), reverse=True)
+    results.sort(key=lambda row: row.get("composite_score", row.get("entry_score", 0)), reverse=True)
     await cache_set(cache_key, results, ttl=300)
     _update_scan_status(
         timeframe,

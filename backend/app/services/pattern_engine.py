@@ -97,6 +97,12 @@ def _symmetry_score(v1: float, v2: float) -> float:
     return float(max(0.0, 1.0 - diff_ratio * 5))
 
 
+def _safe_ratio(numerator: float, denominator: float, default: float = 0.0) -> float:
+    if denominator == 0:
+        return default
+    return numerator / denominator
+
+
 class PatternEngine:
     """
     Detects structural chart patterns from a price DataFrame.
@@ -148,7 +154,7 @@ class PatternEngine:
                 continue
 
             # Second low must not be significantly lower than first
-            low_diff = (L2.price - L1.price) / L1.price
+            low_diff = _safe_ratio(L2.price - L1.price, L1.price)
             if low_diff < -0.05:  # more than 5% lower = not W, possible downtrend
                 continue
 
@@ -216,7 +222,7 @@ class PatternEngine:
             if price_sym < 0.6:
                 continue
 
-            high_diff = (H2.price - H1.price) / H1.price
+            high_diff = _safe_ratio(H2.price - H1.price, H1.price)
             if high_diff > 0.05:
                 continue
 
@@ -299,7 +305,10 @@ class PatternEngine:
             target = neckline - (H.price - neckline)
 
             vol_score = _volume_context_score(df, LS.index, RS.index)
-            geom_fit = shoulder_sym * 0.5 + min(1.0, (H.price - max(LS.price, RS.price)) / H.price * 10) * 0.5
+            geom_fit = shoulder_sym * 0.5 + min(
+                1.0,
+                _safe_ratio(H.price - max(LS.price, RS.price), H.price) * 10,
+            ) * 0.5
 
             r = PatternResult(
                 pattern_type="head_and_shoulders",
@@ -364,7 +373,10 @@ class PatternEngine:
             invalidation = H.price * 0.99
             target = neckline + (neckline - H.price)
             vol_score = _volume_context_score(df, LS.index, RS.index)
-            geom_fit = shoulder_sym * 0.5 + min(1.0, (min(LS.price, RS.price) - H.price) / H.price * 10) * 0.5
+            geom_fit = shoulder_sym * 0.5 + min(
+                1.0,
+                _safe_ratio(min(LS.price, RS.price) - H.price, H.price) * 10,
+            ) * 0.5
 
             r = PatternResult(
                 pattern_type="inverse_head_and_shoulders",

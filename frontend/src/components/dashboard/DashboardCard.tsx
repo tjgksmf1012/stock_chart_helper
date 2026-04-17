@@ -1,6 +1,6 @@
 import type { MouseEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Star } from 'lucide-react'
+import { Layers3, Star } from 'lucide-react'
 
 import type { DashboardItem } from '@/types/api'
 import { Badge } from '@/components/ui/Badge'
@@ -49,6 +49,9 @@ export function DashboardCard({ item }: DashboardCardProps) {
             <Badge variant={item.data_quality >= 0.8 ? 'bullish' : item.data_quality >= 0.6 ? 'muted' : 'warning'}>
               품질 {fmtPct(item.data_quality, 0)}
             </Badge>
+            <Badge variant={item.confluence_score >= 0.7 ? 'bullish' : item.confluence_score >= 0.5 ? 'muted' : 'warning'}>
+              합산 {fmtPct(item.confluence_score, 0)}
+            </Badge>
           </div>
           {item.pattern_type ? (
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -91,6 +94,15 @@ export function DashboardCard({ item }: DashboardCardProps) {
         <span className="text-right">신선도 {fmtPct(item.recency_score)}</span>
         <span>거래대금 {fmtTurnoverBillion(item.avg_turnover_billion)}</span>
         <span className="text-right">표본 {item.sample_size}건</span>
+      </div>
+
+      <div className="rounded-lg border border-border bg-background/60 p-2.5">
+        <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+          <Layers3 size={12} />
+          멀티 타임프레임 정렬
+        </div>
+        <p className="mt-1 text-xs text-muted-foreground">{item.confluence_summary}</p>
+        <p className="mt-1 text-xs leading-relaxed text-foreground/90">{item.scenario_text}</p>
       </div>
 
       <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">{item.reason_summary}</p>

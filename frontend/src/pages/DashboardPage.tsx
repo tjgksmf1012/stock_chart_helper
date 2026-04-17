@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Activity, AlertTriangle, Loader2, RefreshCw } from 'lucide-react'
+import { Activity, AlertTriangle, Layers3, Loader2, RefreshCw } from 'lucide-react'
 
 import { DashboardSection } from '@/components/dashboard/DashboardSection'
 import { Card } from '@/components/ui/Card'
@@ -72,7 +72,7 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-xl font-bold">대시보드</h1>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            KRX 기준으로 타임프레임별 상승 확률, 패턴 완성 임박도, 신호 최신성을 빠르게 확인합니다.
+            KRX 기준으로 타임프레임별 상승 확률, 패턴 완성 임박도, 신호 신선도와 상위 축 정렬까지 함께 봅니다.
           </p>
         </div>
         <div className="flex flex-wrap gap-1">
@@ -92,14 +92,25 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      <Card className="flex items-start gap-3 border-primary/20 bg-primary/5 p-4">
+        <Layers3 size={16} className="mt-0.5 text-primary" />
+        <div className="space-y-1">
+          <div className="text-sm font-semibold">멀티 타임프레임 합산 점수 반영</div>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            이제 카드 순서는 단순 확률만이 아니라 상위 타임프레임 정렬, 데이터 품질, 신호 신선도를 함께 반영합니다.
+            같은 일봉 상승 신호라도 주봉·월봉이 같이 받쳐주는 종목이 위로 올라오고, 분봉만 잠깐 예쁜 종목은 과하게 뜨지 않도록 눌렀습니다.
+          </p>
+        </div>
+      </Card>
+
       {intradayMode && (
         <Card className="flex items-start gap-3 border-yellow-500/30 bg-yellow-500/5 p-4">
           <AlertTriangle size={16} className="mt-0.5 text-yellow-400" />
           <div className="space-y-1">
-            <div className="text-sm font-semibold text-yellow-300">분봉은 보수적으로 해석 중입니다</div>
+            <div className="text-sm font-semibold text-yellow-300">분봉은 여전히 보수적으로 해석합니다</div>
             <p className="text-xs leading-relaxed text-muted-foreground">
               현재 {timeframeLabel(timeframe)} 스캔은 일봉 상위 후보를 먼저 고른 뒤 분봉으로 내려가는 방식입니다.
-              KIS 없이 공개 소스와 저장 캐시에 의존하므로 일봉/주봉보다 No Signal 비율이 높고 신뢰도도 낮게 계산됩니다.
+              공개 소스와 저장 캐시에 의존하므로 일봉·주봉보다 No Signal 비율이 높고, 상위 축이 엇갈리면 합산 점수도 더 빠르게 깎입니다.
             </p>
           </div>
         </Card>
@@ -161,14 +172,14 @@ export default function DashboardPage() {
 
       <DashboardSection
         title="상승 확률 상위"
-        subtitle="진입 적합도와 데이터 품질까지 함께 반영해 상단에 배치한 종목들입니다."
+        subtitle="확률, 데이터 품질, 상위 타임프레임 정렬이 함께 받쳐주는 종목입니다."
         data={longQ.data}
         isLoading={longQ.isLoading}
       />
 
       <DashboardSection
         title="패턴 완성 임박"
-        subtitle="교과서 유사도와 완성 임박도가 함께 높은 종목입니다."
+        subtitle="교과서 유사도와 완성 임박도가 높고, 상위 축과 덜 충돌하는 종목입니다."
         data={armedQ.data}
         isLoading={armedQ.isLoading}
       />
@@ -182,14 +193,14 @@ export default function DashboardPage() {
 
       <DashboardSection
         title="하락 확률 상위"
-        subtitle="약세형 패턴과 하락 확률이 높은 종목을 모았습니다."
+        subtitle="약세형 패턴과 하락 방향 정렬이 함께 나오는 종목입니다."
         data={shortQ.data}
         isLoading={shortQ.isLoading}
       />
 
       <DashboardSection
         title="No Signal / 관망"
-        subtitle="패턴이 너무 오래됐거나, 데이터 품질이 낮거나, 아직 충분히 완성되지 않은 종목입니다."
+        subtitle="패턴이 오래됐거나, 데이터 품질이 낮거나, 상위 축과 크게 엇갈리는 종목입니다."
         data={noSigQ.data}
         isLoading={noSigQ.isLoading}
       />
