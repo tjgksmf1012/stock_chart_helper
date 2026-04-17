@@ -36,3 +36,24 @@ export function getChartLookbackDays(timeframe: Timeframe): number {
       return 365
   }
 }
+
+export function getContextTimeframes(timeframe: Timeframe): Timeframe[] {
+  switch (timeframe) {
+    case '1mo':
+      return ['1wk', '1d']
+    case '1wk':
+      return ['1mo', '1d']
+    case '1d':
+      return ['1wk', '1mo', '60m']
+    case '60m':
+      return ['1d', '1wk', '15m']
+    case '30m':
+      return ['60m', '1d', '15m']
+    case '15m':
+      return ['60m', '1d', '1m']
+    case '1m':
+      return ['15m', '60m']
+    default:
+      return []
+  }
+}

@@ -29,7 +29,9 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
         <div className="flex items-center gap-2 text-yellow-400">
           <AlertCircle size={16} />
           <span className="text-sm font-semibold">No Signal</span>
-          <Badge variant="muted" className="ml-auto">{analysis.timeframe_label}</Badge>
+          <Badge variant="muted" className="ml-auto">
+            {analysis.timeframe_label}
+          </Badge>
         </div>
         <p className="text-xs text-muted-foreground">{analysis.no_signal_reason}</p>
         <p className="text-xs text-muted-foreground">{analysis.reason_summary}</p>
@@ -53,7 +55,11 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
               <TrendingDown size={14} className="text-red-400" />
             ) : null}
             확률 분석
-            {analysis.is_provisional && <Badge variant="warning" className="ml-auto">잠정</Badge>}
+            {analysis.is_provisional && (
+              <Badge variant="warning" className="ml-auto">
+                잠정
+              </Badge>
+            )}
           </CardTitle>
         </CardHeader>
         <div className="space-y-3">
@@ -70,19 +76,29 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
           </div>
           <div className="rounded-lg border border-border bg-background/60 p-3">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant={badgeVariant(bestPattern)}>{PATTERN_NAMES[bestPattern.pattern_type] ?? bestPattern.pattern_type}</Badge>
+              <Badge variant={badgeVariant(bestPattern)}>
+                {PATTERN_NAMES[bestPattern.pattern_type] ?? bestPattern.pattern_type}
+              </Badge>
               <span className={cn('rounded px-1.5 py-0.5 text-xs', STATE_COLORS[bestPattern.state])}>
                 {STATE_LABELS[bestPattern.state]}
               </span>
             </div>
-            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{patternActionText(bestPattern, analysis)}</p>
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+              {patternActionText(bestPattern, analysis)}
+            </p>
           </div>
           <div className="space-y-2">
             {bestPattern.target_level && (
-              <StatRow label="우선 목표가" value={<span className="text-green-400">{fmtPrice(bestPattern.target_level)}</span>} />
+              <StatRow
+                label="우선 목표가"
+                value={<span className="text-green-400">{fmtPrice(bestPattern.target_level)}</span>}
+              />
             )}
             {bestPattern.invalidation_level && (
-              <StatRow label="리스크 기준" value={<span className="text-red-400">{fmtPrice(bestPattern.invalidation_level)}</span>} />
+              <StatRow
+                label="리스크 기준"
+                value={<span className="text-red-400">{fmtPrice(bestPattern.invalidation_level)}</span>}
+              />
             )}
           </div>
         </Card>
@@ -135,7 +151,9 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
             {analysis.patterns.map((pattern, index) => (
               <div key={`${pattern.pattern_type}-${index}`} className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium">{PATTERN_NAMES[pattern.pattern_type] ?? pattern.pattern_type}</span>
+                  <span className="text-xs font-medium">
+                    {PATTERN_NAMES[pattern.pattern_type] ?? pattern.pattern_type}
+                  </span>
                   <Badge variant="muted">{pattern.grade}급</Badge>
                 </div>
                 <div className="flex gap-2">
@@ -146,10 +164,16 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
                 </div>
                 {pattern.neckline && <StatRow label="목선" value={fmtPrice(pattern.neckline)} />}
                 {pattern.invalidation_level && (
-                  <StatRow label="무효화 기준" value={<span className="text-red-400">{fmtPrice(pattern.invalidation_level)}</span>} />
+                  <StatRow
+                    label="무효화 기준"
+                    value={<span className="text-red-400">{fmtPrice(pattern.invalidation_level)}</span>}
+                  />
                 )}
                 {pattern.target_level && (
-                  <StatRow label="목표가" value={<span className="text-green-400">{fmtPrice(pattern.target_level)}</span>} />
+                  <StatRow
+                    label="목표가"
+                    value={<span className="text-green-400">{fmtPrice(pattern.target_level)}</span>}
+                  />
                 )}
               </div>
             ))}
@@ -163,8 +187,8 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
           해석 주의
         </div>
         <p className="text-xs leading-relaxed text-muted-foreground">
-          이 화면은 패턴 기반 해석 보조 도구입니다. 확률과 유사도가 높아도 추세, 거래대금, 뉴스, 무효화 기준에 따라 결과가 달라질 수 있으므로
-          특히 분봉은 보수적으로 해석하는 편이 좋습니다.
+          이 화면은 패턴 기반 해석 보조 도구입니다. 확률과 유사도가 높아도 추세, 거래대금, 뉴스,
+          무효화 기준에 따라 결과가 달라질 수 있으므로 특히 분봉은 보수적으로 해석하는 편이 좋습니다.
         </p>
       </Card>
     </div>
@@ -181,7 +205,7 @@ function patternActionText(pattern: PatternInfo, analysis: AnalysisResult): stri
   if (pattern.state === 'forming') {
     return bias === 'bullish'
       ? '아직 패턴이 완성되기 전 단계입니다. 목선 돌파와 거래대금 반응이 실제로 붙는지 먼저 확인하는 편이 좋습니다.'
-      : '아직 패턴이 완성되기 전 단계입니다. 지지 이탈이나 반등 실패가 실제로 나타나는지 조금 더 지켜보는 편이 좋습니다.'
+      : '아직 패턴이 완성되기 전 단계입니다. 지지 이탈이나 반등 실패가 실제로 확정되는지 조금 더 지켜보는 편이 좋습니다.'
   }
 
   if (pattern.state === 'armed') {
