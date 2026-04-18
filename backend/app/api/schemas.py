@@ -41,6 +41,8 @@ class PatternInfo(BaseModel):
     grade: str
     textbook_similarity: float
     geometry_fit: float
+    volume_context_fit: float = 0.0
+    volatility_context_fit: float = 0.0
     breakout_quality_fit: float = 0.0
     retest_quality_fit: float = 0.0
     neckline: float | None

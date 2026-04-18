@@ -12,8 +12,8 @@ Implements Grade-A structural patterns:
 
 Pattern state lifecycle: FORMING → ARMED → CONFIRMED | INVALIDATED → PLAYED_OUT
 
-TextbookSimilarity = 0.45*GeometryFit + 0.20*SwingFit + 0.15*VolumeContextFit
-                   + 0.10*VolatilityContextFit + 0.10*RegimeFit
+TextbookSimilarity = weighted blend of geometry, swing structure, volume context,
+volatility contraction, regime fit, breakout quality, and retest quality.
 """
 
 from __future__ import annotations
@@ -76,21 +76,23 @@ def _compute_textbook_similarity(r: PatternResult) -> float:
 
 
 def _volume_context_score(df: pd.DataFrame, start_idx: int, end_idx: int) -> float:
-    """
-    For bullish patterns: volume should decline during pattern formation
-    and expand on breakout. Returns a simple heuristic score 0-1.
-    """
-    if "volume" not in df.columns or end_idx - start_idx < 5:
+    if "volume" not in df.columns or end_idx - start_idx < 8:
         return 0.5
-    formation = df["volume"].iloc[start_idx:end_idx]
-    if len(formation) < 4:
+    formation = pd.to_numeric(df["volume"].iloc[start_idx:end_idx], errors="coerce").dropna()
+    if len(formation) < 6:
         return 0.5
-    first_half = formation.iloc[: len(formation) // 2].mean()
-    second_half = formation.iloc[len(formation) // 2 :].mean()
-    if first_half == 0:
+
+    split = max(2, len(formation) // 3)
+    early = formation.iloc[:split].mean()
+    middle = formation.iloc[split: len(formation) - split].mean() if len(formation) > split * 2 else formation.iloc[split:].mean()
+    late = formation.iloc[-split:].mean()
+    if early <= 0:
         return 0.5
-    contraction = 1 - (second_half / first_half)  # positive if volume contracted
-    return float(np.clip(0.5 + contraction * 0.5, 0.0, 1.0))
+
+    contraction_1 = 1 - (middle / max(early, 1.0))
+    contraction_2 = 1 - (late / max(middle, 1.0))
+    contraction_score = np.clip(0.5 + 0.35 * contraction_1 + 0.25 * contraction_2, 0.0, 1.0)
+    return float(round(contraction_score, 3))
 
 
 def _symmetry_score(v1: float, v2: float) -> float:
@@ -164,6 +166,56 @@ def _retest_quality_score(df: pd.DataFrame, breakout_idx: int | None, level: flo
     return round(float(np.clip(0.45 * hold_score + 0.30 * close_hold + 0.25 * revisit_score, 0.0, 1.0)), 3)
 
 
+def _volatility_context_score(df: pd.DataFrame, start_idx: int, end_idx: int) -> float:
+    if end_idx - start_idx < 10:
+        return 0.5
+
+    window = df.iloc[start_idx:end_idx].copy()
+    highs = pd.to_numeric(window["high"], errors="coerce")
+    lows = pd.to_numeric(window["low"], errors="coerce")
+    closes = pd.to_numeric(window["close"], errors="coerce")
+    prev_close = closes.shift(1)
+    tr = pd.concat(
+        [
+            highs - lows,
+            (highs - prev_close).abs(),
+            (lows - prev_close).abs(),
+        ],
+        axis=1,
+    ).max(axis=1).dropna()
+
+    if len(tr) < 8:
+        return 0.5
+
+    split = max(3, len(tr) // 3)
+    early_atr = tr.iloc[:split].mean()
+    late_atr = tr.iloc[-split:].mean()
+    if early_atr <= 0:
+        return 0.5
+
+    contraction = 1 - (late_atr / early_atr)
+    return float(round(np.clip(0.5 + contraction * 0.55, 0.0, 1.0), 3))
+
+
+def _grade_from_quality(similarity: float, breakout_quality: float, retest_quality: float, volume_context: float) -> str:
+    weighted = 0.55 * similarity + 0.20 * breakout_quality + 0.15 * retest_quality + 0.10 * volume_context
+    if weighted >= 0.76 and breakout_quality >= 0.55:
+        return "A"
+    if weighted >= 0.58:
+        return "B"
+    return "C"
+
+
+def _normalize_state(state: str, breakout_quality: float, retest_quality: float) -> str:
+    if state != "confirmed":
+        return state
+    if breakout_quality < 0.42:
+        return "armed"
+    if retest_quality < 0.28:
+        return "armed"
+    return state
+
+
 class PatternEngine:
     """
     Detects structural chart patterns from a price DataFrame.
@@ -233,15 +285,18 @@ class PatternEngine:
             target = neckline + (neckline - min(L1.price, L2.price))
 
             vol_score = _volume_context_score(df, L1.index, L2.index)
+            volat_score = _volatility_context_score(df, L1.index, L2.index)
             geom_fit = price_sym * 0.6 + max(0, 1 - abs(low_diff) * 10) * 0.4
             breakout_idx = _breakout_index(df, neckline, L2.index, bullish=True)
             breakout_quality = _breakout_quality_score(df, breakout_idx, neckline, bullish=True)
             retest_quality = _retest_quality_score(df, breakout_idx, neckline, bullish=True)
+            state = _normalize_state(state, breakout_quality, retest_quality)
+            grade = _grade_from_quality(geom_fit, breakout_quality, retest_quality, vol_score)
 
             r = PatternResult(
                 pattern_type="double_bottom",
                 state=state,
-                grade="A",
+                grade=grade,
                 start_dt=L1.datetime,
                 end_dt=last_dt if state == "confirmed" else None,
                 neckline=neckline,
@@ -250,7 +305,7 @@ class PatternEngine:
                 geometry_fit=round(geom_fit, 3),
                 swing_structure_fit=round(min(1.0, (L2.index - L1.index) / 10), 3),
                 volume_context_fit=round(vol_score, 3),
-                volatility_context_fit=0.5,
+                volatility_context_fit=round(volat_score, 3),
                 regime_fit=regime_fit,
                 breakout_quality_fit=breakout_quality,
                 retest_quality_fit=retest_quality,
@@ -305,15 +360,18 @@ class PatternEngine:
             target = neckline - (max(H1.price, H2.price) - neckline)
 
             vol_score = _volume_context_score(df, H1.index, H2.index)
+            volat_score = _volatility_context_score(df, H1.index, H2.index)
             geom_fit = price_sym * 0.6 + max(0, 1 - abs(high_diff) * 10) * 0.4
             breakout_idx = _breakout_index(df, neckline, H2.index, bullish=False)
             breakout_quality = _breakout_quality_score(df, breakout_idx, neckline, bullish=False)
             retest_quality = _retest_quality_score(df, breakout_idx, neckline, bullish=False)
+            state = _normalize_state(state, breakout_quality, retest_quality)
+            grade = _grade_from_quality(geom_fit, breakout_quality, retest_quality, vol_score)
 
             r = PatternResult(
                 pattern_type="double_top",
                 state=state,
-                grade="A",
+                grade=grade,
                 start_dt=H1.datetime,
                 end_dt=last_dt if state == "confirmed" else None,
                 neckline=neckline,
@@ -322,7 +380,7 @@ class PatternEngine:
                 geometry_fit=round(geom_fit, 3),
                 swing_structure_fit=round(min(1.0, (H2.index - H1.index) / 10), 3),
                 volume_context_fit=round(vol_score, 3),
-                volatility_context_fit=0.5,
+                volatility_context_fit=round(volat_score, 3),
                 regime_fit=regime_fit,
                 breakout_quality_fit=breakout_quality,
                 retest_quality_fit=retest_quality,
@@ -376,6 +434,7 @@ class PatternEngine:
             target = neckline - (H.price - neckline)
 
             vol_score = _volume_context_score(df, LS.index, RS.index)
+            volat_score = _volatility_context_score(df, LS.index, RS.index)
             geom_fit = shoulder_sym * 0.5 + min(
                 1.0,
                 _safe_ratio(H.price - max(LS.price, RS.price), H.price) * 10,
@@ -383,11 +442,13 @@ class PatternEngine:
             breakout_idx = _breakout_index(df, neckline, RS.index, bullish=False)
             breakout_quality = _breakout_quality_score(df, breakout_idx, neckline, bullish=False)
             retest_quality = _retest_quality_score(df, breakout_idx, neckline, bullish=False)
+            state = _normalize_state(state, breakout_quality, retest_quality)
+            grade = _grade_from_quality(geom_fit, breakout_quality, retest_quality, vol_score)
 
             r = PatternResult(
                 pattern_type="head_and_shoulders",
                 state=state,
-                grade="A",
+                grade=grade,
                 start_dt=LS.datetime,
                 end_dt=last_dt if state == "confirmed" else None,
                 neckline=neckline,
@@ -396,7 +457,7 @@ class PatternEngine:
                 geometry_fit=round(geom_fit, 3),
                 swing_structure_fit=round(shoulder_sym, 3),
                 volume_context_fit=round(vol_score, 3),
-                volatility_context_fit=0.5,
+                volatility_context_fit=round(volat_score, 3),
                 regime_fit=regime_fit,
                 breakout_quality_fit=breakout_quality,
                 retest_quality_fit=retest_quality,
@@ -449,6 +510,7 @@ class PatternEngine:
             invalidation = H.price * 0.99
             target = neckline + (neckline - H.price)
             vol_score = _volume_context_score(df, LS.index, RS.index)
+            volat_score = _volatility_context_score(df, LS.index, RS.index)
             geom_fit = shoulder_sym * 0.5 + min(
                 1.0,
                 _safe_ratio(min(LS.price, RS.price) - H.price, H.price) * 10,
@@ -456,17 +518,19 @@ class PatternEngine:
             breakout_idx = _breakout_index(df, neckline, RS.index, bullish=True)
             breakout_quality = _breakout_quality_score(df, breakout_idx, neckline, bullish=True)
             retest_quality = _retest_quality_score(df, breakout_idx, neckline, bullish=True)
+            state = _normalize_state(state, breakout_quality, retest_quality)
+            grade = _grade_from_quality(geom_fit, breakout_quality, retest_quality, vol_score)
 
             r = PatternResult(
                 pattern_type="inverse_head_and_shoulders",
-                state=state, grade="A",
+                state=state, grade=grade,
                 start_dt=LS.datetime,
                 end_dt=last_dt if state == "confirmed" else None,
                 neckline=neckline, invalidation_level=invalidation, target_level=target,
                 geometry_fit=round(geom_fit, 3),
                 swing_structure_fit=round(shoulder_sym, 3),
                 volume_context_fit=round(vol_score, 3),
-                volatility_context_fit=0.5,
+                volatility_context_fit=round(volat_score, 3),
                 regime_fit=regime_fit,
                 breakout_quality_fit=breakout_quality,
                 retest_quality_fit=retest_quality,
@@ -533,18 +597,21 @@ class PatternEngine:
 
         start_dt = min(h_series[0].datetime, l_series[0].datetime)
         vol_score = _volume_context_score(df, min(h_series[0].index, l_series[0].index), len(df) - 1)
+        volat_score = _volatility_context_score(df, min(h_series[0].index, l_series[0].index), len(df) - 1)
         breakout_idx = _breakout_index(df, breakout_level, max(h_series[-1].index, l_series[-1].index), bullish=bullish_breakout)
         breakout_quality = _breakout_quality_score(df, breakout_idx, breakout_level, bullish=bullish_breakout)
         retest_quality = _retest_quality_score(df, breakout_idx, breakout_level, bullish=bullish_breakout)
+        state = _normalize_state(state, breakout_quality, retest_quality)
+        grade = _grade_from_quality(0.65, breakout_quality, retest_quality, vol_score)
 
         r = PatternResult(
             pattern_type=pattern_type,
-            state=state, grade="A",
+            state=state, grade=grade,
             start_dt=start_dt,
             end_dt=last_dt if state == "confirmed" else None,
             geometry_fit=0.65, swing_structure_fit=0.60,
             volume_context_fit=round(vol_score, 3),
-            volatility_context_fit=0.5, regime_fit=regime_fit,
+            volatility_context_fit=round(volat_score, 3), regime_fit=regime_fit,
             breakout_quality_fit=breakout_quality,
             retest_quality_fit=retest_quality,
             is_provisional=(state != "confirmed"),
@@ -588,10 +655,14 @@ class PatternEngine:
         breakout_idx = _breakout_index(df, resistance, max(h.index for h in h_series[-2:] + l_series[-2:]), bullish=True)
         breakout_quality = _breakout_quality_score(df, breakout_idx, resistance, bullish=True)
         retest_quality = _retest_quality_score(df, breakout_idx, resistance, bullish=True)
+        vol_score = _volume_context_score(df, min(h_series[0].index, l_series[0].index), len(df) - 1)
+        volat_score = _volatility_context_score(df, min(h_series[0].index, l_series[0].index), len(df) - 1)
+        state = _normalize_state(state, breakout_quality, retest_quality)
+        grade = _grade_from_quality(max(0.0, 1 - (h_std + l_std) * 10), breakout_quality, retest_quality, vol_score)
 
         r = PatternResult(
             pattern_type="rectangle",
-            state=state, grade="A",
+            state=state, grade=grade,
             start_dt=min(h_series[0].datetime, l_series[0].datetime),
             end_dt=last_dt if state == "confirmed" else None,
             neckline=resistance,
@@ -599,8 +670,8 @@ class PatternEngine:
             target_level=resistance + (resistance - support),
             geometry_fit=round(1 - (h_std + l_std) * 10, 3),
             swing_structure_fit=0.7,
-            volume_context_fit=0.5,
-            volatility_context_fit=0.5,
+            volume_context_fit=round(vol_score, 3),
+            volatility_context_fit=round(volat_score, 3),
             regime_fit=regime_fit,
             breakout_quality_fit=breakout_quality,
             retest_quality_fit=retest_quality,

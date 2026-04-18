@@ -36,6 +36,8 @@ export interface PatternInfo {
   grade: 'A' | 'B' | 'C'
   textbook_similarity: number
   geometry_fit: number
+  volume_context_fit: number
+  volatility_context_fit: number
   breakout_quality_fit: number
   retest_quality_fit: number
   neckline: number | null

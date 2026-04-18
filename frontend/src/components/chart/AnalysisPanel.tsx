@@ -124,6 +124,8 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
           <StatRow label="자리 점수" value={fmtPct(analysis.headroom_score)} />
           {bestPattern && <StatRow label="돌파 품질" value={fmtPct(bestPattern.breakout_quality_fit)} />}
           {bestPattern && <StatRow label="retest 품질" value={fmtPct(bestPattern.retest_quality_fit)} />}
+          {bestPattern && <StatRow label="거래량 맥락" value={fmtPct(bestPattern.volume_context_fit)} />}
+          {bestPattern && <StatRow label="변동성 수축" value={fmtPct(bestPattern.volatility_context_fit)} />}
           <StatRow label="완성 임박도" value={fmtPct(analysis.completion_proximity)} />
           <StatRow label="신호 신선도" value={fmtPct(analysis.recency_score)} />
           <StatRow label="유사 패턴 표본 수" value={`${analysis.sample_size}건`} />
@@ -173,6 +175,10 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
                 <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                   <span>돌파 품질 {fmtPct(pattern.breakout_quality_fit)}</span>
                   <span className="text-right">retest 품질 {fmtPct(pattern.retest_quality_fit)}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                  <span>거래량 맥락 {fmtPct(pattern.volume_context_fit)}</span>
+                  <span className="text-right">변동성 수축 {fmtPct(pattern.volatility_context_fit)}</span>
                 </div>
                 {pattern.neckline && <StatRow label="목선" value={fmtPrice(pattern.neckline)} />}
                 {pattern.invalidation_level && (

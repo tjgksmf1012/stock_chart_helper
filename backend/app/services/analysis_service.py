@@ -735,6 +735,8 @@ async def analyze_symbol_dataframe(
                 grade=pattern.grade,
                 textbook_similarity=pattern.textbook_similarity,
                 geometry_fit=pattern.geometry_fit,
+                volume_context_fit=pattern.volume_context_fit,
+                volatility_context_fit=pattern.volatility_context_fit,
                 breakout_quality_fit=pattern.breakout_quality_fit,
                 retest_quality_fit=pattern.retest_quality_fit,
                 neckline=pattern.neckline,
