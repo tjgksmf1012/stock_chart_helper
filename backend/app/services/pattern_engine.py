@@ -55,6 +55,8 @@ class PatternResult:
     volume_context_fit: float = 0.0
     volatility_context_fit: float = 0.0
     regime_fit: float = 0.0
+    leg_balance_fit: float = 0.5
+    reversal_energy_fit: float = 0.5
     breakout_quality_fit: float = 0.0
     retest_quality_fit: float = 0.0
     textbook_similarity: float = 0.0
@@ -65,11 +67,13 @@ class PatternResult:
 
 def _compute_textbook_similarity(r: PatternResult) -> float:
     return (
-        0.38 * r.geometry_fit
-        + 0.18 * r.swing_structure_fit
-        + 0.12 * r.volume_context_fit
-        + 0.08 * r.volatility_context_fit
-        + 0.08 * r.regime_fit
+        0.30 * r.geometry_fit
+        + 0.15 * r.swing_structure_fit
+        + 0.10 * r.volume_context_fit
+        + 0.07 * r.volatility_context_fit
+        + 0.07 * r.regime_fit
+        + 0.08 * r.leg_balance_fit
+        + 0.07 * r.reversal_energy_fit
         + 0.10 * r.breakout_quality_fit
         + 0.06 * r.retest_quality_fit
     )
@@ -107,6 +111,53 @@ def _safe_ratio(numerator: float, denominator: float, default: float = 0.0) -> f
     if denominator == 0:
         return default
     return numerator / denominator
+
+
+def _time_symmetry_score(span_a: int, span_b: int) -> float:
+    if span_a <= 0 or span_b <= 0:
+        return 0.35
+    diff_ratio = abs(span_a - span_b) / max(span_a, span_b)
+    return float(np.clip(1.0 - diff_ratio * 1.6, 0.0, 1.0))
+
+
+def _leg_balance_score(price_a: float, price_b: float, span_a: int, span_b: int) -> float:
+    price_score = _symmetry_score(price_a, price_b)
+    time_score = _time_symmetry_score(span_a, span_b)
+    return round(float(np.clip(0.6 * price_score + 0.4 * time_score, 0.0, 1.0)), 3)
+
+
+def _reversal_energy_score(
+    df: pd.DataFrame,
+    reference_idx: int,
+    pivot_idx: int,
+    confirm_idx: int,
+    bullish: bool,
+) -> float:
+    closes = pd.to_numeric(df["close"], errors="coerce")
+    if reference_idx < 0 or pivot_idx <= reference_idx or confirm_idx <= pivot_idx:
+        return 0.45
+
+    ref_price = float(closes.iloc[reference_idx])
+    pivot_price = float(closes.iloc[pivot_idx])
+    confirm_price = float(closes.iloc[min(confirm_idx, len(closes) - 1)])
+
+    left_span = max(1, pivot_idx - reference_idx)
+    right_span = max(1, confirm_idx - pivot_idx)
+
+    if bullish:
+        decline_rate = max(0.0, _safe_ratio(ref_price - pivot_price, max(ref_price, 1.0)) / left_span)
+        rebound_rate = max(0.0, _safe_ratio(confirm_price - pivot_price, max(pivot_price, 1.0)) / right_span)
+    else:
+        decline_rate = max(0.0, _safe_ratio(pivot_price - ref_price, max(ref_price, 1.0)) / left_span)
+        rebound_rate = max(0.0, _safe_ratio(pivot_price - confirm_price, max(pivot_price, 1.0)) / right_span)
+
+    if decline_rate <= 0 and rebound_rate <= 0:
+        return 0.45
+
+    slope_ratio = rebound_rate / max(decline_rate, 1e-6)
+    velocity_score = float(np.clip((slope_ratio - 0.65) / 0.85, 0.0, 1.0))
+    impulse_score = float(np.clip(rebound_rate / 0.012, 0.0, 1.0))
+    return round(float(np.clip(0.65 * velocity_score + 0.35 * impulse_score, 0.0, 1.0)), 3)
 
 
 def _breakout_index(df: pd.DataFrame, level: float, start_idx: int, bullish: bool, threshold: float = 0.005) -> int | None:
@@ -286,11 +337,25 @@ class PatternEngine:
 
             vol_score = _volume_context_score(df, L1.index, L2.index)
             volat_score = _volatility_context_score(df, L1.index, L2.index)
-            geom_fit = price_sym * 0.6 + max(0, 1 - abs(low_diff) * 10) * 0.4
+            left_span = max(1, neckline_swing.index - L1.index)
+            right_span = max(1, L2.index - neckline_swing.index)
+            leg_balance = _leg_balance_score(L1.price, L2.price, left_span, right_span)
             breakout_idx = _breakout_index(df, neckline, L2.index, bullish=True)
+            reversal_energy = _reversal_energy_score(
+                df,
+                neckline_swing.index,
+                L2.index,
+                breakout_idx if breakout_idx is not None else len(df) - 1,
+                bullish=True,
+            )
+            geom_fit = price_sym * 0.42 + max(0, 1 - abs(low_diff) * 10) * 0.23 + leg_balance * 0.20 + reversal_energy * 0.15
             breakout_quality = _breakout_quality_score(df, breakout_idx, neckline, bullish=True)
             retest_quality = _retest_quality_score(df, breakout_idx, neckline, bullish=True)
             state = _normalize_state(state, breakout_quality, retest_quality)
+            if state == "confirmed" and (leg_balance < 0.46 or reversal_energy < 0.44):
+                state = "armed"
+            elif state == "armed" and (leg_balance < 0.34 or reversal_energy < 0.30):
+                state = "forming"
             grade = _grade_from_quality(geom_fit, breakout_quality, retest_quality, vol_score)
 
             r = PatternResult(
@@ -307,6 +372,8 @@ class PatternEngine:
                 volume_context_fit=round(vol_score, 3),
                 volatility_context_fit=round(volat_score, 3),
                 regime_fit=regime_fit,
+                leg_balance_fit=leg_balance,
+                reversal_energy_fit=reversal_energy,
                 breakout_quality_fit=breakout_quality,
                 retest_quality_fit=retest_quality,
                 key_points=[
@@ -361,11 +428,25 @@ class PatternEngine:
 
             vol_score = _volume_context_score(df, H1.index, H2.index)
             volat_score = _volatility_context_score(df, H1.index, H2.index)
-            geom_fit = price_sym * 0.6 + max(0, 1 - abs(high_diff) * 10) * 0.4
+            left_span = max(1, neckline_swing.index - H1.index)
+            right_span = max(1, H2.index - neckline_swing.index)
+            leg_balance = _leg_balance_score(H1.price, H2.price, left_span, right_span)
             breakout_idx = _breakout_index(df, neckline, H2.index, bullish=False)
+            reversal_energy = _reversal_energy_score(
+                df,
+                neckline_swing.index,
+                H2.index,
+                breakout_idx if breakout_idx is not None else len(df) - 1,
+                bullish=False,
+            )
+            geom_fit = price_sym * 0.42 + max(0, 1 - abs(high_diff) * 10) * 0.23 + leg_balance * 0.20 + reversal_energy * 0.15
             breakout_quality = _breakout_quality_score(df, breakout_idx, neckline, bullish=False)
             retest_quality = _retest_quality_score(df, breakout_idx, neckline, bullish=False)
             state = _normalize_state(state, breakout_quality, retest_quality)
+            if state == "confirmed" and (leg_balance < 0.46 or reversal_energy < 0.44):
+                state = "armed"
+            elif state == "armed" and (leg_balance < 0.34 or reversal_energy < 0.30):
+                state = "forming"
             grade = _grade_from_quality(geom_fit, breakout_quality, retest_quality, vol_score)
 
             r = PatternResult(
@@ -382,6 +463,8 @@ class PatternEngine:
                 volume_context_fit=round(vol_score, 3),
                 volatility_context_fit=round(volat_score, 3),
                 regime_fit=regime_fit,
+                leg_balance_fit=leg_balance,
+                reversal_energy_fit=reversal_energy,
                 breakout_quality_fit=breakout_quality,
                 retest_quality_fit=retest_quality,
                 key_points=[
@@ -435,14 +518,24 @@ class PatternEngine:
 
             vol_score = _volume_context_score(df, LS.index, RS.index)
             volat_score = _volatility_context_score(df, LS.index, RS.index)
+            leg_balance = _leg_balance_score(LS.price, RS.price, H.index - LS.index, RS.index - H.index)
+            breakout_idx = _breakout_index(df, neckline, RS.index, bullish=False)
+            reversal_energy = _reversal_energy_score(
+                df,
+                H.index,
+                RS.index,
+                breakout_idx if breakout_idx is not None else len(df) - 1,
+                bullish=False,
+            )
             geom_fit = shoulder_sym * 0.5 + min(
                 1.0,
                 _safe_ratio(H.price - max(LS.price, RS.price), H.price) * 10,
             ) * 0.5
-            breakout_idx = _breakout_index(df, neckline, RS.index, bullish=False)
             breakout_quality = _breakout_quality_score(df, breakout_idx, neckline, bullish=False)
             retest_quality = _retest_quality_score(df, breakout_idx, neckline, bullish=False)
             state = _normalize_state(state, breakout_quality, retest_quality)
+            if state == "confirmed" and (leg_balance < 0.42 or reversal_energy < 0.40):
+                state = "armed"
             grade = _grade_from_quality(geom_fit, breakout_quality, retest_quality, vol_score)
 
             r = PatternResult(
@@ -459,6 +552,8 @@ class PatternEngine:
                 volume_context_fit=round(vol_score, 3),
                 volatility_context_fit=round(volat_score, 3),
                 regime_fit=regime_fit,
+                leg_balance_fit=leg_balance,
+                reversal_energy_fit=reversal_energy,
                 breakout_quality_fit=breakout_quality,
                 retest_quality_fit=retest_quality,
                 key_points=[
@@ -511,14 +606,24 @@ class PatternEngine:
             target = neckline + (neckline - H.price)
             vol_score = _volume_context_score(df, LS.index, RS.index)
             volat_score = _volatility_context_score(df, LS.index, RS.index)
+            leg_balance = _leg_balance_score(LS.price, RS.price, H.index - LS.index, RS.index - H.index)
+            breakout_idx = _breakout_index(df, neckline, RS.index, bullish=True)
+            reversal_energy = _reversal_energy_score(
+                df,
+                H.index,
+                RS.index,
+                breakout_idx if breakout_idx is not None else len(df) - 1,
+                bullish=True,
+            )
             geom_fit = shoulder_sym * 0.5 + min(
                 1.0,
                 _safe_ratio(min(LS.price, RS.price) - H.price, H.price) * 10,
             ) * 0.5
-            breakout_idx = _breakout_index(df, neckline, RS.index, bullish=True)
             breakout_quality = _breakout_quality_score(df, breakout_idx, neckline, bullish=True)
             retest_quality = _retest_quality_score(df, breakout_idx, neckline, bullish=True)
             state = _normalize_state(state, breakout_quality, retest_quality)
+            if state == "confirmed" and (leg_balance < 0.42 or reversal_energy < 0.40):
+                state = "armed"
             grade = _grade_from_quality(geom_fit, breakout_quality, retest_quality, vol_score)
 
             r = PatternResult(
@@ -532,6 +637,8 @@ class PatternEngine:
                 volume_context_fit=round(vol_score, 3),
                 volatility_context_fit=round(volat_score, 3),
                 regime_fit=regime_fit,
+                leg_balance_fit=leg_balance,
+                reversal_energy_fit=reversal_energy,
                 breakout_quality_fit=breakout_quality,
                 retest_quality_fit=retest_quality,
                 key_points=[
@@ -612,6 +719,8 @@ class PatternEngine:
             geometry_fit=0.65, swing_structure_fit=0.60,
             volume_context_fit=round(vol_score, 3),
             volatility_context_fit=round(volat_score, 3), regime_fit=regime_fit,
+            leg_balance_fit=0.55,
+            reversal_energy_fit=0.52,
             breakout_quality_fit=breakout_quality,
             retest_quality_fit=retest_quality,
             is_provisional=(state != "confirmed"),
@@ -673,6 +782,8 @@ class PatternEngine:
             volume_context_fit=round(vol_score, 3),
             volatility_context_fit=round(volat_score, 3),
             regime_fit=regime_fit,
+            leg_balance_fit=0.58,
+            reversal_energy_fit=0.55,
             breakout_quality_fit=breakout_quality,
             retest_quality_fit=retest_quality,
             key_points=[

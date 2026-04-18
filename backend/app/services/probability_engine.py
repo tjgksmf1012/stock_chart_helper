@@ -63,12 +63,15 @@ def _rule_engine_prob(pattern: PatternResult) -> tuple[float, float]:
     similarity = pattern.textbook_similarity
     base_up = 0.50
     base_down = 0.50
+    formation_quality = _formation_quality(pattern)
 
     if pattern.pattern_type in _BULLISH_PATTERNS:
         base_up = 0.55 + similarity * 0.20
+        base_up = 0.5 + (base_up - 0.5) * (0.40 + 0.60 * formation_quality)
         base_down = 1 - base_up
     elif pattern.pattern_type in _BEARISH_PATTERNS:
         base_down = 0.55 + similarity * 0.20
+        base_down = 0.5 + (base_down - 0.5) * (0.40 + 0.60 * formation_quality)
         base_up = 1 - base_down
 
     if pattern.state == "confirmed":
@@ -87,6 +90,19 @@ def _rule_engine_prob(pattern: PatternResult) -> tuple[float, float]:
             base_up = 1 - base_down
 
     return base_up, base_down
+
+
+def _formation_quality(pattern: PatternResult) -> float:
+    return max(
+        0.0,
+        min(
+            1.0,
+            0.28 * pattern.leg_balance_fit
+            + 0.28 * pattern.reversal_energy_fit
+            + 0.22 * pattern.breakout_quality_fit
+            + 0.22 * pattern.retest_quality_fit,
+        ),
+    )
 
 
 def _logistic_calibrate(raw: float) -> float:
@@ -229,7 +245,8 @@ def compute_probability(
         )
 
     rule_up, rule_down = _rule_engine_prob(pattern)
-    pattern_confirmation = _STATE_CONFIRMATION_SCORE.get(pattern.state, 0.3)
+    formation_quality = _formation_quality(pattern)
+    pattern_confirmation = _STATE_CONFIRMATION_SCORE.get(pattern.state, 0.3) * (0.55 + 0.45 * formation_quality)
     posterior_success_rate = _bayesian_success_rate(wins, total, similar_win_rate)
     empirical_up, empirical_down = _directional_empirical_prob(pattern, posterior_success_rate)
     sample_reliability = _sample_reliability(sample_size, posterior_success_rate)
@@ -275,11 +292,12 @@ def compute_probability(
         0.18 * sample_reliability
         + 0.13 * size_score
         + 0.17 * pattern.textbook_similarity
+        + 0.08 * formation_quality
         + 0.12 * multi_tf_agreement
         + 0.10 * regime_match
-        + 0.08 * data_quality
-        + 0.08 * recency_score
-        + 0.08 * headroom_score
+        + 0.06 * data_quality
+        + 0.07 * recency_score
+        + 0.07 * headroom_score
         + 0.06 * edge_score
     )
     confidence = max(0.0, min(1.0, confidence))
@@ -289,13 +307,14 @@ def compute_probability(
         0.16 * direction_prob
         + 0.12 * pattern.textbook_similarity
         + 0.10 * pattern_confirmation
+        + 0.08 * formation_quality
         + 0.09 * posterior_success_rate
         + 0.08 * liquidity_score
         + 0.08 * multi_tf_agreement
-        + 0.07 * data_quality
-        + 0.07 * sample_reliability
-        + 0.08 * completion_proximity
-        + 0.08 * recency_score
+        + 0.06 * data_quality
+        + 0.06 * sample_reliability
+        + 0.07 * completion_proximity
+        + 0.07 * recency_score
         + 0.12 * rr_score
         + 0.09 * headroom_score
         + 0.06 * edge_score
@@ -331,6 +350,7 @@ def compute_probability(
         or reward_risk_ratio < 1.15
         or headroom_score < 0.18
         or edge_score < 0.22
+        or formation_quality < 0.34
     )
     no_signal_reason = (
         ""

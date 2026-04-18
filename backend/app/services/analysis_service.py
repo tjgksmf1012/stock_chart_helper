@@ -450,8 +450,13 @@ def _pattern_rank_score(pattern: PatternResult, completion_proximity: float, rec
         "played_out": -0.20,
         "invalidated": -0.35,
     }.get(pattern.state, 0.0)
-    quality = 0.55 * pattern.breakout_quality_fit + 0.45 * pattern.retest_quality_fit
-    return 0.46 * pattern.textbook_similarity + 0.16 * completion_proximity + 0.14 * recency_score + 0.10 * quality + state_bonus
+    quality = (
+        0.33 * pattern.breakout_quality_fit
+        + 0.24 * pattern.retest_quality_fit
+        + 0.22 * pattern.leg_balance_fit
+        + 0.21 * pattern.reversal_energy_fit
+    )
+    return 0.42 * pattern.textbook_similarity + 0.16 * completion_proximity + 0.14 * recency_score + 0.12 * quality + state_bonus
 
 
 def _no_signal_text(timeframe: str, available_bars: int, source_note: str, fetch_message: str) -> tuple[str, str]:
@@ -767,6 +772,14 @@ async def analyze_symbol_dataframe(
         risk_penalty += 0.14
     if best_pattern.state in {"confirmed", "armed"} and best_pattern.retest_quality_fit < 0.35:
         risk_penalty += 0.10
+    if best_pattern.leg_balance_fit < 0.42:
+        risk_penalty += 0.12
+    elif best_pattern.leg_balance_fit < 0.55:
+        risk_penalty += 0.06
+    if best_pattern.reversal_energy_fit < 0.38:
+        risk_penalty += 0.14
+    elif best_pattern.reversal_energy_fit < 0.52:
+        risk_penalty += 0.07
     if opportunity["reward_risk_ratio"] < 1.2:
         risk_penalty += 0.12
     if opportunity["headroom_score"] < 0.2:
@@ -817,6 +830,8 @@ async def analyze_symbol_dataframe(
                 grade=pattern.grade,
                 textbook_similarity=pattern.textbook_similarity,
                 geometry_fit=pattern.geometry_fit,
+                leg_balance_fit=pattern.leg_balance_fit,
+                reversal_energy_fit=pattern.reversal_energy_fit,
                 volume_context_fit=pattern.volume_context_fit,
                 volatility_context_fit=pattern.volatility_context_fit,
                 breakout_quality_fit=pattern.breakout_quality_fit,
