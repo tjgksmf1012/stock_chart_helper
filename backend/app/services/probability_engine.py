@@ -51,6 +51,7 @@ _BULLISH_PATTERNS = {
     "rectangle",
     "cup_and_handle",
     "rounding_bottom",
+    "vcp",
 }
 _BEARISH_PATTERNS = {
     "double_top",

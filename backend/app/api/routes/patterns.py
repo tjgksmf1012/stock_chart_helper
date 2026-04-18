@@ -219,6 +219,35 @@ PATTERN_LIBRARY: list[PatternLibraryEntry] = [
         ],
         svg_path="/patterns/rectangle.svg",
     ),
+    PatternLibraryEntry(
+        pattern_type="vcp",
+        name_kr="VCP 변동성 수축",
+        grade="A",
+        direction="bullish",
+        description="상승 추세 안에서 눌림 깊이와 변동 폭이 점점 줄고 거래량까지 마르다가 돌파를 준비하는 지속형 패턴입니다.",
+        structure_conditions=[
+            "최근 3회 이상의 눌림 깊이가 순차적으로 얕아져야 합니다.",
+            "피벗 고점들은 큰 이탈 없이 비슷한 가격대에 모이는 편이 좋습니다.",
+            "마지막 수축 구간의 일중 범위가 이전보다 더 타이트해야 합니다.",
+        ],
+        volume_conditions=[
+            "수축이 진행될수록 거래량이 말라가는 흐름이 이상적입니다.",
+            "피벗 돌파 시 거래량이 다시 붙으면 신뢰도가 높아집니다.",
+        ],
+        confirmation_conditions=[
+            "피벗 고점을 종가 기준으로 돌파해야 합니다.",
+            "돌파 직후 피벗 위에서 버티거나 얕은 Retest 후 재상승하면 더 좋습니다.",
+        ],
+        invalidation_conditions=[
+            "마지막 수축 저점을 종가 기준으로 이탈하면 구조가 약해집니다.",
+            "돌파 후 빠르게 피벗 아래로 밀리면 가짜 돌파일 수 있습니다.",
+        ],
+        cautions=[
+            "상승 추세 없이 횡보만 타이트한 경우는 단순 박스권일 수 있습니다.",
+            "거래량이 마르지 않은 채 흔들리기만 하면 VCP보다 소음일 가능성이 큽니다.",
+        ],
+        svg_path="/patterns/vcp.svg",
+    ),
 ]
 
 

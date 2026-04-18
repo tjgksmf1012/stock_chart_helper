@@ -33,6 +33,7 @@ PatternType = Literal[
     "rising_channel", "falling_channel",
     "cup_and_handle",
     "rounding_bottom",
+    "vcp",
 ]
 
 
@@ -392,6 +393,41 @@ def _volatility_context_score(df: pd.DataFrame, start_idx: int, end_idx: int) ->
     return float(round(np.clip(0.5 + contraction * 0.55, 0.0, 1.0), 3))
 
 
+def _tight_range_score(df: pd.DataFrame, start_idx: int, end_idx: int) -> float:
+    if end_idx <= start_idx:
+        return 0.4
+    window = df.iloc[start_idx : end_idx + 1].copy()
+    highs = pd.to_numeric(window["high"], errors="coerce").dropna()
+    lows = pd.to_numeric(window["low"], errors="coerce").dropna()
+    closes = pd.to_numeric(window["close"], errors="coerce").dropna()
+    if highs.empty or lows.empty or closes.empty:
+        return 0.4
+    span_ratio = (float(highs.max()) - float(lows.min())) / max(float(closes.iloc[-1]), 1.0)
+    if span_ratio <= 0.025:
+        return 1.0
+    if span_ratio <= 0.04:
+        return 0.84
+    if span_ratio <= 0.06:
+        return 0.66
+    if span_ratio <= 0.08:
+        return 0.48
+    return 0.28
+
+
+def _sequence_contraction_score(depths: list[float]) -> float:
+    if len(depths) < 2:
+        return 0.45
+    pair_scores: list[float] = []
+    for prev, curr in zip(depths, depths[1:]):
+        if prev <= 0:
+            continue
+        contraction = 1.0 - (curr / prev)
+        pair_scores.append(float(np.clip((contraction + 0.05) / 0.55, 0.0, 1.0)))
+    if not pair_scores:
+        return 0.45
+    return round(float(np.clip(sum(pair_scores) / len(pair_scores), 0.0, 1.0)), 3)
+
+
 def _grade_from_quality(similarity: float, breakout_quality: float, retest_quality: float, volume_context: float) -> str:
     weighted = 0.55 * similarity + 0.20 * breakout_quality + 0.15 * retest_quality + 0.10 * volume_context
     if weighted >= 0.76 and breakout_quality >= 0.55:
@@ -430,6 +466,7 @@ class PatternEngine:
             self._detect_head_and_shoulders,
             self._detect_inverse_head_and_shoulders,
             self._detect_triangles,
+            self._detect_vcp,
             self._detect_rectangle,
         ]:
             found = detector(df, swings, regime_fit)
@@ -943,6 +980,131 @@ class PatternEngine:
         return [r]
 
     # ── Rectangle (Box) ─────────────────────────────────────────────────────
+
+    def _detect_vcp(
+        self, df: pd.DataFrame, swings: list[SwingPoint], regime_fit: float
+    ) -> list[PatternResult]:
+        if len(df) < 50:
+            return []
+
+        ordered = sorted(swings, key=lambda s: s.index)
+        recent = [s for s in ordered if s.index >= max(0, len(df) - 140)]
+        if len(recent) < 6:
+            return []
+
+        pullbacks: list[tuple[SwingPoint, SwingPoint, float]] = []
+        for current, nxt in zip(recent, recent[1:]):
+            if current.kind == "high" and nxt.kind == "low" and nxt.index > current.index:
+                depth = _safe_ratio(current.price - nxt.price, current.price)
+                if 0.015 <= depth <= 0.35:
+                    pullbacks.append((current, nxt, depth))
+
+        if len(pullbacks) < 3:
+            return []
+
+        segment = pullbacks[-3:]
+        highs = [item[0] for item in segment]
+        lows = [item[1] for item in segment]
+        depths = [item[2] for item in segment]
+        pivot = max(high.price for high in highs)
+        high_tightness = float(
+            np.clip(
+                1.0 - ((max(high.price for high in highs) - min(high.price for high in highs)) / max(pivot, 1.0)) / 0.14,
+                0.0,
+                1.0,
+            )
+        )
+        base_range = max(abs(highs[0].price - lows[0].price), 1.0)
+        low_rising = float(np.clip((lows[-1].price - lows[0].price) / base_range, 0.0, 1.0))
+        contraction_score = _sequence_contraction_score(depths)
+        tight_range = _tight_range_score(df, max(0, len(df) - 10), len(df) - 1)
+
+        closes = pd.to_numeric(df["close"], errors="coerce")
+        if len(closes) < 60:
+            return []
+        ma20 = float(closes.rolling(20).mean().iloc[-1])
+        ma60 = float(closes.rolling(60).mean().iloc[-1])
+        current_close = float(closes.iloc[-1])
+        if not (current_close > ma20 > ma60):
+            return []
+
+        latest_low = lows[-1]
+        if latest_low.price >= highs[-1].price:
+            return []
+
+        dates = df["date"].values if "date" in df.columns else df["datetime"].values
+        last_dt = pd.Timestamp(dates[-1]).to_pydatetime()
+        if current_close >= pivot * 1.005:
+            state = "confirmed"
+        elif current_close >= pivot * 0.985 and contraction_score >= 0.45 and tight_range >= 0.50:
+            state = "armed"
+        else:
+            state = "forming"
+
+        vol_score = _volume_context_score(df, highs[0].index, latest_low.index)
+        volat_score = _volatility_context_score(df, highs[0].index, latest_low.index)
+        breakout_idx = _breakout_index(df, pivot, latest_low.index, bullish=True, threshold=0.003)
+        breakout_quality = _breakout_quality_score(df, breakout_idx, pivot, bullish=True)
+        retest_quality = _retest_quality_score(df, breakout_idx, pivot, bullish=True)
+        state = _normalize_state(state, breakout_quality, retest_quality)
+        if state == "confirmed" and (contraction_score < 0.45 or tight_range < 0.45):
+            state = "armed"
+        elif state == "armed" and (contraction_score < 0.30 or high_tightness < 0.30):
+            state = "forming"
+
+        invalidation = latest_low.price * 0.99
+        target_span = max(pivot - latest_low.price, pivot * 0.08)
+        target = pivot + target_span
+        geometry_fit = round(
+            float(
+                np.clip(
+                    0.30 * contraction_score
+                    + 0.24 * high_tightness
+                    + 0.18 * low_rising
+                    + 0.16 * tight_range
+                    + 0.12 * volat_score,
+                    0.0,
+                    1.0,
+                )
+            ),
+            3,
+        )
+        swing_fit = round(float(np.clip(0.60 * contraction_score + 0.40 * low_rising, 0.0, 1.0)), 3)
+        grade = _grade_from_quality(geometry_fit, breakout_quality, retest_quality, vol_score)
+        contraction_count = len(segment)
+
+        r = PatternResult(
+            pattern_type="vcp",
+            state=state,
+            grade=grade,
+            start_dt=highs[0].datetime,
+            end_dt=last_dt if state == "confirmed" else None,
+            variant=f"{contraction_count}_contractions",
+            neckline=pivot,
+            invalidation_level=invalidation,
+            target_level=target,
+            geometry_fit=geometry_fit,
+            swing_structure_fit=swing_fit,
+            volume_context_fit=round(vol_score, 3),
+            volatility_context_fit=round(volat_score, 3),
+            regime_fit=max(regime_fit, 0.72),
+            leg_balance_fit=round(high_tightness, 3),
+            reversal_energy_fit=round(contraction_score, 3),
+            variant_fit=round(min(1.0, 0.55 + 0.15 * contraction_count), 3),
+            breakout_quality_fit=breakout_quality,
+            retest_quality_fit=retest_quality,
+            key_points=[
+                {"dt": highs[0].datetime.isoformat(), "price": highs[0].price, "type": "pivot_high_1"},
+                {"dt": lows[0].datetime.isoformat(), "price": lows[0].price, "type": "pullback_1"},
+                {"dt": highs[1].datetime.isoformat(), "price": highs[1].price, "type": "pivot_high_2"},
+                {"dt": lows[1].datetime.isoformat(), "price": lows[1].price, "type": "pullback_2"},
+                {"dt": highs[2].datetime.isoformat(), "price": highs[2].price, "type": "pivot_high_3"},
+                {"dt": lows[2].datetime.isoformat(), "price": lows[2].price, "type": "pullback_3"},
+            ],
+            is_provisional=(state != "confirmed"),
+        )
+        r.textbook_similarity = _finalize_textbook_similarity(r)
+        return [r]
 
     def _detect_rectangle(
         self, df: pd.DataFrame, swings: list[SwingPoint], regime_fit: float

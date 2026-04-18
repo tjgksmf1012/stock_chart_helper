@@ -108,6 +108,7 @@ function previewPoints(patternType: string): string {
     descending_triangle: '6,18 34,28 60,36 86,44 112,52 136,52 154,60',
     symmetric_triangle: '6,22 28,30 50,24 72,36 94,30 116,38 138,34 154,28',
     rectangle: '6,46 30,24 54,46 78,24 102,46 126,24 154,46',
+    vcp: '6,18 30,44 56,22 82,40 108,24 132,34 154,12',
   }
 
   return map[patternType] ?? '6,40 26,30 46,42 66,28 86,38 106,24 126,32 154,18'

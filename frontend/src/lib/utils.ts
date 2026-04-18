@@ -59,6 +59,7 @@ export const PATTERN_NAMES: Record<string, string> = {
   falling_channel: '하락 채널',
   cup_and_handle: '컵 앤 핸들',
   rounding_bottom: '라운딩 바닥',
+  vcp: 'VCP 변동성 수축',
 }
 
 export const PATTERN_VARIANT_NAMES: Record<string, string> = {
@@ -71,6 +72,8 @@ export const PATTERN_VARIANT_NAMES: Record<string, string> = {
   adam_hybrid: 'Adam / Hybrid',
   eve_hybrid: 'Eve / Hybrid',
   hybrid_hybrid: 'Hybrid / Hybrid',
+  '3_contractions': '3단 수축',
+  '4_contractions': '4단 수축',
 }
 
 export const DIRECTION_LABELS: Record<string, string> = {
@@ -83,6 +86,10 @@ export function getPatternBias(patternType: string | null | undefined): 'bullish
   if (!patternType) return 'neutral'
 
   if (['double_bottom', 'inverse_head_and_shoulders', 'ascending_triangle', 'cup_and_handle', 'rounding_bottom'].includes(patternType)) {
+    return 'bullish'
+  }
+
+  if (['vcp'].includes(patternType)) {
     return 'bullish'
   }
 
