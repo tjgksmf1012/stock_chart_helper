@@ -55,6 +55,8 @@ class PatternResult:
     volume_context_fit: float = 0.0
     volatility_context_fit: float = 0.0
     regime_fit: float = 0.0
+    breakout_quality_fit: float = 0.0
+    retest_quality_fit: float = 0.0
     textbook_similarity: float = 0.0
 
     key_points: list[dict] = field(default_factory=list)
@@ -63,11 +65,13 @@ class PatternResult:
 
 def _compute_textbook_similarity(r: PatternResult) -> float:
     return (
-        0.45 * r.geometry_fit
-        + 0.20 * r.swing_structure_fit
-        + 0.15 * r.volume_context_fit
-        + 0.10 * r.volatility_context_fit
-        + 0.10 * r.regime_fit
+        0.38 * r.geometry_fit
+        + 0.18 * r.swing_structure_fit
+        + 0.12 * r.volume_context_fit
+        + 0.08 * r.volatility_context_fit
+        + 0.08 * r.regime_fit
+        + 0.10 * r.breakout_quality_fit
+        + 0.06 * r.retest_quality_fit
     )
 
 
@@ -101,6 +105,63 @@ def _safe_ratio(numerator: float, denominator: float, default: float = 0.0) -> f
     if denominator == 0:
         return default
     return numerator / denominator
+
+
+def _breakout_index(df: pd.DataFrame, level: float, start_idx: int, bullish: bool, threshold: float = 0.005) -> int | None:
+    closes = pd.to_numeric(df["close"], errors="coerce")
+    for idx in range(max(0, start_idx), len(df)):
+        close = float(closes.iloc[idx])
+        if bullish and close >= level * (1 + threshold):
+            return idx
+        if not bullish and close <= level * (1 - threshold):
+            return idx
+    return None
+
+
+def _breakout_quality_score(df: pd.DataFrame, breakout_idx: int | None, level: float, bullish: bool) -> float:
+    if breakout_idx is None or breakout_idx <= 0 or breakout_idx >= len(df):
+        return 0.35
+
+    close = float(df["close"].iloc[breakout_idx])
+    volume = pd.to_numeric(df["volume"], errors="coerce")
+    recent_volume = volume.iloc[max(0, breakout_idx - 20):breakout_idx].dropna()
+    breakout_volume = float(volume.iloc[breakout_idx]) if pd.notna(volume.iloc[breakout_idx]) else 0.0
+    volume_ratio = breakout_volume / max(float(recent_volume.mean()) if not recent_volume.empty else breakout_volume or 1.0, 1.0)
+    volume_score = float(np.clip((volume_ratio - 0.8) / 1.0, 0.0, 1.0))
+
+    if bullish:
+        close_strength = _safe_ratio(close - level, level, default=0.0)
+    else:
+        close_strength = _safe_ratio(level - close, level, default=0.0)
+    close_score = float(np.clip(close_strength / 0.04, 0.0, 1.0))
+    return round(float(np.clip(0.55 * close_score + 0.45 * volume_score, 0.0, 1.0)), 3)
+
+
+def _retest_quality_score(df: pd.DataFrame, breakout_idx: int | None, level: float, bullish: bool) -> float:
+    if breakout_idx is None or breakout_idx >= len(df) - 1:
+        return 0.45
+
+    window = df.iloc[breakout_idx + 1:min(len(df), breakout_idx + 9)].copy()
+    if window.empty:
+        return 0.55
+
+    closes = pd.to_numeric(window["close"], errors="coerce")
+    highs = pd.to_numeric(window["high"], errors="coerce")
+    lows = pd.to_numeric(window["low"], errors="coerce")
+
+    if bullish:
+        deepest_pullback = max(0.0, _safe_ratio(level - float(lows.min()), level, default=0.0))
+        hold_score = float(np.clip(1.0 - deepest_pullback / 0.03, 0.0, 1.0))
+        close_hold = float(np.clip((float(closes.iloc[-1]) - level) / max(level * 0.03, 1.0), 0.0, 1.0))
+        revisit = abs(float(lows.min()) - level) / max(level, 1.0)
+    else:
+        deepest_pullback = max(0.0, _safe_ratio(float(highs.max()) - level, level, default=0.0))
+        hold_score = float(np.clip(1.0 - deepest_pullback / 0.03, 0.0, 1.0))
+        close_hold = float(np.clip((level - float(closes.iloc[-1])) / max(level * 0.03, 1.0), 0.0, 1.0))
+        revisit = abs(float(highs.max()) - level) / max(level, 1.0)
+
+    revisit_score = float(np.clip(1.0 - revisit / 0.03, 0.0, 1.0))
+    return round(float(np.clip(0.45 * hold_score + 0.30 * close_hold + 0.25 * revisit_score, 0.0, 1.0)), 3)
 
 
 class PatternEngine:
@@ -173,6 +234,9 @@ class PatternEngine:
 
             vol_score = _volume_context_score(df, L1.index, L2.index)
             geom_fit = price_sym * 0.6 + max(0, 1 - abs(low_diff) * 10) * 0.4
+            breakout_idx = _breakout_index(df, neckline, L2.index, bullish=True)
+            breakout_quality = _breakout_quality_score(df, breakout_idx, neckline, bullish=True)
+            retest_quality = _retest_quality_score(df, breakout_idx, neckline, bullish=True)
 
             r = PatternResult(
                 pattern_type="double_bottom",
@@ -188,6 +252,8 @@ class PatternEngine:
                 volume_context_fit=round(vol_score, 3),
                 volatility_context_fit=0.5,
                 regime_fit=regime_fit,
+                breakout_quality_fit=breakout_quality,
+                retest_quality_fit=retest_quality,
                 key_points=[
                     {"dt": L1.datetime.isoformat(), "price": L1.price, "type": "low1"},
                     {"dt": neckline_swing.datetime.isoformat(), "price": neckline, "type": "neckline"},
@@ -240,6 +306,9 @@ class PatternEngine:
 
             vol_score = _volume_context_score(df, H1.index, H2.index)
             geom_fit = price_sym * 0.6 + max(0, 1 - abs(high_diff) * 10) * 0.4
+            breakout_idx = _breakout_index(df, neckline, H2.index, bullish=False)
+            breakout_quality = _breakout_quality_score(df, breakout_idx, neckline, bullish=False)
+            retest_quality = _retest_quality_score(df, breakout_idx, neckline, bullish=False)
 
             r = PatternResult(
                 pattern_type="double_top",
@@ -255,6 +324,8 @@ class PatternEngine:
                 volume_context_fit=round(vol_score, 3),
                 volatility_context_fit=0.5,
                 regime_fit=regime_fit,
+                breakout_quality_fit=breakout_quality,
+                retest_quality_fit=retest_quality,
                 key_points=[
                     {"dt": H1.datetime.isoformat(), "price": H1.price, "type": "high1"},
                     {"dt": neckline_swing.datetime.isoformat(), "price": neckline, "type": "neckline"},
@@ -309,6 +380,9 @@ class PatternEngine:
                 1.0,
                 _safe_ratio(H.price - max(LS.price, RS.price), H.price) * 10,
             ) * 0.5
+            breakout_idx = _breakout_index(df, neckline, RS.index, bullish=False)
+            breakout_quality = _breakout_quality_score(df, breakout_idx, neckline, bullish=False)
+            retest_quality = _retest_quality_score(df, breakout_idx, neckline, bullish=False)
 
             r = PatternResult(
                 pattern_type="head_and_shoulders",
@@ -324,6 +398,8 @@ class PatternEngine:
                 volume_context_fit=round(vol_score, 3),
                 volatility_context_fit=0.5,
                 regime_fit=regime_fit,
+                breakout_quality_fit=breakout_quality,
+                retest_quality_fit=retest_quality,
                 key_points=[
                     {"dt": LS.datetime.isoformat(), "price": LS.price, "type": "left_shoulder"},
                     {"dt": H.datetime.isoformat(), "price": H.price, "type": "head"},
@@ -377,6 +453,9 @@ class PatternEngine:
                 1.0,
                 _safe_ratio(min(LS.price, RS.price) - H.price, H.price) * 10,
             ) * 0.5
+            breakout_idx = _breakout_index(df, neckline, RS.index, bullish=True)
+            breakout_quality = _breakout_quality_score(df, breakout_idx, neckline, bullish=True)
+            retest_quality = _retest_quality_score(df, breakout_idx, neckline, bullish=True)
 
             r = PatternResult(
                 pattern_type="inverse_head_and_shoulders",
@@ -389,6 +468,8 @@ class PatternEngine:
                 volume_context_fit=round(vol_score, 3),
                 volatility_context_fit=0.5,
                 regime_fit=regime_fit,
+                breakout_quality_fit=breakout_quality,
+                retest_quality_fit=retest_quality,
                 key_points=[
                     {"dt": LS.datetime.isoformat(), "price": LS.price, "type": "left_shoulder"},
                     {"dt": H.datetime.isoformat(), "price": H.price, "type": "head"},
@@ -429,23 +510,32 @@ class PatternEngine:
             pattern_type = "symmetric_triangle"
             apex = (h_series[-1].price + l_series[-1].price) / 2
             state = "armed" if abs(current_close - apex) / apex < 0.03 else "forming"
+            breakout_level = apex
+            bullish_breakout = current_close >= apex
         elif high_flat and low_ascending:
             pattern_type = "ascending_triangle"
             resistance = sum(h.price for h in h_series) / len(h_series)
             state = "confirmed" if current_close > resistance * 1.005 else (
                 "armed" if current_close > resistance * 0.99 else "forming"
             )
+            breakout_level = resistance
+            bullish_breakout = True
         elif high_descending and not low_ascending:
             pattern_type = "descending_triangle"
             support = sum(l.price for l in l_series) / len(l_series)
             state = "confirmed" if current_close < support * 0.995 else (
                 "armed" if current_close < support * 1.01 else "forming"
             )
+            breakout_level = support
+            bullish_breakout = False
         else:
             return []
 
         start_dt = min(h_series[0].datetime, l_series[0].datetime)
         vol_score = _volume_context_score(df, min(h_series[0].index, l_series[0].index), len(df) - 1)
+        breakout_idx = _breakout_index(df, breakout_level, max(h_series[-1].index, l_series[-1].index), bullish=bullish_breakout)
+        breakout_quality = _breakout_quality_score(df, breakout_idx, breakout_level, bullish=bullish_breakout)
+        retest_quality = _retest_quality_score(df, breakout_idx, breakout_level, bullish=bullish_breakout)
 
         r = PatternResult(
             pattern_type=pattern_type,
@@ -455,6 +545,8 @@ class PatternEngine:
             geometry_fit=0.65, swing_structure_fit=0.60,
             volume_context_fit=round(vol_score, 3),
             volatility_context_fit=0.5, regime_fit=regime_fit,
+            breakout_quality_fit=breakout_quality,
+            retest_quality_fit=retest_quality,
             is_provisional=(state != "confirmed"),
         )
         r.textbook_similarity = round(_compute_textbook_similarity(r), 3)
@@ -493,6 +585,9 @@ class PatternEngine:
             state = "armed"
         else:
             state = "forming"
+        breakout_idx = _breakout_index(df, resistance, max(h.index for h in h_series[-2:] + l_series[-2:]), bullish=True)
+        breakout_quality = _breakout_quality_score(df, breakout_idx, resistance, bullish=True)
+        retest_quality = _retest_quality_score(df, breakout_idx, resistance, bullish=True)
 
         r = PatternResult(
             pattern_type="rectangle",
@@ -507,6 +602,8 @@ class PatternEngine:
             volume_context_fit=0.5,
             volatility_context_fit=0.5,
             regime_fit=regime_fit,
+            breakout_quality_fit=breakout_quality,
+            retest_quality_fit=retest_quality,
             key_points=[
                 {"price": resistance, "type": "resistance"},
                 {"price": support, "type": "support"},

@@ -122,6 +122,8 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
           <StatRow label="목표까지 남은 여지" value={fmtPct(analysis.target_distance_pct)} />
           <StatRow label="손절까지 거리" value={fmtPct(analysis.stop_distance_pct)} />
           <StatRow label="자리 점수" value={fmtPct(analysis.headroom_score)} />
+          {bestPattern && <StatRow label="돌파 품질" value={fmtPct(bestPattern.breakout_quality_fit)} />}
+          {bestPattern && <StatRow label="retest 품질" value={fmtPct(bestPattern.retest_quality_fit)} />}
           <StatRow label="완성 임박도" value={fmtPct(analysis.completion_proximity)} />
           <StatRow label="신호 신선도" value={fmtPct(analysis.recency_score)} />
           <StatRow label="유사 패턴 표본 수" value={`${analysis.sample_size}건`} />
@@ -167,6 +169,10 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
                 <div className="flex gap-2">
                   <span className={cn('rounded px-1.5 py-0.5 text-xs', STATE_COLORS[pattern.state])}>{STATE_LABELS[pattern.state]}</span>
                   <span className="text-xs text-muted-foreground">유사도 {fmtPct(pattern.textbook_similarity)}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                  <span>돌파 품질 {fmtPct(pattern.breakout_quality_fit)}</span>
+                  <span className="text-right">retest 품질 {fmtPct(pattern.retest_quality_fit)}</span>
                 </div>
                 {pattern.neckline && <StatRow label="목선" value={fmtPrice(pattern.neckline)} />}
                 {pattern.invalidation_level && (

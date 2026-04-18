@@ -392,7 +392,8 @@ def _pattern_rank_score(pattern: PatternResult, completion_proximity: float, rec
         "played_out": -0.20,
         "invalidated": -0.35,
     }.get(pattern.state, 0.0)
-    return 0.52 * pattern.textbook_similarity + 0.18 * completion_proximity + 0.18 * recency_score + state_bonus
+    quality = 0.55 * pattern.breakout_quality_fit + 0.45 * pattern.retest_quality_fit
+    return 0.46 * pattern.textbook_similarity + 0.16 * completion_proximity + 0.14 * recency_score + 0.10 * quality + state_bonus
 
 
 def _no_signal_text(timeframe: str, available_bars: int, source_note: str, fetch_message: str) -> tuple[str, str]:
@@ -688,6 +689,10 @@ async def analyze_symbol_dataframe(
         risk_penalty += 0.08
     if best_pattern.state == "played_out":
         risk_penalty += 0.18
+    if best_pattern.state == "confirmed" and best_pattern.breakout_quality_fit < 0.42:
+        risk_penalty += 0.14
+    if best_pattern.state in {"confirmed", "armed"} and best_pattern.retest_quality_fit < 0.35:
+        risk_penalty += 0.10
     if opportunity["reward_risk_ratio"] < 1.2:
         risk_penalty += 0.12
     if opportunity["headroom_score"] < 0.2:
@@ -730,6 +735,8 @@ async def analyze_symbol_dataframe(
                 grade=pattern.grade,
                 textbook_similarity=pattern.textbook_similarity,
                 geometry_fit=pattern.geometry_fit,
+                breakout_quality_fit=pattern.breakout_quality_fit,
+                retest_quality_fit=pattern.retest_quality_fit,
                 neckline=pattern.neckline,
                 invalidation_level=pattern.invalidation_level,
                 target_level=pattern.target_level,
