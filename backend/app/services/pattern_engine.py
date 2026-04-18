@@ -79,6 +79,38 @@ def _compute_textbook_similarity(r: PatternResult) -> float:
     )
 
 
+def _formation_quality_score(r: PatternResult) -> float:
+    return float(
+        np.clip(
+            0.30 * r.leg_balance_fit
+            + 0.27 * r.reversal_energy_fit
+            + 0.23 * r.breakout_quality_fit
+            + 0.20 * r.retest_quality_fit,
+            0.0,
+            1.0,
+        )
+    )
+
+
+def _finalize_textbook_similarity(r: PatternResult) -> float:
+    raw_similarity = _compute_textbook_similarity(r)
+    formation_quality = _formation_quality_score(r)
+
+    cap = 0.50 + 0.44 * formation_quality
+    if r.state == "forming":
+        cap -= 0.10
+    elif r.state == "armed":
+        cap -= 0.04
+
+    adjusted = raw_similarity
+    if formation_quality < 0.38:
+        adjusted *= 0.84
+    elif formation_quality < 0.52:
+        adjusted *= 0.92
+
+    return round(float(np.clip(min(adjusted, cap), 0.0, 1.0)), 3)
+
+
 def _volume_context_score(df: pd.DataFrame, start_idx: int, end_idx: int) -> float:
     if "volume" not in df.columns or end_idx - start_idx < 8:
         return 0.5
@@ -383,7 +415,7 @@ class PatternEngine:
                 ],
                 is_provisional=(state != "confirmed"),
             )
-            r.textbook_similarity = round(_compute_textbook_similarity(r), 3)
+            r.textbook_similarity = _finalize_textbook_similarity(r)
             results.append(r)
 
         return results[-1:] if results else []  # return most recent only
@@ -474,7 +506,7 @@ class PatternEngine:
                 ],
                 is_provisional=(state != "confirmed"),
             )
-            r.textbook_similarity = round(_compute_textbook_similarity(r), 3)
+            r.textbook_similarity = _finalize_textbook_similarity(r)
             results.append(r)
 
         return results[-1:] if results else []
@@ -565,7 +597,7 @@ class PatternEngine:
                 ],
                 is_provisional=(state != "confirmed"),
             )
-            r.textbook_similarity = round(_compute_textbook_similarity(r), 3)
+            r.textbook_similarity = _finalize_textbook_similarity(r)
             return [r]
 
         return []
@@ -648,7 +680,7 @@ class PatternEngine:
                 ],
                 is_provisional=(state != "confirmed"),
             )
-            r.textbook_similarity = round(_compute_textbook_similarity(r), 3)
+            r.textbook_similarity = _finalize_textbook_similarity(r)
             return [r]
         return []
 
@@ -725,7 +757,7 @@ class PatternEngine:
             retest_quality_fit=retest_quality,
             is_provisional=(state != "confirmed"),
         )
-        r.textbook_similarity = round(_compute_textbook_similarity(r), 3)
+        r.textbook_similarity = _finalize_textbook_similarity(r)
         return [r]
 
     # ── Rectangle (Box) ─────────────────────────────────────────────────────
@@ -792,5 +824,5 @@ class PatternEngine:
             ],
             is_provisional=(state != "confirmed"),
         )
-        r.textbook_similarity = round(_compute_textbook_similarity(r), 3)
+        r.textbook_similarity = _finalize_textbook_similarity(r)
         return [r]
