@@ -14,7 +14,10 @@ class Settings(BaseSettings):
     kis_app_key: str = ""
     kis_app_secret: str = ""
     kis_account_no: str = ""
+    kis_env: str = "auto"
     kis_base_url: str = "https://openapi.koreainvestment.com:9443"
+    kis_mock_base_url: str = "https://openapivts.koreainvestment.com:29443"
+    kis_token_cache_path: str = "data/kis_token_cache.json"
 
     # Cache TTL (seconds)
     daily_bars_ttl: int = 3600

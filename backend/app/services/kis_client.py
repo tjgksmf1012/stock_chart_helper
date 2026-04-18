@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import logging
+import json
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -20,7 +22,11 @@ class KISClient:
     """Thin async client for the KIS quotation endpoints used by the app."""
 
     def __init__(self) -> None:
-        self.base_url = settings.kis_base_url.rstrip("/")
+        self.prod_base_url = settings.kis_base_url.rstrip("/")
+        self.mock_base_url = settings.kis_mock_base_url.rstrip("/")
+        self.environment = (settings.kis_env or "auto").strip().lower()
+        self._resolved_base_url: str | None = None
+        self._token_cache_file = Path(settings.kis_token_cache_path)
         self.timeout = httpx.Timeout(10.0, connect=5.0)
 
     @property
@@ -82,17 +88,23 @@ class KISClient:
                 break
             seen_cursors.add(cursor)
 
-            payload = await self._authorized_get(
-                "/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice",
-                tr_id="FHKST03010200",
-                params={
-                    "FID_ETC_CLS_CODE": "",
-                    "FID_COND_MRKT_DIV_CODE": market_div_code,
-                    "FID_INPUT_ISCD": code,
-                    "FID_INPUT_HOUR_1": cursor,
-                    "FID_PW_DATA_INCU_YN": "Y",
-                },
-            )
+            try:
+                payload = await self._authorized_get(
+                    "/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice",
+                    tr_id="FHKST03010200",
+                    params={
+                        "FID_ETC_CLS_CODE": "",
+                        "FID_COND_MRKT_DIV_CODE": market_div_code,
+                        "FID_INPUT_ISCD": code,
+                        "FID_INPUT_HOUR_1": cursor,
+                        "FID_PW_DATA_INCU_YN": "Y",
+                    },
+                )
+            except Exception as exc:
+                if pages:
+                    logger.warning("KIS minute paging stopped early for %s at %s: %s", code, cursor, exc)
+                    break
+                raise
             batch = self._normalize_minute_rows(payload.get("output2") or payload.get("output") or [])
             if batch.empty:
                 break
@@ -126,24 +138,50 @@ class KISClient:
     async def _get_access_token(self) -> str:
         cached = await cache_get(self._token_cache_key)
         if isinstance(cached, dict) and cached.get("access_token"):
+            cached_base_url = cached.get("base_url")
+            if isinstance(cached_base_url, str) and cached_base_url:
+                self._resolved_base_url = cached_base_url
             return str(cached["access_token"])
 
-        payload = await self._request_json(
-            "POST",
-            "/oauth2/tokenP",
-            json_body={
-                "grant_type": "client_credentials",
-                "appkey": settings.kis_app_key,
-                "appsecret": settings.kis_app_secret,
-            },
-        )
-        token = payload.get("access_token")
-        if not token:
-            raise RuntimeError("KIS access token was not returned.")
+        file_cached = self._read_file_cached_token()
+        if file_cached:
+            self._resolved_base_url = str(file_cached["base_url"])
+            return str(file_cached["access_token"])
 
-        ttl = self._get_token_ttl(payload)
-        await cache_set(self._token_cache_key, {"access_token": token}, ttl)
-        return str(token)
+        last_error: Exception | None = None
+        for base_url in self._candidate_base_urls():
+            try:
+                payload = await self._request_json(
+                    "POST",
+                    "/oauth2/tokenP",
+                    json_body={
+                        "grant_type": "client_credentials",
+                        "appkey": settings.kis_app_key,
+                        "appsecret": settings.kis_app_secret,
+                    },
+                    base_url=base_url,
+                )
+                token = payload.get("access_token")
+                if not token:
+                    raise RuntimeError("KIS access token was not returned.")
+
+                ttl = self._get_token_ttl(payload)
+                self._resolved_base_url = base_url
+                await cache_set(self._token_cache_key, {"access_token": token, "base_url": base_url}, ttl)
+                self._write_file_cached_token(str(token), base_url, ttl)
+                return str(token)
+            except Exception as exc:
+                last_error = exc
+                logger.warning("KIS token issuance failed via %s: %s", base_url, exc)
+
+        if last_error is not None:
+            if isinstance(last_error, httpx.HTTPStatusError) and last_error.response.status_code == 403:
+                raise RuntimeError(
+                    "KIS token issuance returned 403 Forbidden. Check whether Open API service enrollment is completed, "
+                    "the app key/secret is activated, and whether the key is for prod or mock(vps)."
+                ) from last_error
+            raise last_error
+        raise RuntimeError("KIS access token could not be issued.")
 
     async def _request_json(
         self,
@@ -153,8 +191,10 @@ class KISClient:
         headers: dict[str, str] | None = None,
         params: dict[str, Any] | None = None,
         json_body: dict[str, Any] | None = None,
+        base_url: str | None = None,
     ) -> dict[str, Any]:
-        async with httpx.AsyncClient(base_url=self.base_url, timeout=self.timeout) as client:
+        target_base_url = base_url or self._resolved_base_url or self.prod_base_url
+        async with httpx.AsyncClient(base_url=target_base_url, timeout=self.timeout) as client:
             response = await client.request(method, path, headers=headers, params=params, json=json_body)
 
         response.raise_for_status()
@@ -183,6 +223,39 @@ class KISClient:
                     continue
 
         return TOKEN_TTL_FALLBACK
+
+    def _candidate_base_urls(self) -> list[str]:
+        if self.environment in {"prod", "live"}:
+            return [self.prod_base_url]
+        if self.environment in {"vps", "mock", "paper"}:
+            return [self.mock_base_url]
+        return [self.prod_base_url, self.mock_base_url]
+
+    def _read_file_cached_token(self) -> dict[str, str] | None:
+        try:
+            if not self._token_cache_file.exists():
+                return None
+            payload = json.loads(self._token_cache_file.read_text(encoding="utf-8"))
+            access_token = payload.get("access_token")
+            base_url = payload.get("base_url")
+            expires_at = float(payload.get("expires_at", 0))
+            if not access_token or not base_url or expires_at <= datetime.now().timestamp():
+                return None
+            return {"access_token": str(access_token), "base_url": str(base_url)}
+        except Exception:
+            return None
+
+    def _write_file_cached_token(self, access_token: str, base_url: str, ttl: int) -> None:
+        try:
+            self._token_cache_file.parent.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "access_token": access_token,
+                "base_url": base_url,
+                "expires_at": datetime.now().timestamp() + ttl,
+            }
+            self._token_cache_file.write_text(json.dumps(payload), encoding="utf-8")
+        except Exception as exc:
+            logger.warning("Failed to write KIS token file cache: %s", exc)
 
     def _normalize_minute_rows(self, rows: list[dict[str, Any]]) -> pd.DataFrame:
         current_date = datetime.now().strftime("%Y%m%d")
