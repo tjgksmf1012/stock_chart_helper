@@ -24,6 +24,10 @@ class ProbabilityOutput:
     headroom_score: float
     target_distance_pct: float
     stop_distance_pct: float
+    avg_mfe_pct: float
+    avg_mae_pct: float
+    avg_bars_to_outcome: float
+    historical_edge_score: float
     no_signal_flag: bool
     no_signal_reason: str
     reason_summary: str
@@ -121,6 +125,42 @@ def _directional_empirical_prob(pattern: PatternResult, posterior_success_rate: 
     return neutral, 1 - neutral
 
 
+def _historical_edge(avg_mfe_pct: float, avg_mae_pct: float, avg_bars_to_outcome: float, sample_size: int) -> float:
+    rr = avg_mfe_pct / max(avg_mae_pct, 0.01)
+    rr_score = max(0.0, min(1.0, rr / 2.5))
+    mfe_score = max(0.0, min(1.0, avg_mfe_pct / 0.18))
+    expected_bars = 18.0 if sample_size >= 20 else 10.0 if sample_size >= 10 else 6.0
+    speed_score = max(0.0, min(1.0, 1 - (avg_bars_to_outcome / max(expected_bars, 1.0))))
+    return max(0.0, min(1.0, 0.45 * rr_score + 0.30 * mfe_score + 0.25 * speed_score))
+
+
+def _summary(
+    pattern: PatternResult,
+    completion_proximity: float,
+    recency_score: float,
+    sample_text: str,
+    reward_risk_ratio: float,
+    target_distance_pct: float,
+    avg_mfe_pct: float,
+    avg_mae_pct: float,
+    avg_bars_to_outcome: float,
+    edge_score: float,
+    posterior_success_rate: float,
+    sample_reliability: float,
+    confidence: float,
+) -> str:
+    return (
+        f"{pattern.pattern_type} 패턴 / 교과서 유사도 {pattern.textbook_similarity:.0%} / "
+        f"상태 {pattern.state} / 완성 임박도 {completion_proximity:.0%} / "
+        f"신호 신선도 {recency_score:.0%} / 표본 {sample_text} / "
+        f"기대 손익비 {reward_risk_ratio:.2f} / 목표까지 여지 {target_distance_pct:.1%} / "
+        f"평균 MFE {avg_mfe_pct:.1%} / 평균 MAE {avg_mae_pct:.1%} / "
+        f"평균 결과 바 수 {avg_bars_to_outcome:.1f} / 백테스트 edge {edge_score:.0%} / "
+        f"보정 승률 {posterior_success_rate:.0%} / 표본 신뢰도 {sample_reliability:.0%} / "
+        f"신뢰도 {confidence:.0%}"
+    )
+
+
 def compute_probability(
     pattern: PatternResult,
     similar_win_rate: float = 0.55,
@@ -136,51 +176,56 @@ def compute_probability(
     headroom_score: float = 0.5,
     target_distance_pct: float = 0.0,
     stop_distance_pct: float = 0.0,
+    avg_mfe_pct: float = 0.0,
+    avg_mae_pct: float = 0.0,
+    avg_bars_to_outcome: float = 0.0,
+    historical_edge_score: float = 0.5,
     wins: int | None = None,
     total: int | None = None,
 ) -> ProbabilityOutput:
+    base_kwargs = {
+        "textbook_similarity": pattern.textbook_similarity,
+        "reward_risk_ratio": round(reward_risk_ratio, 3),
+        "headroom_score": round(headroom_score, 3),
+        "target_distance_pct": round(target_distance_pct, 4),
+        "stop_distance_pct": round(stop_distance_pct, 4),
+        "avg_mfe_pct": round(avg_mfe_pct, 4),
+        "avg_mae_pct": round(avg_mae_pct, 4),
+        "avg_bars_to_outcome": round(avg_bars_to_outcome, 2),
+        "historical_edge_score": round(historical_edge_score, 3),
+        "sample_size": sample_size,
+        "empirical_win_rate": similar_win_rate,
+        "sample_reliability": 0.0,
+    }
+
     if pattern.state in ("invalidated", "played_out"):
         return ProbabilityOutput(
             p_up=0.5,
             p_down=0.5,
-            textbook_similarity=pattern.textbook_similarity,
             pattern_confirmation_score=0.0,
             confidence=0.0,
             entry_score=0.0,
             completion_proximity=0.0,
             recency_score=0.0,
-            reward_risk_ratio=round(reward_risk_ratio, 3),
-            headroom_score=round(headroom_score, 3),
-            target_distance_pct=round(target_distance_pct, 4),
-            stop_distance_pct=round(stop_distance_pct, 4),
             no_signal_flag=True,
-            no_signal_reason=f"패턴 상태가 {pattern.state}로 판정됐습니다.",
-            reason_summary=f"{pattern.pattern_type} 패턴은 이미 {pattern.state} 상태로 평가돼 현재 유효 신호로 보기 어렵습니다.",
-            sample_size=sample_size,
-            empirical_win_rate=similar_win_rate,
-            sample_reliability=0.0,
+            no_signal_reason=f"패턴 상태가 이미 {pattern.state}로 판정되었습니다.",
+            reason_summary=f"{pattern.pattern_type} 패턴은 이미 {pattern.state} 상태라 현재 활성 진입 신호로 보지 않습니다.",
+            **base_kwargs,
         )
 
     if sample_size < 6:
         return ProbabilityOutput(
             p_up=0.5,
             p_down=0.5,
-            textbook_similarity=pattern.textbook_similarity,
             pattern_confirmation_score=_STATE_CONFIRMATION_SCORE.get(pattern.state, 0.3),
             confidence=0.0,
             entry_score=0.0,
             completion_proximity=completion_proximity,
             recency_score=recency_score,
-            reward_risk_ratio=round(reward_risk_ratio, 3),
-            headroom_score=round(headroom_score, 3),
-            target_distance_pct=round(target_distance_pct, 4),
-            stop_distance_pct=round(stop_distance_pct, 4),
             no_signal_flag=True,
-            no_signal_reason="유사 패턴 표본 수가 아직 너무 적습니다.",
-            reason_summary=f"현재 통계에 잡힌 유사 패턴 표본이 {sample_size}건이라 확률을 강하게 제시하기에는 근거가 부족합니다.",
-            sample_size=sample_size,
-            empirical_win_rate=similar_win_rate,
-            sample_reliability=0.0,
+            no_signal_reason="유사 패턴 표본 수가 아직 충분하지 않습니다.",
+            reason_summary=f"현재 확인된 유사 표본이 {sample_size}건 수준이라 신호를 보수적으로 해석합니다.",
+            **base_kwargs,
         )
 
     rule_up, rule_down = _rule_engine_prob(pattern)
@@ -190,73 +235,91 @@ def compute_probability(
     sample_reliability = _sample_reliability(sample_size, posterior_success_rate)
     size_score = _sample_size_score(sample_size)
     rr_score = min(1.0, reward_risk_ratio / 2.5)
+    edge_score = max(
+        0.0,
+        min(
+            1.0,
+            0.55 * historical_edge_score + 0.45 * _historical_edge(avg_mfe_pct, avg_mae_pct, avg_bars_to_outcome, sample_size),
+        ),
+    )
 
     p_up_raw = (
-        0.28 * rule_up
-        + 0.26 * empirical_up
-        + 0.14 * pattern_confirmation
+        0.27 * rule_up
+        + 0.25 * empirical_up
+        + 0.13 * pattern_confirmation
         + 0.08 * regime_match
         + 0.07 * completion_proximity
         + 0.07 * recency_score
         + 0.05 * data_quality
-        + 0.05 * rr_score
+        + 0.04 * rr_score
+        + 0.04 * edge_score
     )
     p_down_raw = (
-        0.28 * rule_down
-        + 0.26 * empirical_down
-        + 0.14 * (1 - pattern_confirmation)
+        0.27 * rule_down
+        + 0.25 * empirical_down
+        + 0.13 * (1 - pattern_confirmation)
         + 0.08 * (1 - regime_match)
         + 0.07 * (1 - completion_proximity)
         + 0.07 * (1 - recency_score)
         + 0.05 * (1 - data_quality)
-        + 0.05 * (1 - rr_score)
+        + 0.04 * (1 - rr_score)
+        + 0.04 * (1 - edge_score)
     )
 
     p_up = _logistic_calibrate(p_up_raw)
     p_down = _logistic_calibrate(p_down_raw)
-    total_prob = p_up + p_down
+    total_prob = max(p_up + p_down, 1e-9)
     p_up, p_down = p_up / total_prob, p_down / total_prob
 
     confidence = (
-        0.19 * sample_reliability
+        0.18 * sample_reliability
         + 0.13 * size_score
-        + 0.18 * pattern.textbook_similarity
+        + 0.17 * pattern.textbook_similarity
         + 0.12 * multi_tf_agreement
         + 0.10 * regime_match
-        + 0.09 * data_quality
-        + 0.09 * recency_score
-        + 0.10 * headroom_score
+        + 0.08 * data_quality
+        + 0.08 * recency_score
+        + 0.08 * headroom_score
+        + 0.06 * edge_score
     )
     confidence = max(0.0, min(1.0, confidence))
 
     direction_prob = max(p_up, p_down)
     entry_score = (
-        0.17 * direction_prob
-        + 0.13 * pattern.textbook_similarity
-        + 0.11 * pattern_confirmation
+        0.16 * direction_prob
+        + 0.12 * pattern.textbook_similarity
+        + 0.10 * pattern_confirmation
         + 0.09 * posterior_success_rate
-        + 0.09 * liquidity_score
+        + 0.08 * liquidity_score
         + 0.08 * multi_tf_agreement
         + 0.07 * data_quality
         + 0.07 * sample_reliability
         + 0.08 * completion_proximity
         + 0.08 * recency_score
-        + 0.13 * rr_score
-        + 0.10 * headroom_score
+        + 0.12 * rr_score
+        + 0.09 * headroom_score
+        + 0.06 * edge_score
         - 0.12 * risk_penalty
     )
     entry_score *= max(0.22, 0.35 + 0.65 * rr_score)
     entry_score *= max(0.25, 0.30 + 0.70 * headroom_score)
     entry_score = max(0.0, min(1.0, entry_score))
 
-    wins_text = f"{wins}/{total}" if wins is not None and total is not None and total > 0 else f"{sample_size}건"
-    summary = (
-        f"{pattern.pattern_type} 패턴 / 교과서 유사도 {pattern.textbook_similarity:.0%} / "
-        f"상태 {pattern.state} / 완성 임박도 {completion_proximity:.0%} / "
-        f"신호 신선도 {recency_score:.0%} / 표본 {wins_text} / "
-        f"기대 손익비 {reward_risk_ratio:.2f} / 목표 여지 {target_distance_pct:.1%} / "
-        f"보정 승률 {posterior_success_rate:.0%} / 표본 신뢰도 {sample_reliability:.0%} / "
-        f"신뢰도 {confidence:.0%}"
+    wins_text = f"{wins}/{total}" if wins is not None and total is not None and total > 0 else str(sample_size)
+    summary = _summary(
+        pattern=pattern,
+        completion_proximity=completion_proximity,
+        recency_score=recency_score,
+        sample_text=wins_text,
+        reward_risk_ratio=reward_risk_ratio,
+        target_distance_pct=target_distance_pct,
+        avg_mfe_pct=avg_mfe_pct,
+        avg_mae_pct=avg_mae_pct,
+        avg_bars_to_outcome=avg_bars_to_outcome,
+        edge_score=edge_score,
+        posterior_success_rate=posterior_success_rate,
+        sample_reliability=sample_reliability,
+        confidence=confidence,
     )
 
     no_signal = (
@@ -267,11 +330,12 @@ def compute_probability(
         or (data_quality < 0.60 and confidence < 0.74)
         or reward_risk_ratio < 1.15
         or headroom_score < 0.18
+        or edge_score < 0.22
     )
     no_signal_reason = (
         ""
         if not no_signal
-        else "표본 신뢰도, 신호 최신성, 데이터 품질, 기대 손익비 또는 남은 목표 여지가 기준에 못 미쳐 보수적으로 No Signal로 분류했습니다."
+        else "패턴 품질, 목표까지 남은 여지, 데이터 품질, 백테스트 edge 중 하나 이상이 기준에 못 미쳐 보수적으로 No Signal로 분류했습니다."
     )
 
     return ProbabilityOutput(
@@ -287,6 +351,10 @@ def compute_probability(
         headroom_score=round(headroom_score, 3),
         target_distance_pct=round(target_distance_pct, 4),
         stop_distance_pct=round(stop_distance_pct, 4),
+        avg_mfe_pct=round(avg_mfe_pct, 4),
+        avg_mae_pct=round(avg_mae_pct, 4),
+        avg_bars_to_outcome=round(avg_bars_to_outcome, 2),
+        historical_edge_score=round(edge_score, 3),
         no_signal_flag=no_signal,
         no_signal_reason=no_signal_reason,
         reason_summary=summary,

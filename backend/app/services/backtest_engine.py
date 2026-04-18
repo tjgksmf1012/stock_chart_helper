@@ -47,17 +47,46 @@ _BACKTEST_CONFIG = {
 _backtest_running = False
 
 
+def _edge_score(win_rate: float, avg_mfe_pct: float, avg_mae_pct: float, avg_bars_to_outcome: float, max_forward: int) -> float:
+    rr = avg_mfe_pct / max(avg_mae_pct, 0.01)
+    rr_score = max(0.0, min(1.0, rr / 2.5))
+    mfe_score = max(0.0, min(1.0, avg_mfe_pct / 0.18))
+    speed_score = max(0.0, min(1.0, 1 - (avg_bars_to_outcome / max(max_forward, 1))))
+    edge = (
+        0.42 * win_rate
+        + 0.24 * rr_score
+        + 0.20 * mfe_score
+        + 0.14 * speed_score
+    )
+    return round(max(0.0, min(1.0, edge)), 3)
+
+
+def _default_stat_line(pattern_type: str, timeframe: str, win_rate: float, sample_size: int) -> dict[str, float | int | str]:
+    mfe_baseline = {"1mo": 0.18, "1wk": 0.11, "1d": 0.075}
+    mae_baseline = {"1mo": 0.08, "1wk": 0.05, "1d": 0.035}
+    bars_baseline = {"1mo": 4.0, "1wk": 7.0, "1d": 16.0}
+    strength = max(0.8, min(1.15, win_rate / 0.55))
+    avg_mfe_pct = round(mfe_baseline[timeframe] * strength, 4)
+    avg_mae_pct = round(mae_baseline[timeframe] / max(strength, 0.85), 4)
+    avg_bars_to_outcome = round(bars_baseline[timeframe], 2)
+    return {
+        "pattern_type": pattern_type,
+        "timeframe": timeframe,
+        "win_rate": win_rate,
+        "sample_size": sample_size,
+        "wins": int(round(win_rate * sample_size)),
+        "total": sample_size,
+        "avg_mfe_pct": avg_mfe_pct,
+        "avg_mae_pct": avg_mae_pct,
+        "avg_bars_to_outcome": avg_bars_to_outcome,
+        "historical_edge_score": _edge_score(win_rate, avg_mfe_pct, avg_mae_pct, avg_bars_to_outcome, _BACKTEST_CONFIG[timeframe]["max_forward"]),
+    }
+
+
 def _default_stats() -> dict[str, dict[str, dict[str, float | int | str]]]:
     return {
         timeframe: {
-            pattern_type: {
-                "pattern_type": pattern_type,
-                "timeframe": timeframe,
-                "win_rate": win_rate,
-                "sample_size": _DEFAULT_SAMPLE_SIZES[timeframe],
-                "wins": int(round(win_rate * _DEFAULT_SAMPLE_SIZES[timeframe])),
-                "total": _DEFAULT_SAMPLE_SIZES[timeframe],
-            }
+            pattern_type: _default_stat_line(pattern_type, timeframe, win_rate, _DEFAULT_SAMPLE_SIZES[timeframe])
             for pattern_type, win_rate in _DEFAULT_WIN_RATES.items()
         }
         for timeframe in _BACKTEST_TIMEFRAMES
@@ -96,27 +125,48 @@ def _backtest_stock_sync(timeframe: str, bars_df: Any) -> list[dict[str, Any]]:
             forward_bars = bars_df.iloc[start_idx + window:start_idx + window + max_forward]
             win: bool | None = None
             bullish = _is_bullish(pattern.pattern_type)
+            entry_price = float(window_df.iloc[-1]["close"])
+            favorable_excursion = 0.0
+            adverse_excursion = 0.0
+            bars_to_outcome: int | None = None
 
-            for _, bar in forward_bars.iterrows():
+            for step, (_, bar) in enumerate(forward_bars.iterrows(), start=1):
                 high = float(bar["high"])
                 low = float(bar["low"])
                 if bullish:
+                    favorable_excursion = max(favorable_excursion, max(0.0, (high - entry_price) / max(entry_price, 1e-9)))
+                    adverse_excursion = max(adverse_excursion, max(0.0, (entry_price - low) / max(entry_price, 1e-9)))
                     if high >= pattern.target_level:
                         win = True
+                        bars_to_outcome = step
                         break
                     if low <= pattern.invalidation_level:
                         win = False
+                        bars_to_outcome = step
                         break
                 else:
+                    favorable_excursion = max(favorable_excursion, max(0.0, (entry_price - low) / max(entry_price, 1e-9)))
+                    adverse_excursion = max(adverse_excursion, max(0.0, (high - entry_price) / max(entry_price, 1e-9)))
                     if low <= pattern.target_level:
                         win = True
+                        bars_to_outcome = step
                         break
                     if high >= pattern.invalidation_level:
                         win = False
+                        bars_to_outcome = step
                         break
 
-            if win is not None:
-                results.append({"pattern_type": pattern.pattern_type, "win": win, "timeframe": timeframe})
+            if win is not None and bars_to_outcome is not None:
+                results.append(
+                    {
+                        "pattern_type": pattern.pattern_type,
+                        "win": win,
+                        "timeframe": timeframe,
+                        "mfe_pct": round(favorable_excursion, 4),
+                        "mae_pct": round(adverse_excursion, 4),
+                        "bars_to_outcome": bars_to_outcome,
+                    }
+                )
 
     return results
 
@@ -131,7 +181,7 @@ async def run_backtest() -> dict[str, dict[str, dict[str, float | int | str]]]:
         from .data_fetcher import get_data_fetcher
 
         fetcher = get_data_fetcher()
-        aggregated: dict[str, dict[str, list[int]]] = {timeframe: {} for timeframe in _BACKTEST_TIMEFRAMES}
+        aggregated: dict[str, dict[str, dict[str, float | int]]] = {timeframe: {} for timeframe in _BACKTEST_TIMEFRAMES}
 
         for timeframe in _BACKTEST_TIMEFRAMES:
             cfg = _BACKTEST_CONFIG[timeframe]
@@ -142,26 +192,48 @@ async def run_backtest() -> dict[str, dict[str, dict[str, float | int | str]]]:
                         continue
                     stock_results = await asyncio.to_thread(_backtest_stock_sync, timeframe, df)
                     for result in stock_results:
-                        bucket = aggregated[timeframe].setdefault(result["pattern_type"], [0, 0])
-                        bucket[1] += 1
+                        bucket = aggregated[timeframe].setdefault(
+                            result["pattern_type"],
+                            {"wins": 0, "total": 0, "mfe_sum": 0.0, "mae_sum": 0.0, "bars_sum": 0.0},
+                        )
+                        bucket["total"] += 1
+                        bucket["mfe_sum"] += float(result["mfe_pct"])
+                        bucket["mae_sum"] += float(result["mae_pct"])
+                        bucket["bars_sum"] += float(result["bars_to_outcome"])
                         if result["win"]:
-                            bucket[0] += 1
+                            bucket["wins"] += 1
                     await asyncio.sleep(0.05)
                 except Exception as exc:
                     logger.warning("Backtest failed for %s (%s): %s", code, timeframe, exc)
 
         stats = _default_stats()
         for timeframe, pattern_counts in aggregated.items():
-            for pattern_type, (wins, total) in pattern_counts.items():
+            for pattern_type, bucket in pattern_counts.items():
+                wins = int(bucket["wins"])
+                total = int(bucket["total"])
                 if total < 5:
                     continue
+                avg_mfe_pct = round(float(bucket["mfe_sum"]) / total, 4)
+                avg_mae_pct = round(float(bucket["mae_sum"]) / total, 4)
+                avg_bars_to_outcome = round(float(bucket["bars_sum"]) / total, 2)
+                win_rate = round(wins / total, 3)
                 stats[timeframe][pattern_type] = {
                     "pattern_type": pattern_type,
                     "timeframe": timeframe,
-                    "win_rate": round(wins / total, 3),
+                    "win_rate": win_rate,
                     "sample_size": total,
                     "wins": wins,
                     "total": total,
+                    "avg_mfe_pct": avg_mfe_pct,
+                    "avg_mae_pct": avg_mae_pct,
+                    "avg_bars_to_outcome": avg_bars_to_outcome,
+                    "historical_edge_score": _edge_score(
+                        win_rate,
+                        avg_mfe_pct,
+                        avg_mae_pct,
+                        avg_bars_to_outcome,
+                        int(_BACKTEST_CONFIG[timeframe]["max_forward"]),
+                    ),
                 }
 
         await cache_set(BACKTEST_CACHE_KEY, stats, BACKTEST_TTL)
@@ -192,10 +264,5 @@ async def get_pattern_stats(pattern_type: str, timeframe: str) -> dict[str, floa
     default_rate = _DEFAULT_WIN_RATES.get(pattern_type, 0.55)
     default_sample = _DEFAULT_SAMPLE_SIZES.get(timeframe_key, 16)
     return {
-        "pattern_type": pattern_type,
-        "timeframe": timeframe_key,
-        "win_rate": default_rate,
-        "sample_size": default_sample,
-        "wins": int(round(default_rate * default_sample)),
-        "total": default_sample,
+        **_default_stat_line(pattern_type, timeframe_key, default_rate, default_sample),
     }

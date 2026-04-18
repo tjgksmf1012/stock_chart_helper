@@ -73,6 +73,10 @@ export interface AnalysisResult {
   headroom_score: number
   target_distance_pct: number
   stop_distance_pct: number
+  avg_mfe_pct: number
+  avg_mae_pct: number
+  avg_bars_to_outcome: number
+  historical_edge_score: number
   trend_alignment_score: number
   trend_direction: string
   trend_warning: string

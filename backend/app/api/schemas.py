@@ -78,6 +78,10 @@ class AnalysisResult(BaseModel):
     headroom_score: float
     target_distance_pct: float
     stop_distance_pct: float
+    avg_mfe_pct: float
+    avg_mae_pct: float
+    avg_bars_to_outcome: float
+    historical_edge_score: float
     trend_alignment_score: float
     trend_direction: str
     trend_warning: str

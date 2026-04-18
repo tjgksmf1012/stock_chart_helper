@@ -122,6 +122,10 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
           <StatRow label="목표까지 남은 여지" value={fmtPct(analysis.target_distance_pct)} />
           <StatRow label="손절까지 거리" value={fmtPct(analysis.stop_distance_pct)} />
           <StatRow label="자리 점수" value={fmtPct(analysis.headroom_score)} />
+          <StatRow label="평균 MFE" value={fmtPct(analysis.avg_mfe_pct)} />
+          <StatRow label="평균 MAE" value={fmtPct(analysis.avg_mae_pct)} />
+          <StatRow label="평균 결과 바 수" value={analysis.avg_bars_to_outcome.toFixed(1)} />
+          <StatRow label="백테스트 edge" value={fmtPct(analysis.historical_edge_score)} />
           <StatRow label="추세 정렬 점수" value={fmtPct(analysis.trend_alignment_score)} />
           {bestPattern && <StatRow label="돌파 품질" value={fmtPct(bestPattern.breakout_quality_fit)} />}
           {bestPattern && <StatRow label="retest 품질" value={fmtPct(bestPattern.retest_quality_fit)} />}

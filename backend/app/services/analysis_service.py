@@ -675,6 +675,10 @@ def build_no_signal_snapshot(
         headroom_score=0.0,
         target_distance_pct=0.0,
         stop_distance_pct=0.0,
+        avg_mfe_pct=0.0,
+        avg_mae_pct=0.0,
+        avg_bars_to_outcome=0.0,
+        historical_edge_score=0.0,
         trend_alignment_score=0.0,
         trend_direction="sideways",
         trend_warning="",
@@ -738,6 +742,10 @@ async def analyze_symbol_dataframe(
     sample_size = int(stats.get("sample_size", 0))
     wins = int(stats.get("wins", 0))
     total = int(stats.get("total", sample_size))
+    avg_mfe_pct = float(stats.get("avg_mfe_pct", 0.0))
+    avg_mae_pct = float(stats.get("avg_mae_pct", 0.0))
+    avg_bars_to_outcome = float(stats.get("avg_bars_to_outcome", 0.0))
+    historical_edge_score = float(stats.get("historical_edge_score", 0.5))
     trend_profile = _trend_alignment_profile(df, best_pattern.pattern_type)
     regime_match = trend_profile["trend_alignment_score"]
     opportunity = _opportunity_profile(best_pattern, current_close)
@@ -763,6 +771,10 @@ async def analyze_symbol_dataframe(
         risk_penalty += 0.12
     if opportunity["headroom_score"] < 0.2:
         risk_penalty += 0.14
+    if historical_edge_score < 0.28:
+        risk_penalty += 0.12
+    elif historical_edge_score < 0.40:
+        risk_penalty += 0.06
 
     probability = compute_probability(
         best_pattern,
@@ -779,6 +791,10 @@ async def analyze_symbol_dataframe(
         headroom_score=opportunity["headroom_score"],
         target_distance_pct=opportunity["target_distance_pct"],
         stop_distance_pct=opportunity["stop_distance_pct"],
+        avg_mfe_pct=avg_mfe_pct,
+        avg_mae_pct=avg_mae_pct,
+        avg_bars_to_outcome=avg_bars_to_outcome,
+        historical_edge_score=historical_edge_score,
         wins=wins,
         total=total,
     )
@@ -836,6 +852,10 @@ async def analyze_symbol_dataframe(
         headroom_score=probability.headroom_score,
         target_distance_pct=probability.target_distance_pct,
         stop_distance_pct=probability.stop_distance_pct,
+        avg_mfe_pct=probability.avg_mfe_pct,
+        avg_mae_pct=probability.avg_mae_pct,
+        avg_bars_to_outcome=probability.avg_bars_to_outcome,
+        historical_edge_score=probability.historical_edge_score,
         trend_alignment_score=trend_profile["trend_alignment_score"],
         trend_direction=trend_profile["trend_direction"],
         trend_warning=trend_profile["trend_warning"],
