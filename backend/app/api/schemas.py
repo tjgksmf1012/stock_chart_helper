@@ -126,6 +126,10 @@ class DashboardItem(BaseModel):
     headroom_score: float = 0.0
     target_distance_pct: float = 0.0
     stop_distance_pct: float = 0.0
+    avg_mfe_pct: float = 0.0
+    avg_mae_pct: float = 0.0
+    avg_bars_to_outcome: float = 0.0
+    historical_edge_score: float = 0.0
     trend_alignment_score: float = 0.0
     trend_direction: str = "sideways"
     trend_warning: str = ""
@@ -202,6 +206,7 @@ class ScreenerRequest(BaseModel):
     min_sample_reliability: float = 0.0
     min_data_quality: float = 0.0
     min_confluence_score: float = 0.0
+    min_historical_edge_score: float = 0.0
     timeframes: list[str] | None = None
     min_market_cap: float | None = None
     exclude_no_signal: bool = True

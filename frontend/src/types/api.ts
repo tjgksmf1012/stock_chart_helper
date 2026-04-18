@@ -121,6 +121,10 @@ export interface DashboardItem {
   headroom_score: number
   target_distance_pct: number
   stop_distance_pct: number
+  avg_mfe_pct: number
+  avg_mae_pct: number
+  avg_bars_to_outcome: number
+  historical_edge_score: number
   trend_alignment_score: number
   trend_direction: string
   trend_warning: string
@@ -197,9 +201,10 @@ export interface ScreenerRequest {
   min_sample_reliability?: number
   min_data_quality?: number
   min_confluence_score?: number
+  min_historical_edge_score?: number
   timeframes?: Timeframe[]
   min_market_cap?: number
   exclude_no_signal?: boolean
-  sort_by?: 'composite_score' | 'entry_score' | 'p_up' | 'textbook_similarity' | 'confidence' | 'p_down' | 'sample_reliability' | 'confluence_score' | 'data_quality'
+  sort_by?: 'composite_score' | 'entry_score' | 'p_up' | 'textbook_similarity' | 'confidence' | 'p_down' | 'sample_reliability' | 'confluence_score' | 'data_quality' | 'historical_edge_score'
   limit?: number
 }

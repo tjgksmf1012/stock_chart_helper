@@ -41,6 +41,7 @@ const SORT_OPTIONS: Array<{ value: NonNullable<ScreenerRequest['sort_by']>; labe
   { value: 'composite_score', label: '종합 점수' },
   { value: 'entry_score', label: '진입 적합도' },
   { value: 'sample_reliability', label: '표본 신뢰도' },
+  { value: 'historical_edge_score', label: '백테스트 edge' },
   { value: 'confluence_score', label: '멀티 타임프레임 정렬' },
   { value: 'data_quality', label: '데이터 품질' },
   { value: 'p_up', label: '상승 확률' },
@@ -57,6 +58,7 @@ export default function ScreenerPage() {
     min_sample_reliability: 0.2,
     min_data_quality: 0.4,
     min_confluence_score: 0.0,
+    min_historical_edge_score: 0.25,
     exclude_no_signal: true,
     sort_by: 'composite_score',
     limit: 20,
@@ -76,7 +78,8 @@ export default function ScreenerPage() {
     const kospi = data.filter(item => item.symbol.market === 'KOSPI').length
     const kosdaq = data.filter(item => item.symbol.market === 'KOSDAQ').length
     const avgReliability = data.reduce((sum, item) => sum + item.sample_reliability, 0) / data.length
-    return { kospi, kosdaq, avgReliability }
+    const avgEdge = data.reduce((sum, item) => sum + item.historical_edge_score, 0) / data.length
+    return { kospi, kosdaq, avgReliability, avgEdge }
   }, [data])
 
   const run = () => {
@@ -248,6 +251,12 @@ export default function ScreenerPage() {
           onChange={value => setReq(current => ({ ...current, min_confluence_score: value }))}
         />
 
+        <SliderGroup
+          label="최소 백테스트 edge"
+          value={req.min_historical_edge_score ?? 0}
+          onChange={value => setReq(current => ({ ...current, min_historical_edge_score: value }))}
+        />
+
         <FilterGroup label="정렬 기준">
           <select
             value={req.sort_by ?? 'composite_score'}
@@ -313,6 +322,10 @@ export default function ScreenerPage() {
             <Card>
               <div className="text-xs text-muted-foreground">평균 표본 신뢰도</div>
               <div className="mt-1 text-sm font-medium">{((stats?.avgReliability ?? 0) * 100).toFixed(0)}%</div>
+            </Card>
+            <Card>
+              <div className="text-xs text-muted-foreground">평균 백테스트 edge</div>
+              <div className="mt-1 text-sm font-medium">{((stats?.avgEdge ?? 0) * 100).toFixed(0)}%</div>
             </Card>
           </div>
 

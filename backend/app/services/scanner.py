@@ -176,6 +176,7 @@ async def _build_confluence(
             "composite_score": round(
                 0.52 * float(primary_row.get("entry_score", 0.0))
                 + 0.14 * float(primary_row.get("sample_reliability", 0.0))
+                + 0.10 * float(primary_row.get("historical_edge_score", 0.0))
                 + 0.14 * float(primary_row.get("headroom_score", 0.0))
                 + 0.10 * float(primary_row.get("trend_alignment_score", 0.0))
                 + 0.12 * min(1.0, float(primary_row.get("reward_risk_ratio", 0.0)) / 2.5)
@@ -238,6 +239,7 @@ async def _build_confluence(
         0.34 * float(primary_row.get("entry_score", 0.0))
         + 0.18 * confluence_score
         + 0.12 * float(primary_row.get("sample_reliability", 0.0))
+        + 0.10 * float(primary_row.get("historical_edge_score", 0.0))
         + 0.12 * float(primary_row.get("headroom_score", 0.0))
         + 0.10 * float(primary_row.get("trend_alignment_score", 0.0))
         + 0.10 * min(1.0, float(primary_row.get("reward_risk_ratio", 0.0)) / 2.5)
@@ -300,6 +302,10 @@ async def _analyze_one(
             "headroom_score": analysis.headroom_score,
             "target_distance_pct": analysis.target_distance_pct,
             "stop_distance_pct": analysis.stop_distance_pct,
+            "avg_mfe_pct": analysis.avg_mfe_pct,
+            "avg_mae_pct": analysis.avg_mae_pct,
+            "avg_bars_to_outcome": analysis.avg_bars_to_outcome,
+            "historical_edge_score": analysis.historical_edge_score,
             "trend_alignment_score": analysis.trend_alignment_score,
             "trend_direction": analysis.trend_direction,
             "trend_warning": analysis.trend_warning,
@@ -333,6 +339,7 @@ async def _analyze_one(
                     "composite_score": round(
                         0.60 * float(result["entry_score"])
                         + 0.16 * float(result["sample_reliability"])
+                        + 0.10 * float(result["historical_edge_score"])
                         + 0.14 * float(result["headroom_score"])
                         + 0.10 * float(result["trend_alignment_score"])
                         + 0.10 * min(1.0, float(result["reward_risk_ratio"]) / 2.5),
@@ -362,6 +369,7 @@ async def _select_candidates(limit: int, timeframe: str) -> tuple[list[tuple[str
     daily_candidates.sort(
         key=lambda row: (
             row.get("composite_score", 0),
+            row.get("historical_edge_score", 0),
             row.get("sample_reliability", 0),
             row.get("entry_score", 0),
             row.get("data_quality", 0),
@@ -439,6 +447,7 @@ async def run_scan(
                 key=lambda row: (
                     0 if row["no_signal_flag"] else 1,
                     row.get("composite_score", 0),
+                    row.get("historical_edge_score", 0),
                     row.get("sample_reliability", 0),
                     row.get("entry_score", 0),
                     row.get("data_quality", 0),
@@ -514,6 +523,7 @@ async def get_scan_results(timeframe: str = DEFAULT_TIMEFRAME) -> list[dict[str,
     results.sort(
         key=lambda row: (
             row.get("composite_score", row.get("entry_score", 0)),
+            row.get("historical_edge_score", 0),
             row.get("sample_reliability", 0),
         ),
         reverse=True,

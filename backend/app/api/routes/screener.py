@@ -19,6 +19,7 @@ SORT_KEYS = {
     "sample_reliability": lambda row: row.get("sample_reliability", 0.0),
     "confluence_score": lambda row: row.get("confluence_score", 0.0),
     "data_quality": lambda row: row.get("data_quality", 0.0),
+    "historical_edge_score": lambda row: row.get("historical_edge_score", 0.0),
 }
 
 
@@ -50,6 +51,7 @@ async def run_screener(req: ScreenerRequest) -> list[DashboardItem]:
     filtered = [row for row in filtered if row.get("sample_reliability", 0) >= req.min_sample_reliability]
     filtered = [row for row in filtered if row.get("data_quality", 0) >= req.min_data_quality]
     filtered = [row for row in filtered if row.get("confluence_score", 0) >= req.min_confluence_score]
+    filtered = [row for row in filtered if row.get("historical_edge_score", 0) >= req.min_historical_edge_score]
 
     sort_key = SORT_KEYS.get(req.sort_by, SORT_KEYS["composite_score"])
     reverse = req.sort_by != "p_down"

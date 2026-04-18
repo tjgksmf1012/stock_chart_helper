@@ -33,6 +33,17 @@ def _make_item(rank: int, row: dict) -> DashboardItem:
         textbook_similarity=row["textbook_similarity"],
         confidence=row["confidence"],
         entry_score=row["entry_score"],
+        reward_risk_ratio=row.get("reward_risk_ratio", 0.0),
+        headroom_score=row.get("headroom_score", 0.0),
+        target_distance_pct=row.get("target_distance_pct", 0.0),
+        stop_distance_pct=row.get("stop_distance_pct", 0.0),
+        avg_mfe_pct=row.get("avg_mfe_pct", 0.0),
+        avg_mae_pct=row.get("avg_mae_pct", 0.0),
+        avg_bars_to_outcome=row.get("avg_bars_to_outcome", 0.0),
+        historical_edge_score=row.get("historical_edge_score", 0.0),
+        trend_alignment_score=row.get("trend_alignment_score", 0.0),
+        trend_direction=row.get("trend_direction", "sideways"),
+        trend_warning=row.get("trend_warning", ""),
         no_signal_flag=row["no_signal_flag"],
         reason_summary=row["reason_summary"],
         completion_proximity=row.get("completion_proximity", 0.0),
@@ -88,7 +99,15 @@ async def dashboard_long(
     timeframe = _timeframe_query(timeframe)
     data = await get_scan_results(timeframe)
     ranked = [row for row in data if not row["no_signal_flag"] and row["p_up"] > 0.55]
-    ranked.sort(key=lambda row: (row.get("composite_score", row["entry_score"]), row["data_quality"], row["liquidity_score"]), reverse=True)
+    ranked.sort(
+        key=lambda row: (
+            row.get("composite_score", row["entry_score"]),
+            row.get("historical_edge_score", 0.0),
+            row["data_quality"],
+            row["liquidity_score"],
+        ),
+        reverse=True,
+    )
     items = [_make_item(index + 1, row) for index, row in enumerate(ranked[:limit])]
     return _response("long_high_probability", timeframe, items)
 
@@ -101,7 +120,15 @@ async def dashboard_short(
     timeframe = _timeframe_query(timeframe)
     data = await get_scan_results(timeframe)
     ranked = [row for row in data if not row["no_signal_flag"] and row["p_down"] > 0.55]
-    ranked.sort(key=lambda row: (row.get("composite_score", row["p_down"]), row["data_quality"], row["liquidity_score"]), reverse=True)
+    ranked.sort(
+        key=lambda row: (
+            row.get("composite_score", row["p_down"]),
+            row.get("historical_edge_score", 0.0),
+            row["data_quality"],
+            row["liquidity_score"],
+        ),
+        reverse=True,
+    )
     items = [_make_item(index + 1, row) for index, row in enumerate(ranked[:limit])]
     return _response("short_high_probability", timeframe, items)
 
@@ -113,7 +140,16 @@ async def dashboard_similarity(
 ) -> DashboardResponse:
     timeframe = _timeframe_query(timeframe)
     data = await get_scan_results(timeframe)
-    ranked = sorted(data, key=lambda row: (row["textbook_similarity"], row.get("confluence_score", 0.5), row["recency_score"]), reverse=True)
+    ranked = sorted(
+        data,
+        key=lambda row: (
+            row["textbook_similarity"],
+            row.get("historical_edge_score", 0.0),
+            row.get("confluence_score", 0.5),
+            row["recency_score"],
+        ),
+        reverse=True,
+    )
     items = [_make_item(index + 1, row) for index, row in enumerate(ranked[:limit])]
     return _response("high_textbook_similarity", timeframe, items)
 
@@ -126,7 +162,7 @@ async def dashboard_no_signal(
     timeframe = _timeframe_query(timeframe)
     data = await get_scan_results(timeframe)
     ranked = [row for row in data if row["no_signal_flag"]]
-    ranked.sort(key=lambda row: (row["data_quality"], row["available_bars"]), reverse=True)
+    ranked.sort(key=lambda row: (row["data_quality"], row.get("historical_edge_score", 0.0), row["available_bars"]), reverse=True)
     items = [_make_item(index + 1, row) for index, row in enumerate(ranked[:limit])]
     return _response("watchlist_no_signal", timeframe, items)
 
@@ -142,6 +178,14 @@ async def dashboard_armed(
         row for row in data
         if row.get("state") in ("armed", "forming") and row["textbook_similarity"] >= 0.5
     ]
-    ranked.sort(key=lambda row: (row["completion_proximity"], row.get("confluence_score", 0.5), row["recency_score"]), reverse=True)
+    ranked.sort(
+        key=lambda row: (
+            row["completion_proximity"],
+            row.get("historical_edge_score", 0.0),
+            row.get("confluence_score", 0.5),
+            row["recency_score"],
+        ),
+        reverse=True,
+    )
     items = [_make_item(index + 1, row) for index, row in enumerate(ranked[:limit])]
     return _response("pattern_armed", timeframe, items)

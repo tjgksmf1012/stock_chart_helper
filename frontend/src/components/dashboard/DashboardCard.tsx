@@ -60,6 +60,11 @@ export function DashboardCard({ item }: DashboardCardProps) {
               표본 {fmtPct(item.sample_reliability, 0)}
             </Badge>
             <Badge
+              variant={item.historical_edge_score >= 0.65 ? 'bullish' : item.historical_edge_score >= 0.45 ? 'muted' : 'warning'}
+            >
+              edge {fmtPct(item.historical_edge_score, 0)}
+            </Badge>
+            <Badge
               variant={item.reward_risk_ratio >= 1.8 ? 'bullish' : item.reward_risk_ratio >= 1.2 ? 'muted' : 'warning'}
             >
               손익비 {item.reward_risk_ratio.toFixed(1)}
@@ -106,11 +111,15 @@ export function DashboardCard({ item }: DashboardCardProps) {
       <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
         <span>신뢰도 {fmtPct(item.confidence)}</span>
         <span className="text-right">신선도 {fmtPct(item.recency_score)}</span>
+        <span>평균 MFE {fmtPct(item.avg_mfe_pct)}</span>
+        <span className="text-right">평균 MAE {fmtPct(item.avg_mae_pct)}</span>
         <span>거래대금 {fmtTurnoverBillion(item.avg_turnover_billion)}</span>
         <span className="text-right">표본 {item.sample_size}건</span>
         <span>목표 여지 {fmtPct(item.target_distance_pct)}</span>
         <span className="text-right">손절 거리 {fmtPct(item.stop_distance_pct)}</span>
         <span>보정 승률 {fmtPct(item.empirical_win_rate)}</span>
+        <span className="text-right">edge {fmtPct(item.historical_edge_score)}</span>
+        <span>평균 결과 바 수 {item.avg_bars_to_outcome.toFixed(1)}</span>
         <span className="text-right">{item.trend_direction}</span>
       </div>
 
