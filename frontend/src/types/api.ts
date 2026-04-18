@@ -65,6 +65,10 @@ export interface AnalysisResult {
   entry_score: number
   completion_proximity: number
   recency_score: number
+  reward_risk_ratio: number
+  headroom_score: number
+  target_distance_pct: number
+  stop_distance_pct: number
   no_signal_flag: boolean
   no_signal_reason: string
   reason_summary: string
@@ -102,6 +106,10 @@ export interface DashboardItem {
   textbook_similarity: number
   confidence: number
   entry_score: number
+  reward_risk_ratio: number
+  headroom_score: number
+  target_distance_pct: number
+  stop_distance_pct: number
   no_signal_flag: boolean
   reason_summary: string
   completion_proximity: number

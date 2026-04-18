@@ -20,6 +20,10 @@ class ProbabilityOutput:
     entry_score: float
     completion_proximity: float
     recency_score: float
+    reward_risk_ratio: float
+    headroom_score: float
+    target_distance_pct: float
+    stop_distance_pct: float
     no_signal_flag: bool
     no_signal_reason: str
     reason_summary: str
@@ -128,6 +132,10 @@ def compute_probability(
     risk_penalty: float = 0.0,
     completion_proximity: float = 0.5,
     recency_score: float = 0.5,
+    reward_risk_ratio: float = 1.0,
+    headroom_score: float = 0.5,
+    target_distance_pct: float = 0.0,
+    stop_distance_pct: float = 0.0,
     wins: int | None = None,
     total: int | None = None,
 ) -> ProbabilityOutput:
@@ -141,9 +149,13 @@ def compute_probability(
             entry_score=0.0,
             completion_proximity=0.0,
             recency_score=0.0,
+            reward_risk_ratio=round(reward_risk_ratio, 3),
+            headroom_score=round(headroom_score, 3),
+            target_distance_pct=round(target_distance_pct, 4),
+            stop_distance_pct=round(stop_distance_pct, 4),
             no_signal_flag=True,
-            no_signal_reason=f"패턴 상태가 {pattern.state}로 재판정되었습니다.",
-            reason_summary=f"{pattern.pattern_type} 패턴은 이미 {pattern.state} 상태로 평가되어 현재 유효 신호로 보기 어렵습니다.",
+            no_signal_reason=f"패턴 상태가 {pattern.state}로 판정됐습니다.",
+            reason_summary=f"{pattern.pattern_type} 패턴은 이미 {pattern.state} 상태로 평가돼 현재 유효 신호로 보기 어렵습니다.",
             sample_size=sample_size,
             empirical_win_rate=similar_win_rate,
             sample_reliability=0.0,
@@ -159,6 +171,10 @@ def compute_probability(
             entry_score=0.0,
             completion_proximity=completion_proximity,
             recency_score=recency_score,
+            reward_risk_ratio=round(reward_risk_ratio, 3),
+            headroom_score=round(headroom_score, 3),
+            target_distance_pct=round(target_distance_pct, 4),
+            stop_distance_pct=round(stop_distance_pct, 4),
             no_signal_flag=True,
             no_signal_reason="유사 패턴 표본 수가 아직 너무 적습니다.",
             reason_summary=f"현재 통계에 잡힌 유사 패턴 표본이 {sample_size}건이라 확률을 강하게 제시하기에는 근거가 부족합니다.",
@@ -173,24 +189,27 @@ def compute_probability(
     empirical_up, empirical_down = _directional_empirical_prob(pattern, posterior_success_rate)
     sample_reliability = _sample_reliability(sample_size, posterior_success_rate)
     size_score = _sample_size_score(sample_size)
+    rr_score = min(1.0, reward_risk_ratio / 2.5)
 
     p_up_raw = (
-        0.30 * rule_up
-        + 0.28 * empirical_up
+        0.28 * rule_up
+        + 0.26 * empirical_up
         + 0.14 * pattern_confirmation
         + 0.08 * regime_match
         + 0.07 * completion_proximity
         + 0.07 * recency_score
-        + 0.06 * data_quality
+        + 0.05 * data_quality
+        + 0.05 * rr_score
     )
     p_down_raw = (
-        0.30 * rule_down
-        + 0.28 * empirical_down
+        0.28 * rule_down
+        + 0.26 * empirical_down
         + 0.14 * (1 - pattern_confirmation)
         + 0.08 * (1 - regime_match)
         + 0.07 * (1 - completion_proximity)
         + 0.07 * (1 - recency_score)
-        + 0.06 * (1 - data_quality)
+        + 0.05 * (1 - data_quality)
+        + 0.05 * (1 - rr_score)
     )
 
     p_up = _logistic_calibrate(p_up_raw)
@@ -199,30 +218,35 @@ def compute_probability(
     p_up, p_down = p_up / total_prob, p_down / total_prob
 
     confidence = (
-        0.20 * sample_reliability
-        + 0.14 * size_score
+        0.19 * sample_reliability
+        + 0.13 * size_score
         + 0.18 * pattern.textbook_similarity
-        + 0.14 * multi_tf_agreement
+        + 0.12 * multi_tf_agreement
         + 0.10 * regime_match
-        + 0.10 * data_quality
-        + 0.14 * recency_score
+        + 0.09 * data_quality
+        + 0.09 * recency_score
+        + 0.10 * headroom_score
     )
     confidence = max(0.0, min(1.0, confidence))
 
     direction_prob = max(p_up, p_down)
     entry_score = (
-        0.22 * direction_prob
-        + 0.14 * pattern.textbook_similarity
-        + 0.12 * pattern_confirmation
-        + 0.10 * posterior_success_rate
-        + 0.10 * liquidity_score
+        0.17 * direction_prob
+        + 0.13 * pattern.textbook_similarity
+        + 0.11 * pattern_confirmation
+        + 0.09 * posterior_success_rate
+        + 0.09 * liquidity_score
         + 0.08 * multi_tf_agreement
         + 0.07 * data_quality
         + 0.07 * sample_reliability
-        + 0.10 * completion_proximity
-        + 0.10 * recency_score
-        - 0.16 * risk_penalty
+        + 0.08 * completion_proximity
+        + 0.08 * recency_score
+        + 0.13 * rr_score
+        + 0.10 * headroom_score
+        - 0.12 * risk_penalty
     )
+    entry_score *= max(0.22, 0.35 + 0.65 * rr_score)
+    entry_score *= max(0.25, 0.30 + 0.70 * headroom_score)
     entry_score = max(0.0, min(1.0, entry_score))
 
     wins_text = f"{wins}/{total}" if wins is not None and total is not None and total > 0 else f"{sample_size}건"
@@ -230,6 +254,7 @@ def compute_probability(
         f"{pattern.pattern_type} 패턴 / 교과서 유사도 {pattern.textbook_similarity:.0%} / "
         f"상태 {pattern.state} / 완성 임박도 {completion_proximity:.0%} / "
         f"신호 신선도 {recency_score:.0%} / 표본 {wins_text} / "
+        f"기대 손익비 {reward_risk_ratio:.2f} / 목표 여지 {target_distance_pct:.1%} / "
         f"보정 승률 {posterior_success_rate:.0%} / 표본 신뢰도 {sample_reliability:.0%} / "
         f"신뢰도 {confidence:.0%}"
     )
@@ -240,11 +265,13 @@ def compute_probability(
         or recency_score < 0.15
         or sample_reliability < 0.16
         or (data_quality < 0.60 and confidence < 0.74)
+        or reward_risk_ratio < 1.15
+        or headroom_score < 0.18
     )
     no_signal_reason = (
         ""
         if not no_signal
-        else "표본 신뢰도, 신호 최신성, 데이터 품질을 합산했을 때 기준치를 넘지 못해 보수적으로 No Signal로 분류했습니다."
+        else "표본 신뢰도, 신호 최신성, 데이터 품질, 기대 손익비 또는 남은 목표 여지가 기준에 못 미쳐 보수적으로 No Signal로 분류했습니다."
     )
 
     return ProbabilityOutput(
@@ -256,6 +283,10 @@ def compute_probability(
         entry_score=round(entry_score, 3),
         completion_proximity=round(completion_proximity, 3),
         recency_score=round(recency_score, 3),
+        reward_risk_ratio=round(reward_risk_ratio, 3),
+        headroom_score=round(headroom_score, 3),
+        target_distance_pct=round(target_distance_pct, 4),
+        stop_distance_pct=round(stop_distance_pct, 4),
         no_signal_flag=no_signal,
         no_signal_reason=no_signal_reason,
         reason_summary=summary,

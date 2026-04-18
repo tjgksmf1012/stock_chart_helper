@@ -263,6 +263,55 @@ def _regime_match(df: pd.DataFrame, pattern_type: str) -> float:
     return 0.5
 
 
+def _opportunity_profile(pattern: PatternResult, current_close: float) -> dict[str, float]:
+    target = pattern.target_level
+    invalidation = pattern.invalidation_level
+    if target is None or invalidation is None or current_close <= 0:
+        return {
+            "reward_risk_ratio": 1.0,
+            "headroom_score": 0.5,
+            "target_distance_pct": 0.0,
+            "stop_distance_pct": 0.0,
+        }
+
+    bullish = _is_bullish(pattern.pattern_type)
+    bearish = _is_bearish(pattern.pattern_type)
+
+    if bullish:
+        target_distance = max(0.0, target - current_close)
+        stop_distance = max(0.0, current_close - invalidation)
+    elif bearish:
+        target_distance = max(0.0, current_close - target)
+        stop_distance = max(0.0, invalidation - current_close)
+    else:
+        target_distance = abs(target - current_close)
+        stop_distance = abs(current_close - invalidation)
+
+    target_distance_pct = target_distance / current_close
+    stop_distance_pct = stop_distance / current_close
+    reward_risk_ratio = target_distance / max(stop_distance, current_close * 0.003)
+
+    if target_distance_pct >= 0.12:
+        headroom_score = 1.0
+    elif target_distance_pct >= 0.08:
+        headroom_score = 0.8
+    elif target_distance_pct >= 0.05:
+        headroom_score = 0.6
+    elif target_distance_pct >= 0.03:
+        headroom_score = 0.4
+    elif target_distance_pct >= 0.015:
+        headroom_score = 0.22
+    else:
+        headroom_score = 0.08
+
+    return {
+        "reward_risk_ratio": round(max(0.0, reward_risk_ratio), 3),
+        "headroom_score": round(headroom_score, 3),
+        "target_distance_pct": round(target_distance_pct, 4),
+        "stop_distance_pct": round(stop_distance_pct, 4),
+    }
+
+
 def _stats_timeframe(timeframe: str) -> str:
     if timeframe in {"1mo", "1wk", "1d"}:
         return timeframe
@@ -563,6 +612,10 @@ def build_no_signal_snapshot(
         entry_score=0.0,
         completion_proximity=0.0,
         recency_score=0.0,
+        reward_risk_ratio=0.0,
+        headroom_score=0.0,
+        target_distance_pct=0.0,
+        stop_distance_pct=0.0,
         no_signal_flag=True,
         no_signal_reason=no_signal_reason,
         reason_summary=reason_summary,
@@ -624,6 +677,7 @@ async def analyze_symbol_dataframe(
     wins = int(stats.get("wins", 0))
     total = int(stats.get("total", sample_size))
     regime_match = _regime_match(df, best_pattern.pattern_type)
+    opportunity = _opportunity_profile(best_pattern, current_close)
 
     risk_penalty = 0.0
     if profile["data_quality"] < 0.65:
@@ -634,6 +688,10 @@ async def analyze_symbol_dataframe(
         risk_penalty += 0.08
     if best_pattern.state == "played_out":
         risk_penalty += 0.18
+    if opportunity["reward_risk_ratio"] < 1.2:
+        risk_penalty += 0.12
+    if opportunity["headroom_score"] < 0.2:
+        risk_penalty += 0.14
 
     probability = compute_probability(
         best_pattern,
@@ -646,6 +704,10 @@ async def analyze_symbol_dataframe(
         risk_penalty=risk_penalty,
         completion_proximity=best_completion,
         recency_score=best_recency,
+        reward_risk_ratio=opportunity["reward_risk_ratio"],
+        headroom_score=opportunity["headroom_score"],
+        target_distance_pct=opportunity["target_distance_pct"],
+        stop_distance_pct=opportunity["stop_distance_pct"],
         wins=wins,
         total=total,
     )
@@ -695,6 +757,10 @@ async def analyze_symbol_dataframe(
         entry_score=probability.entry_score,
         completion_proximity=probability.completion_proximity,
         recency_score=probability.recency_score,
+        reward_risk_ratio=probability.reward_risk_ratio,
+        headroom_score=probability.headroom_score,
+        target_distance_pct=probability.target_distance_pct,
+        stop_distance_pct=probability.stop_distance_pct,
         no_signal_flag=probability.no_signal_flag,
         no_signal_reason=probability.no_signal_reason,
         reason_summary=probability.reason_summary,

@@ -118,6 +118,10 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
           <StatRow label="패턴 확인 점수" value={fmtPct(analysis.pattern_confirmation_score)} />
           <StatRow label="신뢰도" value={fmtPct(analysis.confidence)} />
           <StatRow label="진입 적합도" value={fmtPct(analysis.entry_score)} />
+          <StatRow label="기대 손익비" value={analysis.reward_risk_ratio.toFixed(2)} />
+          <StatRow label="목표까지 남은 여지" value={fmtPct(analysis.target_distance_pct)} />
+          <StatRow label="손절까지 거리" value={fmtPct(analysis.stop_distance_pct)} />
+          <StatRow label="자리 점수" value={fmtPct(analysis.headroom_score)} />
           <StatRow label="완성 임박도" value={fmtPct(analysis.completion_proximity)} />
           <StatRow label="신호 신선도" value={fmtPct(analysis.recency_score)} />
           <StatRow label="유사 패턴 표본 수" value={`${analysis.sample_size}건`} />

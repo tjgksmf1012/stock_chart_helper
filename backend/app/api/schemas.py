@@ -70,6 +70,10 @@ class AnalysisResult(BaseModel):
     entry_score: float
     completion_proximity: float
     recency_score: float
+    reward_risk_ratio: float
+    headroom_score: float
+    target_distance_pct: float
+    stop_distance_pct: float
     no_signal_flag: bool
     no_signal_reason: str
     reason_summary: str
@@ -107,6 +111,10 @@ class DashboardItem(BaseModel):
     textbook_similarity: float
     confidence: float
     entry_score: float
+    reward_risk_ratio: float = 0.0
+    headroom_score: float = 0.0
+    target_distance_pct: float = 0.0
+    stop_distance_pct: float = 0.0
     no_signal_flag: bool
     reason_summary: str
     completion_proximity: float = 0.0
