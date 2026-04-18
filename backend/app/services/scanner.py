@@ -177,9 +177,10 @@ async def _build_confluence(
                 0.52 * float(primary_row.get("entry_score", 0.0))
                 + 0.14 * float(primary_row.get("sample_reliability", 0.0))
                 + 0.14 * float(primary_row.get("headroom_score", 0.0))
+                + 0.10 * float(primary_row.get("trend_alignment_score", 0.0))
                 + 0.12 * min(1.0, float(primary_row.get("reward_risk_ratio", 0.0)) / 2.5)
                 + 0.12 * float(primary_row.get("data_quality", 0.0))
-                + 0.08 * float(primary_row.get("recency_score", 0.0)),
+                + 0.06 * float(primary_row.get("recency_score", 0.0)),
                 3,
             ),
         }
@@ -238,6 +239,7 @@ async def _build_confluence(
         + 0.18 * confluence_score
         + 0.12 * float(primary_row.get("sample_reliability", 0.0))
         + 0.12 * float(primary_row.get("headroom_score", 0.0))
+        + 0.10 * float(primary_row.get("trend_alignment_score", 0.0))
         + 0.10 * min(1.0, float(primary_row.get("reward_risk_ratio", 0.0)) / 2.5)
         + 0.10 * float(primary_row.get("data_quality", 0.0))
         + 0.08 * float(primary_row.get("recency_score", 0.0))
@@ -298,6 +300,9 @@ async def _analyze_one(
             "headroom_score": analysis.headroom_score,
             "target_distance_pct": analysis.target_distance_pct,
             "stop_distance_pct": analysis.stop_distance_pct,
+            "trend_alignment_score": analysis.trend_alignment_score,
+            "trend_direction": analysis.trend_direction,
+            "trend_warning": analysis.trend_warning,
             "no_signal_flag": analysis.no_signal_flag,
             "reason_summary": analysis.reason_summary,
             "completion_proximity": analysis.completion_proximity,
@@ -329,6 +334,7 @@ async def _analyze_one(
                         0.60 * float(result["entry_score"])
                         + 0.16 * float(result["sample_reliability"])
                         + 0.14 * float(result["headroom_score"])
+                        + 0.10 * float(result["trend_alignment_score"])
                         + 0.10 * min(1.0, float(result["reward_risk_ratio"]) / 2.5),
                         3,
                     ),

@@ -263,6 +263,64 @@ def _regime_match(df: pd.DataFrame, pattern_type: str) -> float:
     return 0.5
 
 
+def _trend_alignment_profile(df: pd.DataFrame, pattern_type: str) -> dict[str, Any]:
+    close = pd.to_numeric(df["close"], errors="coerce").dropna()
+    if len(close) < 80:
+        return {
+            "trend_alignment_score": 0.5,
+            "trend_direction": "sideways",
+            "trend_warning": "추세 판단에 필요한 바 수가 아직 충분하지 않습니다.",
+        }
+
+    fast = close.rolling(20).mean()
+    medium = close.rolling(60).mean()
+    last_close = float(close.iloc[-1])
+    fast_now = float(fast.iloc[-1])
+    medium_now = float(medium.iloc[-1])
+    medium_prev = float(medium.iloc[-21]) if len(medium.dropna()) >= 21 and pd.notna(medium.iloc[-21]) else medium_now
+    medium_slope = 0.0 if medium_prev == 0 else (medium_now - medium_prev) / medium_prev
+
+    if last_close > fast_now > medium_now and medium_slope > 0.02:
+        trend_direction = "up"
+    elif last_close < fast_now < medium_now and medium_slope < -0.02:
+        trend_direction = "down"
+    else:
+        trend_direction = "sideways"
+
+    bullish = _is_bullish(pattern_type)
+    bearish = _is_bearish(pattern_type)
+
+    if bullish:
+        if trend_direction == "up":
+            score = 0.92 if last_close > fast_now else 0.82
+            warning = ""
+        elif trend_direction == "sideways":
+            score = 0.58
+            warning = "상위 추세가 아직 완전한 상승 정렬은 아니라 추세 추종보다는 눌림 확인이 더 중요합니다."
+        else:
+            score = 0.24
+            warning = "현재 패턴은 중기 하락 추세에 역행하는 반등형 구조라 실패 확률을 더 보수적으로 봐야 합니다."
+    elif bearish:
+        if trend_direction == "down":
+            score = 0.92 if last_close < fast_now else 0.82
+            warning = ""
+        elif trend_direction == "sideways":
+            score = 0.58
+            warning = "상위 추세가 아직 완전한 하락 정렬은 아니라 이탈 실패 가능성을 함께 봐야 합니다."
+        else:
+            score = 0.24
+            warning = "현재 패턴은 중기 상승 추세에 역행하는 하락형 구조라 과신하지 않는 편이 좋습니다."
+    else:
+        score = 0.5
+        warning = "중립형 패턴은 상위 추세와 함께 해석해야 의미가 커집니다."
+
+    return {
+        "trend_alignment_score": round(score, 3),
+        "trend_direction": trend_direction,
+        "trend_warning": warning,
+    }
+
+
 def _opportunity_profile(pattern: PatternResult, current_close: float) -> dict[str, float]:
     target = pattern.target_level
     invalidation = pattern.invalidation_level
@@ -617,6 +675,9 @@ def build_no_signal_snapshot(
         headroom_score=0.0,
         target_distance_pct=0.0,
         stop_distance_pct=0.0,
+        trend_alignment_score=0.0,
+        trend_direction="sideways",
+        trend_warning="",
         no_signal_flag=True,
         no_signal_reason=no_signal_reason,
         reason_summary=reason_summary,
@@ -677,7 +738,8 @@ async def analyze_symbol_dataframe(
     sample_size = int(stats.get("sample_size", 0))
     wins = int(stats.get("wins", 0))
     total = int(stats.get("total", sample_size))
-    regime_match = _regime_match(df, best_pattern.pattern_type)
+    trend_profile = _trend_alignment_profile(df, best_pattern.pattern_type)
+    regime_match = trend_profile["trend_alignment_score"]
     opportunity = _opportunity_profile(best_pattern, current_close)
 
     risk_penalty = 0.0
@@ -689,6 +751,10 @@ async def analyze_symbol_dataframe(
         risk_penalty += 0.08
     if best_pattern.state == "played_out":
         risk_penalty += 0.18
+    if trend_profile["trend_alignment_score"] < 0.35:
+        risk_penalty += 0.18
+    elif trend_profile["trend_alignment_score"] < 0.55:
+        risk_penalty += 0.08
     if best_pattern.state == "confirmed" and best_pattern.breakout_quality_fit < 0.42:
         risk_penalty += 0.14
     if best_pattern.state in {"confirmed", "armed"} and best_pattern.retest_quality_fit < 0.35:
@@ -770,6 +836,9 @@ async def analyze_symbol_dataframe(
         headroom_score=probability.headroom_score,
         target_distance_pct=probability.target_distance_pct,
         stop_distance_pct=probability.stop_distance_pct,
+        trend_alignment_score=trend_profile["trend_alignment_score"],
+        trend_direction=trend_profile["trend_direction"],
+        trend_warning=trend_profile["trend_warning"],
         no_signal_flag=probability.no_signal_flag,
         no_signal_reason=probability.no_signal_reason,
         reason_summary=probability.reason_summary,

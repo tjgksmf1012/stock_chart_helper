@@ -78,6 +78,9 @@ class AnalysisResult(BaseModel):
     headroom_score: float
     target_distance_pct: float
     stop_distance_pct: float
+    trend_alignment_score: float
+    trend_direction: str
+    trend_warning: str
     no_signal_flag: bool
     no_signal_reason: str
     reason_summary: str
@@ -119,6 +122,9 @@ class DashboardItem(BaseModel):
     headroom_score: float = 0.0
     target_distance_pct: float = 0.0
     stop_distance_pct: float = 0.0
+    trend_alignment_score: float = 0.0
+    trend_direction: str = "sideways"
+    trend_warning: str = ""
     no_signal_flag: bool
     reason_summary: str
     completion_proximity: float = 0.0

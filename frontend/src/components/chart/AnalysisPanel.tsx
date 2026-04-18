@@ -122,6 +122,7 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
           <StatRow label="목표까지 남은 여지" value={fmtPct(analysis.target_distance_pct)} />
           <StatRow label="손절까지 거리" value={fmtPct(analysis.stop_distance_pct)} />
           <StatRow label="자리 점수" value={fmtPct(analysis.headroom_score)} />
+          <StatRow label="추세 정렬 점수" value={fmtPct(analysis.trend_alignment_score)} />
           {bestPattern && <StatRow label="돌파 품질" value={fmtPct(bestPattern.breakout_quality_fit)} />}
           {bestPattern && <StatRow label="retest 품질" value={fmtPct(bestPattern.retest_quality_fit)} />}
           {bestPattern && <StatRow label="거래량 맥락" value={fmtPct(bestPattern.volume_context_fit)} />}
@@ -148,10 +149,12 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
           <StatRow label="데이터 품질" value={fmtPct(analysis.data_quality, 0)} />
           <StatRow label="평균 거래대금" value={fmtTurnoverBillion(analysis.avg_turnover_billion)} />
           <StatRow label="유동성 점수" value={fmtPct(analysis.liquidity_score)} />
+          <StatRow label="추세 방향" value={analysis.trend_direction} />
           <StatRow label="통계 기준" value={analysis.stats_timeframe} />
           <StatRow label="사용 가능 바 수" value={`${analysis.available_bars}개`} />
           {analysis.bars_since_signal !== null && <StatRow label="신호 발생 후 경과 바" value={`${analysis.bars_since_signal}개`} />}
           <p className="pt-1 text-xs leading-relaxed text-muted-foreground">{analysis.source_note}</p>
+          {analysis.trend_warning && <p className="text-xs text-amber-300">{analysis.trend_warning}</p>}
           {analysis.fetch_message && <p className="text-xs text-muted-foreground">{analysis.fetch_message}</p>}
         </div>
       </Card>

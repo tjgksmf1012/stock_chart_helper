@@ -73,6 +73,9 @@ export interface AnalysisResult {
   headroom_score: number
   target_distance_pct: number
   stop_distance_pct: number
+  trend_alignment_score: number
+  trend_direction: string
+  trend_warning: string
   no_signal_flag: boolean
   no_signal_reason: string
   reason_summary: string
@@ -114,6 +117,9 @@ export interface DashboardItem {
   headroom_score: number
   target_distance_pct: number
   stop_distance_pct: number
+  trend_alignment_score: number
+  trend_direction: string
+  trend_warning: string
   no_signal_flag: boolean
   reason_summary: string
   completion_proximity: number

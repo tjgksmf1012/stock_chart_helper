@@ -64,6 +64,11 @@ export function DashboardCard({ item }: DashboardCardProps) {
             >
               손익비 {item.reward_risk_ratio.toFixed(1)}
             </Badge>
+            <Badge
+              variant={item.trend_alignment_score >= 0.75 ? 'bullish' : item.trend_alignment_score >= 0.5 ? 'muted' : 'warning'}
+            >
+              추세 {fmtPct(item.trend_alignment_score, 0)}
+            </Badge>
           </div>
 
           {item.pattern_type ? (
@@ -106,7 +111,7 @@ export function DashboardCard({ item }: DashboardCardProps) {
         <span>목표 여지 {fmtPct(item.target_distance_pct)}</span>
         <span className="text-right">손절 거리 {fmtPct(item.stop_distance_pct)}</span>
         <span>보정 승률 {fmtPct(item.empirical_win_rate)}</span>
-        <span className="text-right">{item.fetch_status_label}</span>
+        <span className="text-right">{item.trend_direction}</span>
       </div>
 
       <div className="rounded-lg border border-border bg-background/60 p-2.5">
@@ -125,6 +130,12 @@ export function DashboardCard({ item }: DashboardCardProps) {
             데이터 메모
           </div>
           <p className="mt-1 text-xs text-muted-foreground">{item.fetch_message || item.source_note}</p>
+        </div>
+      )}
+
+      {item.trend_warning && (
+        <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-2.5 text-xs text-amber-200">
+          {item.trend_warning}
         </div>
       )}
 
