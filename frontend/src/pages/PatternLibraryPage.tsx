@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { BookOpen, ChevronDown, ChevronUp } from 'lucide-react'
+import { Link } from 'react-router-dom'
 
 import { patternsApi } from '@/lib/api'
 import { Badge } from '@/components/ui/Badge'
@@ -148,6 +149,12 @@ export default function PatternLibraryPage() {
             {value === 'all' ? '전체' : DIRECTION_LABELS[value]}
           </button>
         ))}
+        <Link
+          to="/reports/patterns"
+          className="rounded-md border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+        >
+          패턴 성과 보기
+        </Link>
       </div>
 
       {isLoading ? (

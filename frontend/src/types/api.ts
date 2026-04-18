@@ -189,6 +189,25 @@ export interface PatternLibraryEntry {
   svg_path: string | null
 }
 
+export interface PatternStatsEntry {
+  pattern_type: string
+  timeframe: '1mo' | '1wk' | '1d'
+  timeframe_label: string
+  win_rate: number
+  sample_size: number
+  wins: number
+  total: number
+  avg_mfe_pct: number
+  avg_mae_pct: number
+  avg_bars_to_outcome: number
+  historical_edge_score: number
+}
+
+export interface PatternStatsResponse {
+  generated_at: string
+  items: PatternStatsEntry[]
+}
+
 export interface ScreenerRequest {
   pattern_types?: string[]
   states?: string[]

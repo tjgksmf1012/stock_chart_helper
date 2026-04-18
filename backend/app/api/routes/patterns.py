@@ -1,6 +1,10 @@
+from datetime import datetime
+
 from fastapi import APIRouter, HTTPException
 
-from ..schemas import PatternLibraryEntry
+from ..schemas import PatternLibraryEntry, PatternStatsEntry, PatternStatsResponse
+from ...services.backtest_engine import get_pattern_stats_map
+from ...services.timeframe_service import timeframe_label
 
 router = APIRouter(prefix="/patterns", tags=["patterns"])
 
@@ -229,3 +233,38 @@ async def get_pattern(pattern_type: str) -> PatternLibraryEntry:
         if pattern.pattern_type == pattern_type:
             return pattern
     raise HTTPException(404, f"Pattern '{pattern_type}' not found")
+
+
+@router.get("/stats", response_model=PatternStatsResponse)
+async def get_pattern_stats() -> PatternStatsResponse:
+    stats_map = await get_pattern_stats_map()
+    items: list[PatternStatsEntry] = []
+
+    for timeframe, bucket in stats_map.items():
+        for pattern_type, stats in bucket.items():
+            items.append(
+                PatternStatsEntry(
+                    pattern_type=pattern_type,
+                    timeframe=timeframe,
+                    timeframe_label=timeframe_label(timeframe),
+                    win_rate=float(stats.get("win_rate", 0.0)),
+                    sample_size=int(stats.get("sample_size", 0)),
+                    wins=int(stats.get("wins", 0)),
+                    total=int(stats.get("total", 0)),
+                    avg_mfe_pct=float(stats.get("avg_mfe_pct", 0.0)),
+                    avg_mae_pct=float(stats.get("avg_mae_pct", 0.0)),
+                    avg_bars_to_outcome=float(stats.get("avg_bars_to_outcome", 0.0)),
+                    historical_edge_score=float(stats.get("historical_edge_score", 0.0)),
+                )
+            )
+
+    items.sort(
+        key=lambda item: (
+            item.timeframe,
+            item.historical_edge_score,
+            item.win_rate,
+            item.sample_size,
+        ),
+        reverse=True,
+    )
+    return PatternStatsResponse(generated_at=datetime.utcnow().isoformat(), items=items)

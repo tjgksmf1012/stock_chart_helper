@@ -194,6 +194,25 @@ class PatternLibraryEntry(BaseModel):
     svg_path: str | None
 
 
+class PatternStatsEntry(BaseModel):
+    pattern_type: str
+    timeframe: str
+    timeframe_label: str
+    win_rate: float
+    sample_size: int
+    wins: int
+    total: int
+    avg_mfe_pct: float
+    avg_mae_pct: float
+    avg_bars_to_outcome: float
+    historical_edge_score: float
+
+
+class PatternStatsResponse(BaseModel):
+    generated_at: str
+    items: list[PatternStatsEntry]
+
+
 class ScreenerRequest(BaseModel):
     pattern_types: list[str] | None = None
     states: list[str] | None = None

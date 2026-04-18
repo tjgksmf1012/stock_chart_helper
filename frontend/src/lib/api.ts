@@ -2,6 +2,7 @@ import axios from 'axios'
 import type {
   SymbolInfo, OHLCVBar, AnalysisResult, PriceInfo,
   DashboardResponse, PatternLibraryEntry, ScreenerRequest, DashboardItem, ScanStatusResponse, Timeframe,
+  PatternStatsResponse,
 } from '@/types/api'
 
 const api = axios.create({ baseURL: '/api/v1' })
@@ -29,6 +30,7 @@ export const dashboardApi = {
 export const patternsApi = {
   library: () => api.get<PatternLibraryEntry[]>('/patterns/library').then(r => r.data),
   get: (type: string) => api.get<PatternLibraryEntry>(`/patterns/library/${type}`).then(r => r.data),
+  stats: () => api.get<PatternStatsResponse>('/patterns/stats').then(r => r.data),
 }
 
 export const screenerApi = {
