@@ -42,6 +42,7 @@ export function DashboardCard({ item }: DashboardCardProps) {
             <span className="truncate text-sm font-semibold">{item.symbol.name}</span>
             <span className="font-mono text-xs text-muted-foreground">{item.symbol.code}</span>
           </div>
+
           <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
             <span>{item.symbol.market}</span>
             <span>·</span>
@@ -49,10 +50,11 @@ export function DashboardCard({ item }: DashboardCardProps) {
             <Badge variant={item.data_quality >= 0.8 ? 'bullish' : item.data_quality >= 0.6 ? 'muted' : 'warning'}>
               품질 {fmtPct(item.data_quality, 0)}
             </Badge>
-            <Badge
-              variant={item.confluence_score >= 0.7 ? 'bullish' : item.confluence_score >= 0.5 ? 'muted' : 'warning'}
-            >
+            <Badge variant={item.confluence_score >= 0.7 ? 'bullish' : item.confluence_score >= 0.5 ? 'muted' : 'warning'}>
               합산 {fmtPct(item.confluence_score, 0)}
+            </Badge>
+            <Badge variant={item.formation_quality >= 0.7 ? 'bullish' : item.formation_quality >= 0.5 ? 'muted' : 'warning'}>
+              형성 {fmtPct(item.formation_quality, 0)}
             </Badge>
             <Badge
               variant={item.sample_reliability >= 0.65 ? 'bullish' : item.sample_reliability >= 0.45 ? 'muted' : 'warning'}
@@ -69,11 +71,6 @@ export function DashboardCard({ item }: DashboardCardProps) {
             >
               손익비 {item.reward_risk_ratio.toFixed(1)}
             </Badge>
-            <Badge
-              variant={item.trend_alignment_score >= 0.75 ? 'bullish' : item.trend_alignment_score >= 0.5 ? 'muted' : 'warning'}
-            >
-              추세 {fmtPct(item.trend_alignment_score, 0)}
-            </Badge>
           </div>
 
           {item.pattern_type ? (
@@ -82,6 +79,7 @@ export function DashboardCard({ item }: DashboardCardProps) {
               {item.state && (
                 <span className={cn('rounded px-1 py-0.5 text-xs', STATE_COLORS[item.state])}>{STATE_LABELS[item.state]}</span>
               )}
+              <Badge variant="muted">{setupStageLabel(item.setup_stage)}</Badge>
             </div>
           ) : (
             <div className="mt-2 text-xs text-muted-foreground">뚜렷한 패턴 없음</div>
@@ -90,7 +88,7 @@ export function DashboardCard({ item }: DashboardCardProps) {
 
         <div className="flex items-center gap-2">
           <div className="text-right">
-            <div className="text-xs text-muted-foreground">임박도</div>
+            <div className="text-xs text-muted-foreground">완성도</div>
             <div className="font-mono text-sm font-semibold text-primary">{fmtPct(item.completion_proximity, 0)}</div>
           </div>
           <button
@@ -111,16 +109,16 @@ export function DashboardCard({ item }: DashboardCardProps) {
       <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
         <span>신뢰도 {fmtPct(item.confidence)}</span>
         <span className="text-right">신선도 {fmtPct(item.recency_score)}</span>
+        <span>레그 균형 {fmtPct(item.leg_balance_fit)}</span>
+        <span className="text-right">반전 에너지 {fmtPct(item.reversal_energy_fit)}</span>
+        <span>돌파 품질 {fmtPct(item.breakout_quality_fit)}</span>
+        <span className="text-right">retest 품질 {fmtPct(item.retest_quality_fit)}</span>
         <span>평균 MFE {fmtPct(item.avg_mfe_pct)}</span>
         <span className="text-right">평균 MAE {fmtPct(item.avg_mae_pct)}</span>
         <span>거래대금 {fmtTurnoverBillion(item.avg_turnover_billion)}</span>
         <span className="text-right">표본 {item.sample_size}건</span>
         <span>목표 여지 {fmtPct(item.target_distance_pct)}</span>
         <span className="text-right">손절 거리 {fmtPct(item.stop_distance_pct)}</span>
-        <span>보정 승률 {fmtPct(item.empirical_win_rate)}</span>
-        <span className="text-right">edge {fmtPct(item.historical_edge_score)}</span>
-        <span>평균 결과 바 수 {item.avg_bars_to_outcome.toFixed(1)}</span>
-        <span className="text-right">{item.trend_direction}</span>
       </div>
 
       <div className="rounded-lg border border-border bg-background/60 p-2.5">
@@ -153,4 +151,23 @@ export function DashboardCard({ item }: DashboardCardProps) {
       {item.no_signal_flag && <Badge variant="warning">No Signal</Badge>}
     </Card>
   )
+}
+
+function setupStageLabel(stage: string): string {
+  switch (stage) {
+    case 'confirmed':
+      return '완료 신호'
+    case 'trigger_ready':
+      return '트리거 직전'
+    case 'breakout_watch':
+      return '돌파 감시'
+    case 'late_base':
+      return '후반 베이스'
+    case 'early_trigger_watch':
+      return '초기 트리거'
+    case 'base_building':
+      return '베이스 형성'
+    default:
+      return '중립'
+  }
 }

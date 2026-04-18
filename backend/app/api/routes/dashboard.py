@@ -28,9 +28,15 @@ def _make_item(rank: int, row: dict) -> DashboardItem:
         timeframe_label=row.get("timeframe_label", timeframe_label(row.get("timeframe", DEFAULT_TIMEFRAME))),
         pattern_type=row.get("pattern_type"),
         state=row.get("state"),
+        setup_stage=row.get("setup_stage", "neutral"),
         p_up=row["p_up"],
         p_down=row["p_down"],
         textbook_similarity=row["textbook_similarity"],
+        formation_quality=row.get("formation_quality", 0.0),
+        leg_balance_fit=row.get("leg_balance_fit", 0.0),
+        reversal_energy_fit=row.get("reversal_energy_fit", 0.0),
+        breakout_quality_fit=row.get("breakout_quality_fit", 0.0),
+        retest_quality_fit=row.get("retest_quality_fit", 0.0),
         confidence=row["confidence"],
         entry_score=row["entry_score"],
         reward_risk_ratio=row.get("reward_risk_ratio", 0.0),
@@ -189,3 +195,32 @@ async def dashboard_armed(
     )
     items = [_make_item(index + 1, row) for index, row in enumerate(ranked[:limit])]
     return _response("pattern_armed", timeframe, items)
+
+
+@router.get("/forming-candidates")
+async def dashboard_forming(
+    timeframe: str = Query(default=DEFAULT_TIMEFRAME),
+    limit: int = Query(default=10, le=50),
+) -> DashboardResponse:
+    timeframe = _timeframe_query(timeframe)
+    data = await get_scan_results(timeframe)
+    ranked = [
+        row for row in data
+        if row.get("state") == "forming"
+        and row.get("formation_quality", 0.0) >= 0.42
+        and row.get("textbook_similarity", 0.0) >= 0.45
+    ]
+    ranked.sort(
+        key=lambda row: (
+            0.34 * row.get("completion_proximity", 0.0)
+            + 0.24 * row.get("formation_quality", 0.0)
+            + 0.18 * row.get("confluence_score", 0.5)
+            + 0.12 * row.get("trend_alignment_score", 0.0)
+            + 0.12 * row.get("recency_score", 0.0),
+            row.get("historical_edge_score", 0.0),
+            row.get("data_quality", 0.0),
+        ),
+        reverse=True,
+    )
+    items = [_make_item(index + 1, row) for index, row in enumerate(ranked[:limit])]
+    return _response("forming_candidates", timeframe, items)

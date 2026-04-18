@@ -99,6 +99,62 @@ def _direction_label(score: float) -> str:
     return "중립"
 
 
+def _formation_quality_from_row(row: dict[str, Any]) -> float:
+    return float(
+        row.get("formation_quality")
+        or (
+            0.28 * float(row.get("leg_balance_fit", 0.0))
+            + 0.28 * float(row.get("reversal_energy_fit", 0.0))
+            + 0.22 * float(row.get("breakout_quality_fit", 0.0))
+            + 0.22 * float(row.get("retest_quality_fit", 0.0))
+        )
+    )
+
+
+def _setup_stage(row: dict[str, Any]) -> str:
+    state = row.get("state")
+    completion = float(row.get("completion_proximity", 0.0))
+    formation_quality = _formation_quality_from_row(row)
+    confluence = float(row.get("confluence_score", 0.5))
+
+    if state == "confirmed":
+        return "confirmed"
+    if state == "armed":
+        if formation_quality >= 0.62 and confluence >= 0.62:
+            return "trigger_ready"
+        return "breakout_watch"
+    if state == "forming":
+        if completion >= 0.72 and formation_quality >= 0.55 and confluence >= 0.58:
+            return "late_base"
+        if completion >= 0.52 and formation_quality >= 0.45:
+            return "early_trigger_watch"
+        return "base_building"
+    return "neutral"
+
+
+def _apply_setup_metadata(row: dict[str, Any]) -> dict[str, Any]:
+    formation_quality = round(_formation_quality_from_row(row), 3)
+    row["formation_quality"] = formation_quality
+    row["setup_stage"] = _setup_stage({**row, "formation_quality": formation_quality})
+
+    if row["setup_stage"] == "late_base":
+        row["scenario_text"] = (
+            f"{row.get('timeframe_label', row.get('timeframe', ''))} forming setup with supportive higher-timeframe context. "
+            "Track it like a pre-breakout candidate, not a finished signal."
+        )
+        row["composite_score"] = round(float(row.get("composite_score", 0.0)) + 0.06, 3)
+    elif row["setup_stage"] == "early_trigger_watch":
+        row["scenario_text"] = (
+            f"{row.get('timeframe_label', row.get('timeframe', ''))} is still building. "
+            "The structure is improving, but it needs more confirmation before acting like a full breakout setup."
+        )
+        row["composite_score"] = round(float(row.get("composite_score", 0.0)) + 0.03, 3)
+    elif row["setup_stage"] == "base_building":
+        row["composite_score"] = round(float(row.get("composite_score", 0.0)) - 0.03, 3)
+
+    return row
+
+
 def _confluence_anchor_weights(timeframe: str) -> list[tuple[str, float]]:
     anchors = ANCHOR_TIMEFRAMES.get(timeframe, [])
     if len(anchors) == 2:
@@ -293,9 +349,20 @@ async def _analyze_one(
             "timeframe_label": analysis.timeframe_label,
             "pattern_type": analysis.patterns[0].pattern_type if analysis.patterns else None,
             "state": analysis.patterns[0].state if analysis.patterns else None,
+            "setup_stage": "neutral",
             "p_up": analysis.p_up,
             "p_down": analysis.p_down,
             "textbook_similarity": analysis.textbook_similarity,
+            "formation_quality": (
+                0.28 * analysis.patterns[0].leg_balance_fit
+                + 0.28 * analysis.patterns[0].reversal_energy_fit
+                + 0.22 * analysis.patterns[0].breakout_quality_fit
+                + 0.22 * analysis.patterns[0].retest_quality_fit
+            ) if analysis.patterns else 0.0,
+            "leg_balance_fit": analysis.patterns[0].leg_balance_fit if analysis.patterns else 0.0,
+            "reversal_energy_fit": analysis.patterns[0].reversal_energy_fit if analysis.patterns else 0.0,
+            "breakout_quality_fit": analysis.patterns[0].breakout_quality_fit if analysis.patterns else 0.0,
+            "retest_quality_fit": analysis.patterns[0].retest_quality_fit if analysis.patterns else 0.0,
             "confidence": analysis.confidence,
             "entry_score": analysis.entry_score,
             "reward_risk_ratio": analysis.reward_risk_ratio,
@@ -348,6 +415,7 @@ async def _analyze_one(
                 }
             )
 
+        result = _apply_setup_metadata(result)
         await cache_set(cache_key, result, ttl=1800)
         return result
     except Exception as exc:

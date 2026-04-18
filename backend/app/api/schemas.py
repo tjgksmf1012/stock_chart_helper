@@ -119,9 +119,15 @@ class DashboardItem(BaseModel):
     timeframe_label: str
     pattern_type: str | None
     state: str | None
+    setup_stage: str = "neutral"
     p_up: float
     p_down: float
     textbook_similarity: float
+    formation_quality: float = 0.0
+    leg_balance_fit: float = 0.0
+    reversal_energy_fit: float = 0.0
+    breakout_quality_fit: float = 0.0
+    retest_quality_fit: float = 0.0
     confidence: float
     entry_score: float
     reward_risk_ratio: float = 0.0

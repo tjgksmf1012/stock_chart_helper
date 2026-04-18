@@ -114,9 +114,15 @@ export interface DashboardItem {
   timeframe_label: string
   pattern_type: string | null
   state: string | null
+  setup_stage: string
   p_up: number
   p_down: number
   textbook_similarity: number
+  formation_quality: number
+  leg_balance_fit: number
+  reversal_energy_fit: number
+  breakout_quality_fit: number
+  retest_quality_fit: number
   confidence: number
   entry_score: number
   reward_risk_ratio: number
