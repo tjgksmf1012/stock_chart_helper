@@ -451,10 +451,11 @@ def _pattern_rank_score(pattern: PatternResult, completion_proximity: float, rec
         "invalidated": -0.35,
     }.get(pattern.state, 0.0)
     quality = (
-        0.33 * pattern.breakout_quality_fit
-        + 0.24 * pattern.retest_quality_fit
-        + 0.22 * pattern.leg_balance_fit
-        + 0.21 * pattern.reversal_energy_fit
+        0.30 * pattern.breakout_quality_fit
+        + 0.22 * pattern.retest_quality_fit
+        + 0.20 * pattern.leg_balance_fit
+        + 0.20 * pattern.reversal_energy_fit
+        + 0.08 * pattern.variant_fit
     )
     return 0.42 * pattern.textbook_similarity + 0.16 * completion_proximity + 0.14 * recency_score + 0.12 * quality + state_bonus
 
@@ -780,6 +781,10 @@ async def analyze_symbol_dataframe(
         risk_penalty += 0.14
     elif best_pattern.reversal_energy_fit < 0.52:
         risk_penalty += 0.07
+    if best_pattern.variant_fit < 0.58:
+        risk_penalty += 0.10
+    elif best_pattern.variant_fit < 0.70:
+        risk_penalty += 0.05
     if opportunity["reward_risk_ratio"] < 1.2:
         risk_penalty += 0.12
     if opportunity["headroom_score"] < 0.2:
@@ -828,10 +833,12 @@ async def analyze_symbol_dataframe(
                 pattern_type=pattern.pattern_type,
                 state=pattern.state,
                 grade=pattern.grade,
+                variant=pattern.variant,
                 textbook_similarity=pattern.textbook_similarity,
                 geometry_fit=pattern.geometry_fit,
                 leg_balance_fit=pattern.leg_balance_fit,
                 reversal_energy_fit=pattern.reversal_energy_fit,
+                variant_fit=pattern.variant_fit,
                 volume_context_fit=pattern.volume_context_fit,
                 volatility_context_fit=pattern.volatility_context_fit,
                 breakout_quality_fit=pattern.breakout_quality_fit,

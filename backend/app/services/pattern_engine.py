@@ -43,6 +43,7 @@ class PatternResult:
     grade: str          # A | B | C
     start_dt: datetime
     end_dt: datetime | None
+    variant: str | None = None
 
     # key price levels
     neckline: float | None = None
@@ -57,6 +58,7 @@ class PatternResult:
     regime_fit: float = 0.0
     leg_balance_fit: float = 0.5
     reversal_energy_fit: float = 0.5
+    variant_fit: float = 0.5
     breakout_quality_fit: float = 0.0
     retest_quality_fit: float = 0.0
     textbook_similarity: float = 0.0
@@ -67,13 +69,14 @@ class PatternResult:
 
 def _compute_textbook_similarity(r: PatternResult) -> float:
     return (
-        0.30 * r.geometry_fit
-        + 0.15 * r.swing_structure_fit
+        0.28 * r.geometry_fit
+        + 0.14 * r.swing_structure_fit
         + 0.10 * r.volume_context_fit
         + 0.07 * r.volatility_context_fit
         + 0.07 * r.regime_fit
         + 0.08 * r.leg_balance_fit
         + 0.07 * r.reversal_energy_fit
+        + 0.03 * r.variant_fit
         + 0.10 * r.breakout_quality_fit
         + 0.06 * r.retest_quality_fit
     )
@@ -82,10 +85,11 @@ def _compute_textbook_similarity(r: PatternResult) -> float:
 def _formation_quality_score(r: PatternResult) -> float:
     return float(
         np.clip(
-            0.30 * r.leg_balance_fit
-            + 0.27 * r.reversal_energy_fit
-            + 0.23 * r.breakout_quality_fit
-            + 0.20 * r.retest_quality_fit,
+            0.25 * r.leg_balance_fit
+            + 0.24 * r.reversal_energy_fit
+            + 0.21 * r.breakout_quality_fit
+            + 0.18 * r.retest_quality_fit
+            + 0.12 * r.variant_fit,
             0.0,
             1.0,
         )
@@ -190,6 +194,114 @@ def _reversal_energy_score(
     velocity_score = float(np.clip((slope_ratio - 0.65) / 0.85, 0.0, 1.0))
     impulse_score = float(np.clip(rebound_rate / 0.012, 0.0, 1.0))
     return round(float(np.clip(0.65 * velocity_score + 0.35 * impulse_score, 0.0, 1.0)), 3)
+
+
+def _pivot_shape_profile(
+    df: pd.DataFrame,
+    pivot_idx: int,
+    pivot_kind: Literal["low", "high"],
+    left_boundary: int | None = None,
+    right_boundary: int | None = None,
+) -> dict[str, float | str]:
+    if pivot_idx < 0 or pivot_idx >= len(df):
+        return {"shape": "hybrid", "adam_score": 0.5, "eve_score": 0.5}
+
+    window_radius = 6
+    start = max(0, left_boundary if left_boundary is not None else pivot_idx - window_radius)
+    end = min(len(df) - 1, right_boundary if right_boundary is not None else pivot_idx + window_radius)
+    if start >= end:
+        start = max(0, pivot_idx - window_radius)
+        end = min(len(df) - 1, pivot_idx + window_radius)
+    pivot_pos = pivot_idx - start
+    window = df.iloc[start : end + 1].copy()
+
+    if pivot_kind == "low":
+        series = pd.to_numeric(window["low"], errors="coerce")
+        pivot_price = float(pd.to_numeric(df["low"], errors="coerce").iloc[pivot_idx])
+    else:
+        series = pd.to_numeric(window["high"], errors="coerce")
+        pivot_price = float(pd.to_numeric(df["high"], errors="coerce").iloc[pivot_idx])
+
+    if not np.isfinite(pivot_price) or pivot_price <= 0:
+        return {"shape": "hybrid", "adam_score": 0.5, "eve_score": 0.5}
+
+    distance_ratio = (series - pivot_price).abs() / pivot_price
+    near_mask = (distance_ratio <= 0.012).tolist()
+
+    left = pivot_pos
+    right = pivot_pos
+    while left - 1 >= 0 and near_mask[left - 1]:
+        left -= 1
+    while right + 1 < len(near_mask) and near_mask[right + 1]:
+        right += 1
+    pivot_width = right - left + 1
+    linger_ratio = float(sum(1 for flag in near_mask if flag) / max(len(near_mask), 1))
+    width_score = float(np.clip((pivot_width - 1) / 4.0, 0.0, 1.0))
+    linger_score = float(np.clip((linger_ratio - 0.12) / 0.30, 0.0, 1.0))
+    total_span = max(1, end - start)
+    span_score = float(np.clip((total_span - 7) / 16.0, 0.0, 1.0))
+    shortness_score = float(np.clip((11 - total_span) / 8.0, 0.0, 1.0))
+
+    closes = pd.to_numeric(df["close"], errors="coerce")
+    lookback_idx = max(0, pivot_idx - 3)
+    lookahead_idx = min(len(df) - 1, pivot_idx + 3)
+    bars_left = max(1, pivot_idx - lookback_idx)
+    bars_right = max(1, lookahead_idx - pivot_idx)
+
+    left_ref = float(closes.iloc[lookback_idx])
+    right_ref = float(closes.iloc[lookahead_idx])
+    if pivot_kind == "low":
+        left_rate = max(0.0, _safe_ratio(left_ref - pivot_price, max(left_ref, 1.0)) / bars_left)
+        right_rate = max(0.0, _safe_ratio(right_ref - pivot_price, max(pivot_price, 1.0)) / bars_right)
+    else:
+        left_rate = max(0.0, _safe_ratio(pivot_price - left_ref, max(left_ref, 1.0)) / bars_left)
+        right_rate = max(0.0, _safe_ratio(pivot_price - right_ref, max(pivot_price, 1.0)) / bars_right)
+
+    steepness = float(np.clip(((left_rate + right_rate) / 2.0) / 0.02, 0.0, 1.0))
+    adam_score = float(
+        np.clip(
+            0.34 * steepness + 0.24 * (1.0 - width_score) + 0.18 * (1.0 - linger_score) + 0.24 * shortness_score,
+            0.0,
+            1.0,
+        )
+    )
+    eve_score = float(
+        np.clip(
+            0.30 * width_score + 0.24 * linger_score + 0.18 * (1.0 - steepness) + 0.28 * span_score,
+            0.0,
+            1.0,
+        )
+    )
+
+    if adam_score >= eve_score + 0.06:
+        shape = "adam"
+    elif eve_score >= adam_score + 0.06:
+        shape = "eve"
+    else:
+        shape = "hybrid"
+
+    return {
+        "shape": shape,
+        "adam_score": round(adam_score, 3),
+        "eve_score": round(eve_score, 3),
+    }
+
+
+def _double_pattern_variant(
+    first_shape: str,
+    second_shape: str,
+    bullish: bool,
+) -> tuple[str, float]:
+    variant = f"{first_shape}_{second_shape}"
+    if bullish:
+        first_bonus = {"adam": 0.16, "hybrid": 0.12, "eve": 0.10}
+        second_bonus = {"eve": 0.22, "hybrid": 0.12, "adam": 0.05}
+    else:
+        first_bonus = {"eve": 0.16, "hybrid": 0.12, "adam": 0.08}
+        second_bonus = {"adam": 0.22, "hybrid": 0.12, "eve": 0.05}
+
+    score = 0.56 + first_bonus.get(first_shape, 0.10) + second_bonus.get(second_shape, 0.10)
+    return variant, round(float(np.clip(score, 0.0, 1.0)), 3)
 
 
 def _breakout_index(df: pd.DataFrame, level: float, start_idx: int, bullish: bool, threshold: float = 0.005) -> int | None:
@@ -380,13 +492,46 @@ class PatternEngine:
                 breakout_idx if breakout_idx is not None else len(df) - 1,
                 bullish=True,
             )
-            geom_fit = price_sym * 0.42 + max(0, 1 - abs(low_diff) * 10) * 0.23 + leg_balance * 0.20 + reversal_energy * 0.15
+            previous_highs = [h for h in highs if h.index < L1.index]
+            next_highs = [h for h in highs if h.index > L2.index]
+            first_left_boundary = previous_highs[-1].index if previous_highs else max(0, L1.index - left_span)
+            second_right_boundary = (
+                next_highs[0].index
+                if next_highs
+                else breakout_idx if breakout_idx is not None else min(len(df) - 1, L2.index + right_span)
+            )
+            first_shape = _pivot_shape_profile(
+                df,
+                L1.index,
+                "low",
+                left_boundary=first_left_boundary,
+                right_boundary=neckline_swing.index,
+            )
+            second_shape = _pivot_shape_profile(
+                df,
+                L2.index,
+                "low",
+                left_boundary=neckline_swing.index,
+                right_boundary=second_right_boundary,
+            )
+            variant, variant_fit = _double_pattern_variant(
+                str(first_shape["shape"]),
+                str(second_shape["shape"]),
+                bullish=True,
+            )
+            geom_fit = (
+                price_sym * 0.38
+                + max(0, 1 - abs(low_diff) * 10) * 0.20
+                + leg_balance * 0.18
+                + reversal_energy * 0.16
+                + variant_fit * 0.08
+            )
             breakout_quality = _breakout_quality_score(df, breakout_idx, neckline, bullish=True)
             retest_quality = _retest_quality_score(df, breakout_idx, neckline, bullish=True)
             state = _normalize_state(state, breakout_quality, retest_quality)
-            if state == "confirmed" and (leg_balance < 0.46 or reversal_energy < 0.44):
+            if state == "confirmed" and (leg_balance < 0.46 or reversal_energy < 0.44 or variant_fit < 0.66):
                 state = "armed"
-            elif state == "armed" and (leg_balance < 0.34 or reversal_energy < 0.30):
+            elif state == "armed" and (leg_balance < 0.34 or reversal_energy < 0.30 or variant_fit < 0.58):
                 state = "forming"
             grade = _grade_from_quality(geom_fit, breakout_quality, retest_quality, vol_score)
 
@@ -396,6 +541,7 @@ class PatternEngine:
                 grade=grade,
                 start_dt=L1.datetime,
                 end_dt=last_dt if state == "confirmed" else None,
+                variant=variant,
                 neckline=neckline,
                 invalidation_level=invalidation,
                 target_level=target,
@@ -406,6 +552,7 @@ class PatternEngine:
                 regime_fit=regime_fit,
                 leg_balance_fit=leg_balance,
                 reversal_energy_fit=reversal_energy,
+                variant_fit=variant_fit,
                 breakout_quality_fit=breakout_quality,
                 retest_quality_fit=retest_quality,
                 key_points=[
@@ -471,13 +618,46 @@ class PatternEngine:
                 breakout_idx if breakout_idx is not None else len(df) - 1,
                 bullish=False,
             )
-            geom_fit = price_sym * 0.42 + max(0, 1 - abs(high_diff) * 10) * 0.23 + leg_balance * 0.20 + reversal_energy * 0.15
+            previous_lows = [l for l in lows if l.index < H1.index]
+            next_lows = [l for l in lows if l.index > H2.index]
+            first_left_boundary = previous_lows[-1].index if previous_lows else max(0, H1.index - left_span)
+            second_right_boundary = (
+                next_lows[0].index
+                if next_lows
+                else breakout_idx if breakout_idx is not None else min(len(df) - 1, H2.index + right_span)
+            )
+            first_shape = _pivot_shape_profile(
+                df,
+                H1.index,
+                "high",
+                left_boundary=first_left_boundary,
+                right_boundary=neckline_swing.index,
+            )
+            second_shape = _pivot_shape_profile(
+                df,
+                H2.index,
+                "high",
+                left_boundary=neckline_swing.index,
+                right_boundary=second_right_boundary,
+            )
+            variant, variant_fit = _double_pattern_variant(
+                str(first_shape["shape"]),
+                str(second_shape["shape"]),
+                bullish=False,
+            )
+            geom_fit = (
+                price_sym * 0.38
+                + max(0, 1 - abs(high_diff) * 10) * 0.20
+                + leg_balance * 0.18
+                + reversal_energy * 0.16
+                + variant_fit * 0.08
+            )
             breakout_quality = _breakout_quality_score(df, breakout_idx, neckline, bullish=False)
             retest_quality = _retest_quality_score(df, breakout_idx, neckline, bullish=False)
             state = _normalize_state(state, breakout_quality, retest_quality)
-            if state == "confirmed" and (leg_balance < 0.46 or reversal_energy < 0.44):
+            if state == "confirmed" and (leg_balance < 0.46 or reversal_energy < 0.44 or variant_fit < 0.66):
                 state = "armed"
-            elif state == "armed" and (leg_balance < 0.34 or reversal_energy < 0.30):
+            elif state == "armed" and (leg_balance < 0.34 or reversal_energy < 0.30 or variant_fit < 0.58):
                 state = "forming"
             grade = _grade_from_quality(geom_fit, breakout_quality, retest_quality, vol_score)
 
@@ -487,6 +667,7 @@ class PatternEngine:
                 grade=grade,
                 start_dt=H1.datetime,
                 end_dt=last_dt if state == "confirmed" else None,
+                variant=variant,
                 neckline=neckline,
                 invalidation_level=invalidation,
                 target_level=target,
@@ -497,6 +678,7 @@ class PatternEngine:
                 regime_fit=regime_fit,
                 leg_balance_fit=leg_balance,
                 reversal_energy_fit=reversal_energy,
+                variant_fit=variant_fit,
                 breakout_quality_fit=breakout_quality,
                 retest_quality_fit=retest_quality,
                 key_points=[

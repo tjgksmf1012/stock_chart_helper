@@ -97,10 +97,11 @@ def _formation_quality(pattern: PatternResult) -> float:
         0.0,
         min(
             1.0,
-            0.28 * pattern.leg_balance_fit
-            + 0.28 * pattern.reversal_energy_fit
-            + 0.22 * pattern.breakout_quality_fit
-            + 0.22 * pattern.retest_quality_fit,
+            0.24 * pattern.leg_balance_fit
+            + 0.24 * pattern.reversal_energy_fit
+            + 0.20 * pattern.breakout_quality_fit
+            + 0.20 * pattern.retest_quality_fit
+            + 0.12 * pattern.variant_fit,
         ),
     )
 
@@ -351,6 +352,7 @@ def compute_probability(
         or headroom_score < 0.18
         or edge_score < 0.22
         or formation_quality < 0.34
+        or pattern.variant_fit < 0.42
     )
     no_signal_reason = (
         ""

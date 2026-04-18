@@ -34,10 +34,12 @@ export interface PatternInfo {
   pattern_type: string
   state: 'forming' | 'armed' | 'confirmed' | 'invalidated' | 'played_out'
   grade: 'A' | 'B' | 'C'
+  variant?: string | null
   textbook_similarity: number
   geometry_fit: number
   leg_balance_fit: number
   reversal_energy_fit: number
+  variant_fit: number
   volume_context_fit: number
   volatility_context_fit: number
   breakout_quality_fit: number

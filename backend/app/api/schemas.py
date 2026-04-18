@@ -39,10 +39,12 @@ class PatternInfo(BaseModel):
     pattern_type: str
     state: str
     grade: str
+    variant: str | None = None
     textbook_similarity: float
     geometry_fit: float
     leg_balance_fit: float = 0.5
     reversal_energy_fit: float = 0.5
+    variant_fit: float = 0.5
     volume_context_fit: float = 0.0
     volatility_context_fit: float = 0.0
     breakout_quality_fit: float = 0.0

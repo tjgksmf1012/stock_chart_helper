@@ -61,6 +61,18 @@ export const PATTERN_NAMES: Record<string, string> = {
   rounding_bottom: '라운딩 바닥',
 }
 
+export const PATTERN_VARIANT_NAMES: Record<string, string> = {
+  adam_adam: 'Adam / Adam',
+  adam_eve: 'Adam / Eve',
+  eve_adam: 'Eve / Adam',
+  eve_eve: 'Eve / Eve',
+  hybrid_adam: 'Hybrid / Adam',
+  hybrid_eve: 'Hybrid / Eve',
+  adam_hybrid: 'Adam / Hybrid',
+  eve_hybrid: 'Eve / Hybrid',
+  hybrid_hybrid: 'Hybrid / Hybrid',
+}
+
 export const DIRECTION_LABELS: Record<string, string> = {
   bullish: '상승형',
   bearish: '하락형',
