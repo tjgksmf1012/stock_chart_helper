@@ -333,7 +333,7 @@ function ContextCard({
           </div>
         </div>
       ) : (
-        <div className="mt-2 text-xs text-muted-foreground">뚜렷한 패턴 없음</div>
+        <div className="mt-2 text-xs text-muted-foreground">유의미한 패턴 없음</div>
       )}
 
       <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
@@ -356,12 +356,12 @@ function summarizeContext(primary: AnalysisResult | undefined, contexts: Analysi
   }
 
   if (aligned === contexts.length) {
-    return `${primary.timeframe_label} 신호와 주변 타임프레임이 같은 방향으로 정렬돼 있어 추세 추종형으로 보기 좋습니다.`
+    return `${primary.timeframe_label} 신호가 주변 타임프레임과 같은 방향으로 정렬돼 있어 추세 추종 관점으로 보기 좋습니다.`
   }
 
   if (opposite > 0) {
-    return `${primary.timeframe_label} 신호는 있지만 일부 상위·하위 축이 엇갈립니다. 무조건 추격하기보다 지지와 무효화 기준을 함께 보는 편이 좋습니다.`
+    return `${primary.timeframe_label} 신호는 있지만 상위 또는 하위 축이 엇갈립니다. 무조건 추격하기보다 지지와 무효화 기준을 함께 보는 편이 좋습니다.`
   }
 
-  return `${primary.timeframe_label} 신호는 유지되지만 주변 타임프레임은 절반 정도만 동조하고 있습니다. 보수적으로 확인하는 편이 좋습니다.`
+  return `${primary.timeframe_label} 신호는 유효하지만 주변 타임프레임은 일부만 동조하고 있습니다. 보수적으로 확인하는 편이 좋습니다.`
 }

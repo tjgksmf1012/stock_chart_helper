@@ -84,26 +84,30 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
                 {STATE_LABELS[bestPattern.state]}
               </span>
             </div>
-            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-              {patternActionText(bestPattern, analysis)}
-            </p>
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{patternActionText(bestPattern, analysis)}</p>
           </div>
           <div className="space-y-2">
             {bestPattern.target_level && (
-              <StatRow
-                label="우선 목표가"
-                value={<span className="text-green-400">{fmtPrice(bestPattern.target_level)}</span>}
-              />
+              <StatRow label="우선 목표가" value={<span className="text-green-400">{fmtPrice(bestPattern.target_level)}</span>} />
             )}
             {bestPattern.invalidation_level && (
-              <StatRow
-                label="리스크 기준"
-                value={<span className="text-red-400">{fmtPrice(bestPattern.invalidation_level)}</span>}
-              />
+              <StatRow label="리스크 기준" value={<span className="text-red-400">{fmtPrice(bestPattern.invalidation_level)}</span>} />
             )}
+            {bestPattern.target_hit_at && <StatRow label="목표가 도달 시점" value={bestPattern.target_hit_at} />}
+            {bestPattern.invalidated_at && <StatRow label="무효화 시점" value={bestPattern.invalidated_at} />}
           </div>
         </Card>
       )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>예상 시나리오</CardTitle>
+        </CardHeader>
+        <div className="rounded-lg border border-border bg-background/60 p-3">
+          <div className="text-sm font-semibold">{analysis.projection_label}</div>
+          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{analysis.projection_summary}</p>
+        </div>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -138,9 +142,7 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
           <StatRow label="유동성 점수" value={fmtPct(analysis.liquidity_score)} />
           <StatRow label="통계 기준" value={analysis.stats_timeframe} />
           <StatRow label="사용 가능 바 수" value={`${analysis.available_bars}개`} />
-          {analysis.bars_since_signal !== null && (
-            <StatRow label="신호 발생 후 경과 바" value={`${analysis.bars_since_signal}개`} />
-          )}
+          {analysis.bars_since_signal !== null && <StatRow label="신호 발생 후 경과 바" value={`${analysis.bars_since_signal}개`} />}
           <p className="pt-1 text-xs leading-relaxed text-muted-foreground">{analysis.source_note}</p>
           {analysis.fetch_message && <p className="text-xs text-muted-foreground">{analysis.fetch_message}</p>}
         </div>
@@ -155,30 +157,20 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
             {analysis.patterns.map((pattern, index) => (
               <div key={`${pattern.pattern_type}-${index}`} className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium">
-                    {PATTERN_NAMES[pattern.pattern_type] ?? pattern.pattern_type}
-                  </span>
+                  <span className="text-xs font-medium">{PATTERN_NAMES[pattern.pattern_type] ?? pattern.pattern_type}</span>
                   <Badge variant="muted">{pattern.grade}급</Badge>
                 </div>
                 <div className="flex gap-2">
-                  <span className={cn('rounded px-1.5 py-0.5 text-xs', STATE_COLORS[pattern.state])}>
-                    {STATE_LABELS[pattern.state]}
-                  </span>
+                  <span className={cn('rounded px-1.5 py-0.5 text-xs', STATE_COLORS[pattern.state])}>{STATE_LABELS[pattern.state]}</span>
                   <span className="text-xs text-muted-foreground">유사도 {fmtPct(pattern.textbook_similarity)}</span>
                 </div>
                 {pattern.neckline && <StatRow label="목선" value={fmtPrice(pattern.neckline)} />}
                 {pattern.invalidation_level && (
-                  <StatRow
-                    label="무효화 기준"
-                    value={<span className="text-red-400">{fmtPrice(pattern.invalidation_level)}</span>}
-                  />
+                  <StatRow label="무효화 기준" value={<span className="text-red-400">{fmtPrice(pattern.invalidation_level)}</span>} />
                 )}
-                {pattern.target_level && (
-                  <StatRow
-                    label="목표가"
-                    value={<span className="text-green-400">{fmtPrice(pattern.target_level)}</span>}
-                  />
-                )}
+                {pattern.target_level && <StatRow label="목표가" value={<span className="text-green-400">{fmtPrice(pattern.target_level)}</span>} />}
+                {pattern.target_hit_at && <StatRow label="목표가 도달" value={pattern.target_hit_at} />}
+                {pattern.invalidated_at && <StatRow label="무효화" value={pattern.invalidated_at} />}
               </div>
             ))}
           </div>
@@ -191,8 +183,8 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
           해석 주의
         </div>
         <p className="text-xs leading-relaxed text-muted-foreground">
-          이 화면은 패턴 기반 해석 보조 도구입니다. 확률과 유사도가 높아도 추세, 거래대금, 뉴스,
-          무효화 기준에 따라 결과가 달라질 수 있으므로 특히 분봉은 보수적으로 해석하는 편이 좋습니다.
+          이 화면은 패턴 기반 해석 보조 도구입니다. 미래 경로 오버레이는 확정 예측이 아니라 현재 구조를 기준으로 만든 기본 시나리오입니다.
+          목표가를 이미 찍은 패턴은 새로운 매수 신호가 아니라 기존 패턴 종료로 봐야 하고, 새 진입은 별도 재축적 패턴으로 다시 판단하는 편이 좋습니다.
         </p>
       </Card>
     </div>
@@ -206,6 +198,14 @@ function badgeVariant(pattern: PatternInfo): 'bullish' | 'bearish' | 'neutral' {
 function patternActionText(pattern: PatternInfo, analysis: AnalysisResult): string {
   const bias = getPatternBias(pattern.pattern_type)
 
+  if (pattern.state === 'played_out') {
+    return '기존 패턴 목표가가 이미 도달된 상태로 보는 편이 맞습니다. 지금은 같은 패턴의 재매수보다 재축적 또는 새 패턴 형성을 다시 확인하는 편이 좋습니다.'
+  }
+
+  if (pattern.state === 'invalidated') {
+    return '기존 패턴은 이미 무효화된 쪽으로 해석하는 편이 안전합니다. 손절 이후 재진입은 새로운 구조가 생길 때 다시 보는 편이 좋습니다.'
+  }
+
   if (pattern.state === 'forming') {
     return bias === 'bullish'
       ? '아직 패턴이 완성되기 전 단계입니다. 목선 돌파와 거래대금 반응이 실제로 붙는지 먼저 확인하는 편이 좋습니다.'
@@ -214,12 +214,12 @@ function patternActionText(pattern: PatternInfo, analysis: AnalysisResult): stri
 
   if (pattern.state === 'armed') {
     return bias === 'bullish'
-      ? '완성 직전 구간입니다. 성급한 추격보다 돌파가 유지되는지, 눌림이 버티는지 확인한 뒤 대응하는 편이 안정적입니다.'
+      ? '완성 직전 구간입니다. 성급한 추격보다 돌파가 유지되는지, 눌림을 버티는지 확인한 뒤 대응하는 편이 안정적입니다.'
       : '이탈 직전 구간입니다. 급한 진입보다 지지 붕괴와 반등 실패가 같이 나오는지 확인하는 편이 좋습니다.'
   }
 
   if (analysis.p_up >= 0.6) {
-    return '이미 확인된 패턴으로 해석되고 있습니다. 다만 목표가보다 먼저 무효화 기준을 지키는지가 더 중요합니다.'
+    return '이미 확인된 패턴으로 해석하고 있습니다. 다만 목표가보다 먼저 무효화 기준을 지키는지가 더 중요합니다.'
   }
 
   return '패턴은 감지됐지만 확신 구간은 아닙니다. 확률, 유사도, 무효화 기준을 함께 보고 보수적으로 접근하는 편이 좋습니다.'

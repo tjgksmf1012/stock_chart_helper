@@ -48,6 +48,14 @@ class PatternInfo(BaseModel):
     is_provisional: bool
     start_dt: str
     end_dt: str | None
+    target_hit_at: str | None = None
+    invalidated_at: str | None = None
+
+
+class ProjectionPoint(BaseModel):
+    dt: str
+    price: float
+    kind: str
 
 
 class AnalysisResult(BaseModel):
@@ -69,6 +77,9 @@ class AnalysisResult(BaseModel):
     empirical_win_rate: float
     sample_reliability: float
     patterns: list[PatternInfo]
+    projection_label: str
+    projection_summary: str
+    projected_path: list[ProjectionPoint]
     is_provisional: bool
     updated_at: str
     data_source: str

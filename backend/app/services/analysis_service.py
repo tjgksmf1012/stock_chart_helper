@@ -8,8 +8,9 @@ from datetime import datetime
 from typing import Any
 
 import pandas as pd
+from pandas.tseries.offsets import BDay, DateOffset
 
-from ..api.schemas import AnalysisResult, PatternInfo, SymbolInfo
+from ..api.schemas import AnalysisResult, PatternInfo, ProjectionPoint, SymbolInfo
 from .backtest_engine import get_pattern_stats
 from .pattern_engine import PatternEngine, PatternResult
 from .probability_engine import compute_probability
@@ -62,13 +63,20 @@ def _df_timestamp_column(df: pd.DataFrame) -> str:
     return "datetime" if "datetime" in df.columns else "date"
 
 
+def _timestamp_series(df: pd.DataFrame) -> pd.Series:
+    timestamps = pd.to_datetime(df[_df_timestamp_column(df)], errors="coerce")
+    if getattr(timestamps.dt, "tz", None) is not None:
+        timestamps = timestamps.dt.tz_convert("Asia/Seoul").dt.tz_localize(None)
+    return timestamps
+
+
 def _current_ohlc(df: pd.DataFrame) -> tuple[float, float, float]:
     last_row = df.iloc[-1]
     return float(last_row["close"]), float(last_row["high"]), float(last_row["low"])
 
 
 def _latest_pattern_timestamp(pattern: PatternResult) -> pd.Timestamp:
-    timestamps = []
+    timestamps: list[pd.Timestamp] = []
     for point in pattern.key_points:
         dt = point.get("dt")
         if not dt:
@@ -83,9 +91,7 @@ def _latest_pattern_timestamp(pattern: PatternResult) -> pd.Timestamp:
 
 
 def _bars_since_pattern(df: pd.DataFrame, pattern: PatternResult) -> int:
-    ts_col = _df_timestamp_column(df)
-    timestamps = pd.to_datetime(df[ts_col], errors="coerce")
-    timestamps = timestamps.dt.tz_localize(None) if getattr(timestamps.dt, "tz", None) is not None else timestamps
+    timestamps = _timestamp_series(df)
     latest_point = _latest_pattern_timestamp(pattern)
     candidates = timestamps[timestamps <= latest_point]
     if candidates.empty:
@@ -94,29 +100,75 @@ def _bars_since_pattern(df: pd.DataFrame, pattern: PatternResult) -> int:
     return max(0, len(df) - 1 - int(anchor_index))
 
 
-def _refresh_pattern_state(pattern: PatternResult, current_close: float, current_high: float, current_low: float) -> PatternResult:
+def _historical_pattern_outcome(
+    df: pd.DataFrame,
+    pattern: PatternResult,
+) -> tuple[str, str | None, str | None]:
+    target = pattern.target_level
+    invalidation = pattern.invalidation_level
+    if target is None or invalidation is None:
+        return pattern.state, None, None
+
+    anchor = _latest_pattern_timestamp(pattern)
+    timestamps = _timestamp_series(df)
+    future_df = df.loc[timestamps >= anchor].copy()
+    future_times = timestamps.loc[future_df.index]
+    bullish = _is_bullish(pattern.pattern_type)
+    bearish = _is_bearish(pattern.pattern_type)
+
+    for idx, row in future_df.iterrows():
+        ts = future_times.loc[idx]
+        ts_text = ts.isoformat()
+        high = float(row["high"])
+        low = float(row["low"])
+
+        if bullish:
+            if high >= target:
+                return "played_out", ts_text, None
+            if low <= invalidation:
+                return "invalidated", None, ts_text
+        elif bearish:
+            if low <= target:
+                return "played_out", ts_text, None
+            if high >= invalidation:
+                return "invalidated", None, ts_text
+
+    return pattern.state, None, None
+
+
+def _refresh_pattern_state(
+    df: pd.DataFrame,
+    pattern: PatternResult,
+    current_close: float,
+    current_high: float,
+    current_low: float,
+) -> tuple[PatternResult, str | None, str | None]:
     refreshed = PatternResult(**pattern.__dict__)
     target = refreshed.target_level
     invalidation = refreshed.invalidation_level
 
     if target is None or invalidation is None:
-        return refreshed
+        return refreshed, None, None
 
-    bullish = _is_bullish(refreshed.pattern_type)
-    bearish = _is_bearish(refreshed.pattern_type)
-    if bullish:
-        if current_low <= invalidation:
-            refreshed.state = "invalidated"
-        elif current_high >= target or current_close >= target:
-            refreshed.state = "played_out"
-    elif bearish:
-        if current_high >= invalidation:
-            refreshed.state = "invalidated"
-        elif current_low <= target or current_close <= target:
-            refreshed.state = "played_out"
+    historical_state, target_hit_at, invalidated_at = _historical_pattern_outcome(df, refreshed)
+    refreshed.state = historical_state
+
+    if historical_state not in {"played_out", "invalidated"}:
+        bullish = _is_bullish(refreshed.pattern_type)
+        bearish = _is_bearish(refreshed.pattern_type)
+        if bullish:
+            if current_low <= invalidation:
+                refreshed.state = "invalidated"
+            elif current_high >= target or current_close >= target:
+                refreshed.state = "played_out"
+        elif bearish:
+            if current_high >= invalidation:
+                refreshed.state = "invalidated"
+            elif current_low <= target or current_close <= target:
+                refreshed.state = "played_out"
 
     refreshed.is_provisional = refreshed.state != "confirmed"
-    return refreshed
+    return refreshed, target_hit_at, invalidated_at
 
 
 def _completion_proximity(pattern: PatternResult, current_close: float) -> float:
@@ -237,7 +289,7 @@ def _data_profile(df: pd.DataFrame, timeframe: str) -> dict[str, Any]:
             note = "FinanceDataReader 일봉 데이터를 보조 소스로 사용했습니다."
         else:
             quality = 0.84
-            note = "일봉 계열 데이터이지만 공급처가 보조 소스라 해석을 한 단계 보수적으로 보는 편이 좋습니다."
+            note = "일봉 계열 데이터지만 공급처가 보조 소스라 해석을 한 단계 보수적으로 보는 편이 좋습니다."
     else:
         if source == "kis_intraday":
             quality = 0.94
@@ -308,6 +360,185 @@ def _no_signal_text(timeframe: str, available_bars: int, source_note: str, fetch
     )
 
 
+def _future_timestamp(last_ts: pd.Timestamp, timeframe: str, step: int) -> pd.Timestamp:
+    base = pd.Timestamp(last_ts)
+    if timeframe == "1mo":
+        return base + DateOffset(months=step)
+    if timeframe == "1wk":
+        return base + DateOffset(weeks=step)
+    if timeframe == "1d":
+        return base + BDay(step)
+    if timeframe == "60m":
+        return base + pd.Timedelta(hours=step)
+    if timeframe == "30m":
+        return base + pd.Timedelta(minutes=30 * step)
+    if timeframe == "15m":
+        return base + pd.Timedelta(minutes=15 * step)
+    return base + pd.Timedelta(minutes=step)
+
+
+def _format_projection_dt(ts: pd.Timestamp, timeframe: str) -> str:
+    return ts.isoformat() if is_intraday_timeframe(timeframe) else ts.date().isoformat()
+
+
+def _projection_horizon(timeframe: str) -> list[int]:
+    if timeframe == "1mo":
+        return [1, 2, 3, 4]
+    if timeframe == "1wk":
+        return [1, 2, 4, 6]
+    if timeframe == "1d":
+        return [3, 7, 12, 20]
+    if timeframe == "60m":
+        return [4, 8, 16, 24]
+    if timeframe == "30m":
+        return [4, 10, 20, 30]
+    if timeframe == "15m":
+        return [6, 12, 24, 36]
+    return [10, 20, 40, 60]
+
+
+def _projected_points(
+    last_ts: pd.Timestamp,
+    timeframe: str,
+    prices: list[tuple[int, float, str]],
+) -> list[ProjectionPoint]:
+    points: list[ProjectionPoint] = []
+    for step, price, kind in prices:
+        future_ts = _future_timestamp(last_ts, timeframe, step)
+        points.append(
+            ProjectionPoint(
+                dt=_format_projection_dt(future_ts, timeframe),
+                price=round(price, 2),
+                kind=kind,
+            )
+        )
+    return points
+
+
+def _build_projection(
+    df: pd.DataFrame,
+    timeframe: str,
+    pattern: PatternResult,
+    current_close: float,
+    target_hit_at: str | None,
+    invalidated_at: str | None,
+) -> tuple[str, str, list[ProjectionPoint]]:
+    last_ts = _timestamp_series(df).iloc[-1]
+    neckline = pattern.neckline or current_close
+    target = pattern.target_level or current_close
+    invalidation = pattern.invalidation_level or current_close
+    span = max(abs(target - neckline), abs(current_close - invalidation), current_close * 0.04)
+    bullish = _is_bullish(pattern.pattern_type)
+    pattern_name = pattern.pattern_type.replace("_", " ")
+    steps = _projection_horizon(timeframe)
+
+    if pattern.state == "played_out":
+        base = max(neckline, current_close - span * 0.35) if bullish else min(neckline, current_close + span * 0.35)
+        drift = current_close + span * 0.12 if bullish else current_close - span * 0.12
+        prices = [
+            (steps[0], base, "cooldown"),
+            (steps[1], (base + current_close) / 2, "retest"),
+            (steps[2], current_close, "range"),
+            (steps[3], drift, "rebuild"),
+        ]
+        summary = (
+            f"기존 {pattern_name} 패턴은 이미 1차 목표가에 도달해 종료된 것으로 보는 편이 맞습니다. "
+            f"다음 흐름은 재축적 또는 박스권 정리 여부를 새 패턴으로 다시 보는 편이 좋습니다."
+        )
+        return "1차 목표 달성 후 재축적 시나리오", summary, _projected_points(last_ts, timeframe, prices)
+
+    if pattern.state == "invalidated":
+        drift = invalidation - span * 0.15 if bullish else invalidation + span * 0.15
+        prices = [
+            (steps[0], invalidation, "broken"),
+            (steps[1], drift, "followthrough"),
+            (steps[2], drift * (1.01 if bullish else 0.99), "bounce"),
+            (steps[3], drift, "range"),
+        ]
+        summary = (
+            f"{pattern_name} 패턴은 이미 무효화된 쪽으로 보는 게 안전합니다. "
+            f"기존 패턴 추종보다 새로운 바닥/천장 형성이 나오는지 다시 기다리는 편이 좋습니다."
+        )
+        return "무효화 이후 재정비 시나리오", summary, _projected_points(last_ts, timeframe, prices)
+
+    if bullish:
+        if pattern.state == "forming":
+            prices = [
+                (steps[0], max(current_close - span * 0.12, invalidation * 1.01), "handle"),
+                (steps[1], neckline * 0.995, "trigger"),
+                (steps[2], neckline * 1.02, "breakout"),
+                (steps[3], target, "target"),
+            ]
+            summary = (
+                f"{pattern_name} 패턴이 아직 완성 전이라 목선 부근까지 구조를 더 만드는 흐름을 우선 가정합니다. "
+                f"목선 돌파가 실제로 나오기 전까지는 예비 시나리오로만 보는 편이 좋습니다."
+            )
+            return "패턴 완성 시도 시나리오", summary, _projected_points(last_ts, timeframe, prices)
+
+        if pattern.state == "armed":
+            prices = [
+                (steps[0], neckline * 0.998, "trigger"),
+                (steps[1], neckline * 1.01, "breakout"),
+                (steps[2], max(neckline, current_close - span * 0.08), "retest"),
+                (steps[3], target, "target"),
+            ]
+            summary = (
+                f"{pattern_name} 패턴은 완성 직전으로 보고 있습니다. "
+                f"짧은 눌림 이후 목선 돌파 확인과 목표가 접근 흐름을 기본 시나리오로 둡니다."
+            )
+            return "돌파 임박 시나리오", summary, _projected_points(last_ts, timeframe, prices)
+
+        prices = [
+            (steps[0], max(neckline, current_close - span * 0.1), "retest"),
+            (steps[1], current_close + span * 0.12, "hold"),
+            (steps[2], target, "target"),
+            (steps[3], target + span * 0.12, "extension"),
+        ]
+        summary = (
+            f"{pattern_name} 패턴은 이미 확인된 것으로 보고 있어 짧은 눌림 뒤 목표가 재도전 흐름을 기본으로 둡니다. "
+            f"다만 {target_hit_at or '현재까지'} 목표가가 이미 닿은 적 없다면 retest 성공 여부를 먼저 확인해야 합니다."
+        )
+        return "확인 후 retest 시나리오", summary, _projected_points(last_ts, timeframe, prices)
+
+    if pattern.state == "forming":
+        prices = [
+            (steps[0], min(current_close + span * 0.12, invalidation * 0.99), "handle"),
+            (steps[1], neckline * 1.005, "trigger"),
+            (steps[2], neckline * 0.98, "breakdown"),
+            (steps[3], target, "target"),
+        ]
+        summary = (
+            f"{pattern_name} 패턴이 아직 완성 전이라 지지 붕괴 구조를 더 만드는 흐름을 우선 가정합니다. "
+            f"목선 이탈이 확정되기 전까지는 예비 시나리오로 봐야 합니다."
+        )
+        return "하락 패턴 완성 시도", summary, _projected_points(last_ts, timeframe, prices)
+
+    if pattern.state == "armed":
+        prices = [
+            (steps[0], neckline * 1.002, "trigger"),
+            (steps[1], neckline * 0.99, "breakdown"),
+            (steps[2], min(neckline, current_close + span * 0.08), "retest"),
+            (steps[3], target, "target"),
+        ]
+        summary = (
+            f"{pattern_name} 패턴은 하락 완성 직전으로 보고 있습니다. "
+            f"짧은 반등 뒤 지지 이탈 확인과 목표가 접근 흐름을 기본 시나리오로 둡니다."
+        )
+        return "이탈 임박 시나리오", summary, _projected_points(last_ts, timeframe, prices)
+
+    prices = [
+        (steps[0], min(neckline, current_close + span * 0.1), "retest"),
+        (steps[1], current_close - span * 0.12, "hold"),
+        (steps[2], target, "target"),
+        (steps[3], target - span * 0.12, "extension"),
+    ]
+    summary = (
+        f"{pattern_name} 패턴은 이미 확인된 것으로 보고 있어 짧은 반등 뒤 목표가 재도전 흐름을 기본으로 둡니다. "
+        f"무효화 기준을 넘기면 기존 시나리오는 바로 폐기해야 합니다."
+    )
+    return "확인 후 retest 시나리오", summary, _projected_points(last_ts, timeframe, prices)
+
+
 def build_no_signal_snapshot(
     symbol: SymbolInfo,
     timeframe: str,
@@ -339,6 +570,9 @@ def build_no_signal_snapshot(
         empirical_win_rate=0.5,
         sample_reliability=0.0,
         patterns=[],
+        projection_label="예측 보류",
+        projection_summary="현재는 유의미한 패턴이 없어 미래 경로를 예측하지 않습니다.",
+        projected_path=[],
         is_provisional=True,
         updated_at=datetime.utcnow().isoformat(),
         data_source=profile["data_source"],
@@ -370,16 +604,16 @@ async def analyze_symbol_dataframe(
     if not raw_patterns:
         return build_no_signal_snapshot(symbol, timeframe, df)
 
-    patterns_with_meta: list[tuple[PatternResult, float, float, int]] = []
+    patterns_with_meta: list[tuple[PatternResult, float, float, int, str | None, str | None]] = []
     for pattern in raw_patterns:
-        refreshed = _refresh_pattern_state(pattern, current_close, current_high, current_low)
+        refreshed, target_hit_at, invalidated_at = _refresh_pattern_state(df, pattern, current_close, current_high, current_low)
         bars_since_signal = _bars_since_pattern(df, refreshed)
         recency = _recency_score(timeframe, bars_since_signal)
         completion = _completion_proximity(refreshed, current_close)
-        patterns_with_meta.append((refreshed, completion, recency, bars_since_signal))
+        patterns_with_meta.append((refreshed, completion, recency, bars_since_signal, target_hit_at, invalidated_at))
 
     patterns_with_meta.sort(key=lambda item: _pattern_rank_score(item[0], item[1], item[2]), reverse=True)
-    best_pattern, best_completion, best_recency, bars_since_signal = patterns_with_meta[0]
+    best_pattern, best_completion, best_recency, bars_since_signal, best_target_hit_at, best_invalidated_at = patterns_with_meta[0]
 
     turnover_billion = _average_turnover_billion(df)
     liquidity = _liquidity_score(turnover_billion)
@@ -398,6 +632,8 @@ async def analyze_symbol_dataframe(
         risk_penalty += 0.08
     if best_recency < 0.3:
         risk_penalty += 0.08
+    if best_pattern.state == "played_out":
+        risk_penalty += 0.18
 
     probability = compute_probability(
         best_pattern,
@@ -414,8 +650,17 @@ async def analyze_symbol_dataframe(
         total=total,
     )
 
+    projection_label, projection_summary, projected_path = _build_projection(
+        df,
+        timeframe,
+        best_pattern,
+        current_close,
+        best_target_hit_at,
+        best_invalidated_at,
+    )
+
     pattern_infos: list[PatternInfo] = []
-    for pattern, _, _, _ in patterns_with_meta:
+    for pattern, _, _, _, target_hit_at, invalidated_at in patterns_with_meta:
         pattern_infos.append(
             PatternInfo(
                 pattern_type=pattern.pattern_type,
@@ -430,6 +675,8 @@ async def analyze_symbol_dataframe(
                 is_provisional=pattern.is_provisional,
                 start_dt=pattern.start_dt.isoformat(),
                 end_dt=pattern.end_dt.isoformat() if pattern.end_dt else None,
+                target_hit_at=target_hit_at,
+                invalidated_at=invalidated_at,
             )
         )
 
@@ -455,6 +702,9 @@ async def analyze_symbol_dataframe(
         empirical_win_rate=probability.empirical_win_rate,
         sample_reliability=probability.sample_reliability,
         patterns=pattern_infos,
+        projection_label=projection_label,
+        projection_summary=projection_summary,
+        projected_path=projected_path,
         is_provisional=best_pattern.is_provisional,
         updated_at=datetime.utcnow().isoformat(),
         data_source=profile["data_source"],

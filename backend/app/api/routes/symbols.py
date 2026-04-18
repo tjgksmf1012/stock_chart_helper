@@ -97,7 +97,7 @@ async def get_bars(
     timeframe = _validate_timeframe(timeframe)
     spec = get_timeframe_spec(timeframe)
     lookback_days = days or spec.chart_lookback_days
-    cache_key = f"bars:v2:{symbol}:{timeframe}:{lookback_days}"
+    cache_key = f"bars:v3:{symbol}:{timeframe}:{lookback_days}"
     cached = await cache_get(cache_key)
     if cached:
         return [OHLCVBar(**bar) for bar in cached]
@@ -139,7 +139,7 @@ async def get_analysis(
     timeframe: str = Query(default=DEFAULT_TIMEFRAME),
 ) -> AnalysisResult:
     timeframe = _validate_timeframe(timeframe)
-    cache_key = f"analysis:v2:{symbol}:{timeframe}"
+    cache_key = f"analysis:v3:{symbol}:{timeframe}"
     cached = await cache_get(cache_key)
     if cached:
         return AnalysisResult(**cached)

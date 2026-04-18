@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import {
-  createChart,
   ColorType,
+  createChart,
   LineStyle,
   type CandlestickData,
   type HistogramData,
@@ -24,6 +24,8 @@ const OVERLAY_COLORS = {
   neckline: '#f59e0b',
   target: '#34d399',
   invalidation: '#f87171',
+  projectionBull: '#38bdf8',
+  projectionBear: '#fb7185',
 }
 
 const CHART_COLORS = {
@@ -139,12 +141,14 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
     overlayRef.current = []
     candleSeries.setMarkers([])
 
-    if (!analysis || analysis.no_signal_flag || analysis.patterns.length === 0) return
+    if (!analysis || analysis.patterns.length === 0) return
 
-    const best = analysis.patterns[0]
     const sortedBars = [...bars].sort((left, right) => compareBarDates(left.date, right.date))
     const firstTime = toChartTime(sortedBars[0].date)
-    const lastTime = toChartTime(sortedBars[sortedBars.length - 1].date)
+    const lastBar = sortedBars[sortedBars.length - 1]
+    const lastTime = toChartTime(lastBar.date)
+    const lastClose = lastBar.close
+    const best = analysis.patterns[0]
 
     const addHorizontalLine = (price: number, color: string, style: LineStyle) => {
       const series = chart.addLineSeries({
@@ -165,15 +169,9 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
       overlayRef.current.push(series)
     }
 
-    if (best.neckline) {
-      addHorizontalLine(best.neckline, OVERLAY_COLORS.neckline, LineStyle.Dashed)
-    }
-    if (best.target_level) {
-      addHorizontalLine(best.target_level, OVERLAY_COLORS.target, LineStyle.Dotted)
-    }
-    if (best.invalidation_level) {
-      addHorizontalLine(best.invalidation_level, OVERLAY_COLORS.invalidation, LineStyle.Dotted)
-    }
+    if (best.neckline) addHorizontalLine(best.neckline, OVERLAY_COLORS.neckline, LineStyle.Dashed)
+    if (best.target_level) addHorizontalLine(best.target_level, OVERLAY_COLORS.target, LineStyle.Dotted)
+    if (best.invalidation_level) addHorizontalLine(best.invalidation_level, OVERLAY_COLORS.invalidation, LineStyle.Dotted)
 
     const markers: SeriesMarker<Time>[] = best.key_points
       .filter((point): point is { dt: string; price: number; type: string } => Boolean(point.dt))
@@ -191,13 +189,36 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
       }))
 
     candleSeries.setMarkers(markers)
+
+    if (analysis.projected_path.length > 0) {
+      const projectionSeries = chart.addLineSeries({
+        color: analysis.p_up >= analysis.p_down ? OVERLAY_COLORS.projectionBull : OVERLAY_COLORS.projectionBear,
+        lineWidth: 2,
+        lineStyle: LineStyle.Dashed,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: true,
+      })
+
+      const projectionData: LineData[] = [
+        { time: lastTime, value: lastClose },
+        ...analysis.projected_path.map(point => ({
+          time: toChartTime(point.dt),
+          value: point.price,
+        })),
+      ]
+      projectionSeries.setData(projectionData)
+      overlayRef.current.push(projectionSeries)
+    }
+
+    chart.timeScale().fitContent()
   }, [analysis, bars])
 
   return (
     <div className="space-y-1">
       <div ref={containerRef} className="chart-container w-full rounded-lg" style={{ height }} />
-      {analysis && !analysis.no_signal_flag && analysis.patterns.length > 0 && (
-        <div className="flex items-center gap-4 px-2 text-xs text-muted-foreground">
+      {analysis && analysis.patterns.length > 0 && (
+        <div className="flex flex-wrap items-center gap-4 px-2 text-xs text-muted-foreground">
           <span className="flex items-center gap-1">
             <span className="inline-block h-px w-3 bg-amber-400" style={{ borderTop: '1px dashed' }} /> 목선
           </span>
@@ -207,6 +228,16 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
           <span className="flex items-center gap-1">
             <span className="inline-block h-px w-3 bg-red-400" style={{ borderTop: '1px dotted' }} /> 무효화 기준
           </span>
+          {analysis.projected_path.length > 0 && (
+            <span className="flex items-center gap-1">
+              <span
+                className="inline-block h-px w-3"
+                style={{
+                  borderTop: `2px dashed ${analysis.p_up >= analysis.p_down ? OVERLAY_COLORS.projectionBull : OVERLAY_COLORS.projectionBear}`,
+                }}
+              /> 예상 경로
+            </span>
+          )}
         </div>
       )}
     </div>

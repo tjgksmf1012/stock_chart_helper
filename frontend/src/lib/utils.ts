@@ -50,7 +50,7 @@ export const PATTERN_NAMES: Record<string, string> = {
   double_bottom: '이중 바닥 (W)',
   double_top: '이중 천장 (M)',
   head_and_shoulders: '헤드 앤 숄더',
-  inverse_head_and_shoulders: '역헤드 앤 숄더',
+  inverse_head_and_shoulders: '역 헤드 앤 숄더',
   ascending_triangle: '상승 삼각형',
   descending_triangle: '하락 삼각형',
   symmetric_triangle: '대칭 삼각형',

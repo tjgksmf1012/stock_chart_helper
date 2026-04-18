@@ -43,6 +43,14 @@ export interface PatternInfo {
   is_provisional: boolean
   start_dt: string
   end_dt: string | null
+  target_hit_at?: string | null
+  invalidated_at?: string | null
+}
+
+export interface ProjectionPoint {
+  dt: string
+  price: number
+  kind: string
 }
 
 export interface AnalysisResult {
@@ -64,6 +72,9 @@ export interface AnalysisResult {
   empirical_win_rate: number
   sample_reliability: number
   patterns: PatternInfo[]
+  projection_label: string
+  projection_summary: string
+  projected_path: ProjectionPoint[]
   is_provisional: boolean
   updated_at: string
   data_source: string
