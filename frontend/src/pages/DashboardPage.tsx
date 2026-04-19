@@ -8,7 +8,7 @@ import { dashboardApi } from '@/lib/api'
 import { DEFAULT_TIMEFRAME, TIMEFRAME_OPTIONS, timeframeLabel } from '@/lib/timeframes'
 import { fmtDateTime } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
-import type { DashboardResponse } from '@/types/api'
+import type { DashboardItem, DashboardResponse } from '@/types/api'
 
 type IntradayView = 'all' | 'live' | 'stored' | 'public' | 'mixed' | 'cooldown'
 type IntradayPreset = 'all' | 'ready-now' | 'watch' | 'recheck' | 'cooling'
@@ -127,6 +127,18 @@ export default function DashboardPage() {
     }
   }
 
+  const filteredSections = [
+    filterDashboard(longQ.data),
+    filterDashboard(armedQ.data),
+    filterDashboard(liveQ.data),
+    filterDashboard(formingQ.data),
+    filterDashboard(simQ.data),
+    filterDashboard(shortQ.data),
+    filterDashboard(noSigQ.data),
+  ]
+
+  const intradaySummary = intradayMode ? buildIntradaySummary(filteredSections) : null
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -238,6 +250,26 @@ export default function DashboardPage() {
             </button>
           ))}
         </div>
+      )}
+
+      {intradayMode && intradaySummary && (
+        <Card className="space-y-4">
+          <div>
+            <div className="text-sm font-semibold">프리셋 요약</div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              현재 모드와 프리셋으로 걸러진 후보를 빠르게 읽을 수 있도록 요약한 숫자입니다.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 xl:grid-cols-6">
+            <StatusCell label="후보 수" value={`${intradaySummary.totalCount}개`} />
+            <StatusCell label="live 추적" value={`${intradaySummary.liveCount}개`} />
+            <StatusCell label="confirmed" value={`${intradaySummary.confirmedCount}개`} />
+            <StatusCell label="관망/No Signal" value={`${intradaySummary.noSignalCount}개`} />
+            <StatusCell label="평균 품질" value={`${Math.round(intradaySummary.avgQuality * 100)}%`} />
+            <StatusCell label="평균 진입 적합도" value={`${Math.round(intradaySummary.avgEntry * 100)}%`} />
+          </div>
+        </Card>
       )}
 
       <Card className="space-y-4">
@@ -375,6 +407,58 @@ function StatusCell({ label, value }: { label: string; value: string }) {
       <div className="mt-1 text-sm font-medium">{value}</div>
     </div>
   )
+}
+
+function buildIntradaySummary(sections: Array<DashboardResponse | undefined>) {
+  const seen = new Set<string>()
+  const items: DashboardItem[] = []
+
+  for (const section of sections) {
+    for (const item of section?.items ?? []) {
+      const key = `${item.timeframe}-${item.symbol.code}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      items.push(item)
+    }
+  }
+
+  if (items.length === 0) {
+    return {
+      totalCount: 0,
+      liveCount: 0,
+      confirmedCount: 0,
+      noSignalCount: 0,
+      avgQuality: 0,
+      avgEntry: 0,
+    }
+  }
+
+  const totals = items.reduce(
+    (acc, item) => {
+      acc.liveCount += item.live_intraday_candidate ? 1 : 0
+      acc.confirmedCount += item.state === 'confirmed' ? 1 : 0
+      acc.noSignalCount += item.no_signal_flag ? 1 : 0
+      acc.qualitySum += item.data_quality
+      acc.entrySum += item.entry_score
+      return acc
+    },
+    {
+      liveCount: 0,
+      confirmedCount: 0,
+      noSignalCount: 0,
+      qualitySum: 0,
+      entrySum: 0,
+    },
+  )
+
+  return {
+    totalCount: items.length,
+    liveCount: totals.liveCount,
+    confirmedCount: totals.confirmedCount,
+    noSignalCount: totals.noSignalCount,
+    avgQuality: totals.qualitySum / items.length,
+    avgEntry: totals.entrySum / items.length,
+  }
 }
 
 function statusLabel(status: string | undefined): string {
