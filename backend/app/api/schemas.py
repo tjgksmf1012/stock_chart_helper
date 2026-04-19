@@ -40,6 +40,9 @@ class PatternInfo(BaseModel):
     state: str
     grade: str
     variant: str | None = None
+    lifecycle_score: float = 0.0
+    lifecycle_label: str = ""
+    lifecycle_note: str = ""
     textbook_similarity: float
     geometry_fit: float
     leg_balance_fit: float = 0.5
@@ -116,6 +119,11 @@ class AnalysisResult(BaseModel):
     trade_readiness_label: str = "보류"
     trade_readiness_summary: str = ""
     score_factors: list[ScoreFactor] = Field(default_factory=list)
+    active_setup_score: float = 0.0
+    active_setup_label: str = "활성 셋업 없음"
+    active_setup_summary: str = ""
+    active_pattern_count: int = 0
+    completed_pattern_count: int = 0
     no_signal_flag: bool
     no_signal_reason: str
     reason_summary: str
@@ -187,6 +195,11 @@ class DashboardItem(BaseModel):
     trade_readiness_label: str = "보류"
     trade_readiness_summary: str = ""
     score_factors: list[ScoreFactor] = Field(default_factory=list)
+    active_setup_score: float = 0.0
+    active_setup_label: str = "활성 셋업 없음"
+    active_setup_summary: str = ""
+    active_pattern_count: int = 0
+    completed_pattern_count: int = 0
     no_signal_flag: bool
     reason_summary: str
     completion_proximity: float = 0.0
@@ -399,6 +412,7 @@ class ScreenerRequest(BaseModel):
     min_sample_reliability: float = 0.0
     min_data_quality: float = 0.0
     min_trade_readiness_score: float = 0.0
+    min_active_setup_score: float = 0.0
     min_confluence_score: float = 0.0
     min_historical_edge_score: float = 0.0
     timeframes: list[str] | None = None

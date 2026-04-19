@@ -55,6 +55,9 @@ export function DashboardCard({ item, intradayPreset }: DashboardCardProps) {
             <Badge variant={readinessVariant(item.trade_readiness_score ?? 0)}>
               준비도 {fmtPct(item.trade_readiness_score ?? 0, 0)}
             </Badge>
+            <Badge variant={(item.active_setup_score ?? 0) >= 0.56 ? 'neutral' : 'muted'}>
+              활성 {fmtPct(item.active_setup_score ?? 0, 0)}
+            </Badge>
             <Badge variant={item.data_quality >= 0.8 ? 'bullish' : item.data_quality >= 0.6 ? 'muted' : 'warning'}>
               품질 {fmtPct(item.data_quality, 0)}
             </Badge>
@@ -157,6 +160,18 @@ export function DashboardCard({ item, intradayPreset }: DashboardCardProps) {
             <span>{fmtPct(item.trade_readiness_score ?? 0, 0)}</span>
           </div>
           {item.trade_readiness_summary}
+        </div>
+      )}
+
+      {item.active_setup_summary && (
+        <div className="rounded-lg border border-cyan-400/20 bg-cyan-400/5 p-2.5 text-xs leading-relaxed text-muted-foreground">
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <span className="font-medium text-cyan-200">{item.active_setup_label}</span>
+            <span>
+              활성 {item.active_pattern_count ?? 0} / 종료 {item.completed_pattern_count ?? 0}
+            </span>
+          </div>
+          {item.active_setup_summary}
         </div>
       )}
 

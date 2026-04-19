@@ -143,6 +143,9 @@ export default function ChartPage() {
                 <Badge variant={readinessVariant(analysis.trade_readiness_score ?? 0)}>
                   준비도 {Math.round((analysis.trade_readiness_score ?? 0) * 100)}%
                 </Badge>
+                <Badge variant={(analysis.active_setup_score ?? 0) >= 0.56 ? 'neutral' : 'muted'}>
+                  활성 {Math.round((analysis.active_setup_score ?? 0) * 100)}%
+                </Badge>
                 <Badge variant={qualityTone}>품질 {Math.round(analysis.data_quality * 100)}%</Badge>
                 {analysis.is_provisional && <Badge variant="warning">잠정</Badge>}
                 <button
@@ -195,11 +198,12 @@ export default function ChartPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 text-right sm:grid-cols-5">
+            <div className="grid grid-cols-2 gap-3 text-right sm:grid-cols-6">
               <MetricCell label="상승 확률" value={`${(analysis.p_up * 100).toFixed(0)}%`} tone="text-green-400" />
               <MetricCell label="하락 확률" value={`${(analysis.p_down * 100).toFixed(0)}%`} tone="text-red-400" />
               <MetricCell label="신뢰도" value={`${(analysis.confidence * 100).toFixed(0)}%`} />
               <MetricCell label="준비도" value={`${Math.round((analysis.trade_readiness_score ?? 0) * 100)}%`} />
+              <MetricCell label="활성 셋업" value={`${Math.round((analysis.active_setup_score ?? 0) * 100)}%`} />
               <MetricCell label="시총" value={analysis.symbol.market_cap ? `${fmtNumber(analysis.symbol.market_cap)}억` : '-'} />
             </div>
           </div>

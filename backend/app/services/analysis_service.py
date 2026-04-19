@@ -681,6 +681,133 @@ def _pattern_rank_score(pattern: PatternResult, completion_proximity: float, rec
     return 0.42 * pattern.textbook_similarity + 0.16 * completion_proximity + 0.14 * recency_score + 0.12 * quality + state_bonus
 
 
+def _pattern_is_terminal(pattern: PatternResult, target_hit_at: str | None, invalidated_at: str | None) -> bool:
+    return pattern.state in {"played_out", "invalidated"} or bool(target_hit_at or invalidated_at)
+
+
+def _primary_pattern_rank_score(
+    item: tuple[PatternResult, float, float, int, str | None, str | None],
+) -> float:
+    pattern, completion, recency, bars_since_signal, target_hit_at, invalidated_at = item
+    score = _pattern_rank_score(pattern, completion, recency)
+    if _pattern_is_terminal(pattern, target_hit_at, invalidated_at):
+        score -= 0.70
+    elif pattern.state == "confirmed":
+        score += 0.10
+    elif pattern.state == "armed":
+        score += 0.12
+    elif pattern.state == "forming" and completion >= 0.55:
+        score += 0.08
+
+    if bars_since_signal > 0 and recency < 0.35:
+        score -= 0.10
+    return score
+
+
+def _pattern_lifecycle_profile(
+    pattern: PatternResult,
+    completion: float,
+    recency: float,
+    bars_since_signal: int,
+    target_hit_at: str | None,
+    invalidated_at: str | None,
+) -> dict[str, Any]:
+    terminal = _pattern_is_terminal(pattern, target_hit_at, invalidated_at)
+    formation_quality = max(
+        0.0,
+        min(
+            1.0,
+            0.22 * pattern.textbook_similarity
+            + 0.18 * pattern.leg_balance_fit
+            + 0.18 * pattern.reversal_energy_fit
+            + 0.16 * pattern.breakout_quality_fit
+            + 0.14 * pattern.retest_quality_fit
+            + 0.12 * pattern.variant_fit,
+        ),
+    )
+    score = 0.34 * formation_quality + 0.28 * completion + 0.24 * recency + 0.14 * pattern.candlestick_confirmation_fit
+
+    if terminal:
+        score = min(score, 0.22)
+        label = "종료 패턴" if target_hit_at or pattern.state == "played_out" else "무효 패턴"
+        note = "이미 목표 도달 또는 무효화가 확인된 과거 구조라 새 진입 근거로 쓰지 않습니다."
+    elif pattern.state == "confirmed":
+        score = max(score, 0.62)
+        label = "확인된 셋업"
+        note = "돌파/이탈이 확인된 구조입니다. 리테스트 유지와 손익비가 다음 판단 기준입니다."
+    elif pattern.state == "armed":
+        score = max(score, 0.58)
+        label = "트리거 임박"
+        note = "완성 직전 구간입니다. 기준선 돌파/이탈과 거래량 확인이 핵심입니다."
+    elif completion >= 0.58:
+        label = "형성 후반"
+        note = "패턴이 아직 완성 전이지만 기준선 근처까지 진행된 관찰 후보입니다."
+    else:
+        label = "초기 형성"
+        note = "패턴 후보는 보이나 아직 구조 확인이 부족해 관찰 단계입니다."
+
+    if bars_since_signal > 0 and recency < 0.35 and not terminal:
+        score = min(score, 0.48)
+        note = f"{note} 다만 신호 이후 {bars_since_signal}개 봉이 지나 현재 구조와의 연결성은 재확인이 필요합니다."
+
+    return {
+        "lifecycle_score": round(max(0.0, min(1.0, score)), 3),
+        "lifecycle_label": label,
+        "lifecycle_note": note,
+    }
+
+
+def _active_setup_profile(
+    items: list[tuple[PatternResult, float, float, int, str | None, str | None]],
+) -> dict[str, Any]:
+    if not items:
+        return {
+            "active_setup_score": 0.0,
+            "active_setup_label": "활성 셋업 없음",
+            "active_setup_summary": "현재 의미 있는 활성 패턴 후보가 없습니다.",
+            "active_pattern_count": 0,
+            "completed_pattern_count": 0,
+        }
+
+    lifecycle_rows: list[dict[str, Any]] = []
+    active_count = 0
+    completed_count = 0
+    for pattern, completion, recency, bars_since_signal, target_hit_at, invalidated_at in items:
+        terminal = _pattern_is_terminal(pattern, target_hit_at, invalidated_at)
+        if terminal:
+            completed_count += 1
+        else:
+            active_count += 1
+        lifecycle = _pattern_lifecycle_profile(pattern, completion, recency, bars_since_signal, target_hit_at, invalidated_at)
+        lifecycle_rows.append({"pattern": pattern, "terminal": terminal, **lifecycle})
+
+    active_rows = [row for row in lifecycle_rows if not row["terminal"]]
+    score = max((float(row["lifecycle_score"]) for row in active_rows), default=0.0)
+    if active_count == 0:
+        label = "종료 구조만 감지"
+        summary = "감지된 패턴은 있지만 모두 목표 도달 또는 무효화된 과거 구조입니다. 새 패턴이 다시 만들어지는지 기다리는 쪽이 안전합니다."
+    elif score >= 0.72:
+        label = "활성 셋업 강함"
+        summary = f"현재 살아있는 패턴 {active_count}개가 감지됐고, 그중 하나는 실전 점검 가치가 높습니다."
+    elif score >= 0.56:
+        label = "활성 셋업 관찰"
+        summary = f"현재 살아있는 패턴 {active_count}개가 있으나 추가 확인 봉과 손익비 점검이 필요합니다."
+    else:
+        label = "초기 셋업"
+        summary = f"현재 살아있는 패턴 {active_count}개가 있으나 아직 초기 형성 단계에 가깝습니다."
+
+    if completed_count:
+        summary = f"{summary} 종료/무효 패턴 {completed_count}개는 현재 점수에서 감점 처리했습니다."
+
+    return {
+        "active_setup_score": round(score, 3),
+        "active_setup_label": label,
+        "active_setup_summary": summary,
+        "active_pattern_count": active_count,
+        "completed_pattern_count": completed_count,
+    }
+
+
 def _no_signal_text(timeframe: str, available_bars: int, source_note: str, fetch_message: str) -> tuple[str, str]:
     label = timeframe_label(timeframe)
     suffix = f" {fetch_message}" if fetch_message else ""
@@ -1384,6 +1511,11 @@ def build_no_signal_snapshot(
         trade_readiness_label=readiness["trade_readiness_label"],
         trade_readiness_summary=readiness["trade_readiness_summary"],
         score_factors=readiness["score_factors"],
+        active_setup_score=0.0,
+        active_setup_label="활성 셋업 없음",
+        active_setup_summary="현재 의미 있는 활성 패턴 후보가 없어 새 구조가 만들어지는지 기다립니다.",
+        active_pattern_count=0,
+        completed_pattern_count=0,
         no_signal_flag=True,
         no_signal_reason=no_signal_reason,
         reason_summary=reason_summary,
@@ -1433,8 +1565,9 @@ async def analyze_symbol_dataframe(
         completion = _completion_proximity(refreshed, current_close)
         patterns_with_meta.append((refreshed, completion, recency, bars_since_signal, target_hit_at, invalidated_at))
 
-    patterns_with_meta.sort(key=lambda item: _pattern_rank_score(item[0], item[1], item[2]), reverse=True)
+    patterns_with_meta.sort(key=_primary_pattern_rank_score, reverse=True)
     best_pattern, best_completion, best_recency, bars_since_signal, best_target_hit_at, best_invalidated_at = patterns_with_meta[0]
+    active_setup = _active_setup_profile(patterns_with_meta)
 
     turnover_billion = _average_turnover_billion(df)
     liquidity = _liquidity_score(turnover_billion)
@@ -1555,13 +1688,24 @@ async def analyze_symbol_dataframe(
     )
 
     pattern_infos: list[PatternInfo] = []
-    for pattern, _, _, _, target_hit_at, invalidated_at in patterns_with_meta:
+    for pattern, completion, recency, pattern_bars_since_signal, target_hit_at, invalidated_at in patterns_with_meta:
+        lifecycle = _pattern_lifecycle_profile(
+            pattern,
+            completion,
+            recency,
+            pattern_bars_since_signal,
+            target_hit_at,
+            invalidated_at,
+        )
         pattern_infos.append(
             PatternInfo(
                 pattern_type=pattern.pattern_type,
                 state=pattern.state,
                 grade=pattern.grade,
                 variant=pattern.variant,
+                lifecycle_score=lifecycle["lifecycle_score"],
+                lifecycle_label=lifecycle["lifecycle_label"],
+                lifecycle_note=lifecycle["lifecycle_note"],
                 textbook_similarity=pattern.textbook_similarity,
                 geometry_fit=pattern.geometry_fit,
                 leg_balance_fit=pattern.leg_balance_fit,
@@ -1691,6 +1835,11 @@ async def analyze_symbol_dataframe(
         trade_readiness_label=readiness["trade_readiness_label"],
         trade_readiness_summary=readiness["trade_readiness_summary"],
         score_factors=readiness["score_factors"],
+        active_setup_score=active_setup["active_setup_score"],
+        active_setup_label=active_setup["active_setup_label"],
+        active_setup_summary=active_setup["active_setup_summary"],
+        active_pattern_count=active_setup["active_pattern_count"],
+        completed_pattern_count=active_setup["completed_pattern_count"],
         no_signal_flag=probability.no_signal_flag,
         no_signal_reason=probability.no_signal_reason,
         reason_summary=probability.reason_summary,

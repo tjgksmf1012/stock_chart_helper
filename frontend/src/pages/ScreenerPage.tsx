@@ -43,6 +43,7 @@ const FETCH_STATUS_OPTIONS = [
 const SORT_OPTIONS: Array<{ value: NonNullable<ScreenerRequest['sort_by']>; label: string }> = [
   { value: 'composite_score', label: '종합 점수' },
   { value: 'trade_readiness_score', label: '거래 준비도' },
+  { value: 'active_setup_score', label: '활성 셋업' },
   { value: 'entry_score', label: '진입 적합도' },
   { value: 'sample_reliability', label: '표본 신뢰도' },
   { value: 'historical_edge_score', label: '백테스트 edge' },
@@ -62,6 +63,7 @@ export default function ScreenerPage() {
     min_sample_reliability: 0.2,
     min_data_quality: 0.4,
     min_trade_readiness_score: 0.35,
+    min_active_setup_score: 0.25,
     min_confluence_score: 0.0,
     min_historical_edge_score: 0.25,
     exclude_no_signal: true,
@@ -119,12 +121,13 @@ export default function ScreenerPage() {
     const kosdaq = filteredData.filter(item => item.symbol.market === 'KOSDAQ').length
     const avgReliability = filteredData.reduce((sum, item) => sum + item.sample_reliability, 0) / filteredData.length
     const avgReadiness = filteredData.reduce((sum, item) => sum + (item.trade_readiness_score ?? 0), 0) / filteredData.length
+    const avgActiveSetup = filteredData.reduce((sum, item) => sum + (item.active_setup_score ?? 0), 0) / filteredData.length
     const avgEdge = filteredData.reduce((sum, item) => sum + item.historical_edge_score, 0) / filteredData.length
     const avgRewardRisk = filteredData.reduce((sum, item) => sum + item.reward_risk_ratio, 0) / filteredData.length
     const liveCount = filteredData.filter(item => item.live_intraday_candidate).length
     const confirmedCount = filteredData.filter(item => item.state === 'confirmed').length
     const noSignalCount = filteredData.filter(item => item.no_signal_flag).length
-    return { kospi, kosdaq, avgReliability, avgReadiness, avgEdge, avgRewardRisk, liveCount, confirmedCount, noSignalCount }
+    return { kospi, kosdaq, avgReliability, avgReadiness, avgActiveSetup, avgEdge, avgRewardRisk, liveCount, confirmedCount, noSignalCount }
   }, [filteredData])
 
   const run = () => {
@@ -301,6 +304,12 @@ export default function ScreenerPage() {
         />
 
         <SliderGroup
+          label="최소 활성 셋업"
+          value={req.min_active_setup_score ?? 0}
+          onChange={value => setReq(current => ({ ...current, min_active_setup_score: value }))}
+        />
+
+        <SliderGroup
           label="최소 합산 점수"
           value={req.min_confluence_score ?? 0}
           onChange={value => setReq(current => ({ ...current, min_confluence_score: value }))}
@@ -430,6 +439,10 @@ export default function ScreenerPage() {
             <Card>
               <div className="text-xs text-muted-foreground">평균 거래 준비도</div>
               <div className="mt-1 text-sm font-medium">{((stats?.avgReadiness ?? 0) * 100).toFixed(0)}%</div>
+            </Card>
+            <Card>
+              <div className="text-xs text-muted-foreground">평균 활성 셋업</div>
+              <div className="mt-1 text-sm font-medium">{((stats?.avgActiveSetup ?? 0) * 100).toFixed(0)}%</div>
             </Card>
             <Card>
               <div className="text-xs text-muted-foreground">평균 백테스트 edge</div>

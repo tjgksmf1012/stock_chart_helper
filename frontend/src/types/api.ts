@@ -35,6 +35,9 @@ export interface PatternInfo {
   state: 'forming' | 'armed' | 'confirmed' | 'invalidated' | 'played_out'
   grade: 'A' | 'B' | 'C'
   variant?: string | null
+  lifecycle_score: number
+  lifecycle_label: string
+  lifecycle_note: string
   textbook_similarity: number
   geometry_fit: number
   leg_balance_fit: number
@@ -111,6 +114,11 @@ export interface AnalysisResult {
   trade_readiness_label: string
   trade_readiness_summary: string
   score_factors: ScoreFactor[]
+  active_setup_score: number
+  active_setup_label: string
+  active_setup_summary: string
+  active_pattern_count: number
+  completed_pattern_count: number
   no_signal_flag: boolean
   no_signal_reason: string
   reason_summary: string
@@ -182,6 +190,11 @@ export interface DashboardItem {
   trade_readiness_label: string
   trade_readiness_summary: string
   score_factors: ScoreFactor[]
+  active_setup_score: number
+  active_setup_label: string
+  active_setup_summary: string
+  active_pattern_count: number
+  completed_pattern_count: number
   no_signal_flag: boolean
   reason_summary: string
   completion_proximity: number
@@ -394,11 +407,12 @@ export interface ScreenerRequest {
   min_sample_reliability?: number
   min_data_quality?: number
   min_trade_readiness_score?: number
+  min_active_setup_score?: number
   min_confluence_score?: number
   min_historical_edge_score?: number
   timeframes?: Timeframe[]
   min_market_cap?: number
   exclude_no_signal?: boolean
-  sort_by?: 'composite_score' | 'entry_score' | 'p_up' | 'textbook_similarity' | 'confidence' | 'p_down' | 'sample_reliability' | 'trade_readiness_score' | 'confluence_score' | 'data_quality' | 'historical_edge_score'
+  sort_by?: 'composite_score' | 'entry_score' | 'p_up' | 'textbook_similarity' | 'confidence' | 'p_down' | 'sample_reliability' | 'trade_readiness_score' | 'active_setup_score' | 'confluence_score' | 'data_quality' | 'historical_edge_score'
   limit?: number
 }

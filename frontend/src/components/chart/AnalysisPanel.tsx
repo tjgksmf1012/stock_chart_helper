@@ -42,6 +42,7 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
         <p className="text-xs text-muted-foreground">{analysis.reason_summary}</p>
         <ActionPlanCard analysis={analysis} />
         <TradeReadinessCard analysis={analysis} />
+        <ActiveSetupCard analysis={analysis} />
         <DecisionSupportCard analysis={analysis} />
         <div className="rounded-lg border border-border bg-background/60 p-3 text-xs text-muted-foreground">
           <div>데이터 품질 {fmtPct(analysis.data_quality, 0)}</div>
@@ -79,6 +80,7 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
 
       <ActionPlanCard analysis={analysis} />
       <TradeReadinessCard analysis={analysis} />
+      <ActiveSetupCard analysis={analysis} />
       <DecisionSupportCard analysis={analysis} />
 
       {bestPattern && (
@@ -229,6 +231,11 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
                     </Badge>
                   )}
                   <span className="text-xs text-muted-foreground">유사도 {fmtPct(pattern.textbook_similarity)}</span>
+                  {pattern.lifecycle_label && (
+                    <Badge variant={pattern.lifecycle_score >= 0.56 ? 'neutral' : 'muted'}>
+                      {pattern.lifecycle_label} {fmtPct(pattern.lifecycle_score, 0)}
+                    </Badge>
+                  )}
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                   <span>Adam/Eve 적합도 {fmtPct(pattern.variant_fit)}</span>
@@ -263,6 +270,7 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
                 )}
                 {pattern.target_hit_at && <StatRow label="목표가 도달" value={fmtDateTime(pattern.target_hit_at)} />}
                 {pattern.invalidated_at && <StatRow label="무효화" value={fmtDateTime(pattern.invalidated_at)} />}
+                {pattern.lifecycle_note && <p className="text-xs leading-relaxed text-muted-foreground">{pattern.lifecycle_note}</p>}
               </div>
             ))}
           </div>
@@ -345,6 +353,36 @@ function TradeReadinessCard({ analysis }: { analysis: AnalysisResult }) {
           ))}
         </div>
       )}
+    </Card>
+  )
+}
+
+function ActiveSetupCard({ analysis }: { analysis: AnalysisResult }) {
+  const score = analysis.active_setup_score ?? 0
+
+  return (
+    <Card className="space-y-3 border-cyan-400/20 bg-cyan-400/5">
+      <div className="flex items-center gap-2 text-sm font-semibold">
+        <Activity size={15} className="text-cyan-300" />
+        활성 셋업
+        <Badge variant={score >= 0.56 ? 'neutral' : 'muted'} className="ml-auto">
+          {analysis.active_setup_label}
+        </Badge>
+      </div>
+      <div>
+        <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
+          <span>현재 살아있는 패턴 점수</span>
+          <span className="font-mono">{fmtPct(score, 0)}</span>
+        </div>
+        <div className="h-2 overflow-hidden rounded-full bg-background">
+          <div className="h-full rounded-full bg-cyan-300 transition-all" style={{ width: `${Math.round(score * 100)}%` }} />
+        </div>
+      </div>
+      <p className="text-xs leading-relaxed text-muted-foreground">{analysis.active_setup_summary}</p>
+      <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+        <span>활성 패턴 {analysis.active_pattern_count ?? 0}개</span>
+        <span className="text-right">종료/무효 {analysis.completed_pattern_count ?? 0}개</span>
+      </div>
     </Card>
   )
 }
