@@ -182,6 +182,7 @@ class DashboardItem(BaseModel):
     live_intraday_priority_score: float = 0.0
     live_intraday_reason: str = ""
     non_live_intraday_reason: str = ""
+    intraday_collection_mode: str = "budget"
 
 
 class DashboardResponse(BaseModel):

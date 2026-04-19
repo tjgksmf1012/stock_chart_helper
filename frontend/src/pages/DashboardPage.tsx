@@ -8,6 +8,9 @@ import { dashboardApi } from '@/lib/api'
 import { DEFAULT_TIMEFRAME, TIMEFRAME_OPTIONS, timeframeLabel } from '@/lib/timeframes'
 import { fmtDateTime } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
+import type { DashboardResponse } from '@/types/api'
+
+type IntradayView = 'all' | 'live' | 'stored' | 'public' | 'mixed' | 'cooldown'
 
 export default function DashboardPage() {
   const { selectedTimeframe, setTimeframe } = useAppStore()
@@ -15,6 +18,7 @@ export default function DashboardPage() {
   const intradayMode = ['60m', '30m', '15m', '1m'].includes(timeframe)
   const opts = { staleTime: 30_000, refetchInterval: 60_000 }
   const [isTriggeringScan, setIsTriggeringScan] = useState(false)
+  const [intradayView, setIntradayView] = useState<IntradayView>('all')
   const lastFinishedAtRef = useRef<string | null>(null)
 
   const longQ = useQuery({ queryKey: ['dashboard', timeframe, 'long'], queryFn: () => dashboardApi.longHigh(timeframe), ...opts })
@@ -83,6 +87,21 @@ export default function DashboardPage() {
     }
   }, [statusQ.data?.last_finished_at, statusQ.data?.status])
 
+  useEffect(() => {
+    setIntradayView('all')
+  }, [timeframe])
+
+  const filterDashboard = (data: DashboardResponse | undefined): DashboardResponse | undefined => {
+    if (!intradayMode || intradayView === 'all' || !data) return data
+    return {
+      ...data,
+      items: data.items.filter(item => {
+        if (intradayView === 'live') return item.live_intraday_candidate
+        return !item.live_intraday_candidate && item.intraday_collection_mode === intradayView
+      }),
+    }
+  }
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -145,6 +164,31 @@ export default function DashboardPage() {
             </p>
           </div>
         </Card>
+      )}
+
+      {intradayMode && (
+        <div className="flex flex-wrap gap-2">
+          {([
+            ['all', '전체'],
+            ['live', 'live'],
+            ['stored', 'stored'],
+            ['public', 'public'],
+            ['mixed', 'mixed'],
+            ['cooldown', 'cooldown'],
+          ] as Array<[IntradayView, string]>).map(([value, label]) => (
+            <button
+              key={value}
+              onClick={() => setIntradayView(value)}
+              className={`rounded-md px-2.5 py-1.5 text-xs transition-colors ${
+                intradayView === value
+                  ? 'bg-primary text-primary-foreground'
+                  : 'border border-border bg-card text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       )}
 
       <Card className="space-y-4">
@@ -217,14 +261,14 @@ export default function DashboardPage() {
       <DashboardSection
         title="상승 확률 상위"
         subtitle="상승 확률, 형성 품질, 상위 타임프레임 정렬이 함께 좋은 종목입니다."
-        data={longQ.data}
+        data={filterDashboard(longQ.data)}
         isLoading={longQ.isLoading}
       />
 
       <DashboardSection
         title="패턴 완성 임박"
         subtitle="거의 다 만들어졌고 돌파 감시 단계에 가까운 후보입니다."
-        data={armedQ.data}
+        data={filterDashboard(armedQ.data)}
         isLoading={armedQ.isLoading}
       />
 
@@ -232,7 +276,7 @@ export default function DashboardPage() {
         <DashboardSection
           title="Live 분봉 후보"
           subtitle="지금 실제 live KIS 분봉까지 열어 확인 중인 후보입니다. 저장 분봉이나 공개 소스 기반 후보보다 우선 관찰할 묶음입니다."
-          data={liveQ.data}
+          data={filterDashboard(liveQ.data)}
           isLoading={liveQ.isLoading}
         />
       )}
@@ -240,28 +284,28 @@ export default function DashboardPage() {
       <DashboardSection
         title="형성 중 후보"
         subtitle="아직 forming 상태지만 상위 추세와 구조가 받쳐주는 베이스 후보입니다. 완성 신호가 아니라 관찰용 후보군으로 보세요."
-        data={formingQ.data}
+        data={filterDashboard(formingQ.data)}
         isLoading={formingQ.isLoading}
       />
 
       <DashboardSection
         title="교과서 유사형 패턴"
         subtitle="교과서와의 유사도가 높은 구조입니다. 이제는 형성 품질과 최신성도 함께 보정합니다."
-        data={simQ.data}
+        data={filterDashboard(simQ.data)}
         isLoading={simQ.isLoading}
       />
 
       <DashboardSection
         title="하락 확률 상위"
         subtitle="약세 패턴과 하락 방향 정렬이 함께 들어온 종목입니다."
-        data={shortQ.data}
+        data={filterDashboard(shortQ.data)}
         isLoading={shortQ.isLoading}
       />
 
       <DashboardSection
         title="No Signal / 관망"
         subtitle="데이터 품질, 표본 신뢰도, 손익비, 형성 과정 점수 중 하나 이상이 부족해 보수적으로 관망 처리한 종목입니다."
-        data={noSigQ.data}
+        data={filterDashboard(noSigQ.data)}
         isLoading={noSigQ.isLoading}
       />
     </div>

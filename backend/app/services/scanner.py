@@ -280,6 +280,22 @@ def _non_live_intraday_reason(
     return f"Budget/store path: {', '.join(reasons[:3])}."
 
 
+def _intraday_collection_mode(row: dict[str, Any]) -> str:
+    if row.get("live_intraday_candidate"):
+        return "live"
+
+    fetch_status = str(row.get("fetch_status") or "")
+    if fetch_status in {"stored_recent", "stored_fallback", "scanner_store_only"}:
+        return "stored"
+    if fetch_status in {"scanner_public_only", "yahoo_rate_limited", "intraday_rate_limited", "kis_not_configured"}:
+        return "public"
+    if fetch_status in {"scanner_public_augmented", "live_augmented_by_store"}:
+        return "mixed"
+    if fetch_status == "kis_cooldown":
+        return "cooldown"
+    return "budget"
+
+
 def _formation_quality_from_row(row: dict[str, Any]) -> float:
     return float(
         row.get("formation_quality")
@@ -650,6 +666,7 @@ async def _analyze_one(
             result["live_intraday_candidate"] = False
             result["live_intraday_reason"] = ""
             result["non_live_intraday_reason"] = ""
+            result["intraday_collection_mode"] = "budget"
         await cache_set(cache_key, result, ttl=1800)
         return result
     except Exception as exc:
@@ -779,6 +796,7 @@ async def run_scan(
                                 if item["live_intraday_candidate"]
                                 else _non_live_intraday_reason(item, timeframe, live_phase, len(live_codes))
                             )
+                            item["intraday_collection_mode"] = _intraday_collection_mode(item)
                         results.append(item)
                 await asyncio.sleep(0.08)
 
@@ -891,6 +909,7 @@ async def get_scan_results(timeframe: str = DEFAULT_TIMEFRAME) -> list[dict[str,
                 if item["live_intraday_candidate"]
                 else _non_live_intraday_reason(item, timeframe, intraday_live_phase, intraday_live_limit)
             )
+            item["intraday_collection_mode"] = _intraday_collection_mode(item)
     results.sort(
         key=lambda row: (
             row.get("composite_score", row.get("entry_score", 0)),

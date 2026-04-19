@@ -74,6 +74,7 @@ def _make_item(rank: int, row: dict) -> DashboardItem:
         live_intraday_priority_score=row.get("live_intraday_priority_score", 0.0),
         live_intraday_reason=row.get("live_intraday_reason", ""),
         non_live_intraday_reason=row.get("non_live_intraday_reason", ""),
+        intraday_collection_mode=row.get("intraday_collection_mode", "budget"),
     )
 
 

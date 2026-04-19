@@ -93,6 +93,11 @@ export function DashboardCard({ item }: DashboardCardProps) {
             {item.live_intraday_candidate && (
               <Badge variant="bullish">live {fmtPct(item.live_intraday_priority_score, 0)}</Badge>
             )}
+            {isIntraday && !item.live_intraday_candidate && (
+              <Badge variant={modeVariant(item.intraday_collection_mode)}>
+                {intradayModeLabel(item.intraday_collection_mode)}
+              </Badge>
+            )}
           </div>
 
           {item.pattern_type ? (
@@ -215,5 +220,33 @@ function setupStageLabel(stage: string): string {
       return '베이스 형성'
     default:
       return '중립'
+  }
+}
+
+function intradayModeLabel(mode: string): string {
+  switch (mode) {
+    case 'stored':
+      return 'stored'
+    case 'public':
+      return 'public'
+    case 'mixed':
+      return 'mixed'
+    case 'cooldown':
+      return 'cooldown'
+    case 'live':
+      return 'live'
+    default:
+      return 'budget'
+  }
+}
+
+function modeVariant(mode: string): 'bullish' | 'warning' | 'muted' {
+  switch (mode) {
+    case 'live':
+      return 'bullish'
+    case 'cooldown':
+      return 'warning'
+    default:
+      return 'muted'
   }
 }

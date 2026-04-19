@@ -177,6 +177,7 @@ export interface DashboardItem {
   live_intraday_priority_score: number
   live_intraday_reason: string
   non_live_intraday_reason: string
+  intraday_collection_mode: string
 }
 
 export interface DashboardResponse {
