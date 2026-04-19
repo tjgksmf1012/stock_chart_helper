@@ -82,6 +82,14 @@ export const DIRECTION_LABELS: Record<string, string> = {
   neutral: '중립형',
 }
 
+export const WYCKOFF_LABELS: Record<string, string> = {
+  accumulation: '매집',
+  markup: '상승 진행',
+  distribution: '분산',
+  markdown: '하락 진행',
+  neutral: '중립',
+}
+
 export function getPatternBias(patternType: string | null | undefined): 'bullish' | 'bearish' | 'neutral' {
   if (!patternType) return 'neutral'
 

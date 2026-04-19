@@ -89,6 +89,9 @@ class AnalysisResult(BaseModel):
     trend_alignment_score: float
     trend_direction: str
     trend_warning: str
+    wyckoff_phase: str
+    wyckoff_score: float
+    wyckoff_note: str
     no_signal_flag: bool
     no_signal_reason: str
     reason_summary: str
@@ -143,6 +146,9 @@ class DashboardItem(BaseModel):
     trend_alignment_score: float = 0.0
     trend_direction: str = "sideways"
     trend_warning: str = ""
+    wyckoff_phase: str = "neutral"
+    wyckoff_score: float = 0.0
+    wyckoff_note: str = ""
     no_signal_flag: bool
     reason_summary: str
     completion_proximity: float = 0.0

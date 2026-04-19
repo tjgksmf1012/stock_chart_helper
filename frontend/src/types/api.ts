@@ -84,6 +84,9 @@ export interface AnalysisResult {
   trend_alignment_score: number
   trend_direction: string
   trend_warning: string
+  wyckoff_phase: string
+  wyckoff_score: number
+  wyckoff_note: string
   no_signal_flag: boolean
   no_signal_reason: string
   reason_summary: string
@@ -138,6 +141,9 @@ export interface DashboardItem {
   trend_alignment_score: number
   trend_direction: string
   trend_warning: string
+  wyckoff_phase: string
+  wyckoff_score: number
+  wyckoff_note: string
   no_signal_flag: boolean
   reason_summary: string
   completion_proximity: number

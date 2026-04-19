@@ -16,6 +16,7 @@ import {
   PATTERN_VARIANT_NAMES,
   STATE_COLORS,
   STATE_LABELS,
+  WYCKOFF_LABELS,
 } from '@/lib/utils'
 
 interface AnalysisPanelProps {
@@ -136,6 +137,7 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
           <StatRow label="평균 결과 바 수" value={analysis.avg_bars_to_outcome.toFixed(1)} />
           <StatRow label="백테스트 edge" value={fmtPct(analysis.historical_edge_score)} />
           <StatRow label="추세 정렬 점수" value={fmtPct(analysis.trend_alignment_score)} />
+          <StatRow label="와이코프 점수" value={fmtPct(analysis.wyckoff_score)} />
           {bestPattern && <StatRow label="Adam/Eve 적합도" value={fmtPct(bestPattern.variant_fit)} />}
           {bestPattern && <StatRow label="레그 균형" value={fmtPct(bestPattern.leg_balance_fit)} />}
           {bestPattern && <StatRow label="반전 에너지" value={fmtPct(bestPattern.reversal_energy_fit)} />}
@@ -166,12 +168,14 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
           <StatRow label="평균 거래대금" value={fmtTurnoverBillion(analysis.avg_turnover_billion)} />
           <StatRow label="유동성 점수" value={fmtPct(analysis.liquidity_score)} />
           <StatRow label="추세 방향" value={trendDirectionLabel(analysis.trend_direction)} />
+          <StatRow label="와이코프 국면" value={WYCKOFF_LABELS[analysis.wyckoff_phase] ?? analysis.wyckoff_phase} />
           <StatRow label="통계 기준" value={analysis.stats_timeframe} />
           <StatRow label="사용 가능 바 수" value={`${analysis.available_bars.toLocaleString('ko-KR')}개`} />
           {analysis.bars_since_signal !== null && (
             <StatRow label="신호 이후 경과 바 수" value={`${analysis.bars_since_signal.toLocaleString('ko-KR')}개`} />
           )}
           <p className="pt-1 text-xs leading-relaxed text-muted-foreground">{analysis.source_note}</p>
+          {analysis.wyckoff_note && <p className="text-xs text-sky-200">{analysis.wyckoff_note}</p>}
           {analysis.trend_warning && <p className="text-xs text-amber-300">{analysis.trend_warning}</p>}
           {analysis.fetch_message && <p className="text-xs text-muted-foreground">{analysis.fetch_message}</p>}
         </div>

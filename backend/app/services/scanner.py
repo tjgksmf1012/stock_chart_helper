@@ -99,6 +99,17 @@ def _direction_label(score: float) -> str:
     return "중립"
 
 
+def _wyckoff_label(phase: str) -> str:
+    labels = {
+        "accumulation": "accumulation",
+        "markup": "markup",
+        "distribution": "distribution",
+        "markdown": "markdown",
+        "neutral": "neutral",
+    }
+    return labels.get(phase, phase or "neutral")
+
+
 def _formation_quality_from_row(row: dict[str, Any]) -> float:
     return float(
         row.get("formation_quality")
@@ -151,6 +162,17 @@ def _apply_setup_metadata(row: dict[str, Any]) -> dict[str, Any]:
         row["composite_score"] = round(float(row.get("composite_score", 0.0)) + 0.03, 3)
     elif row["setup_stage"] == "base_building":
         row["composite_score"] = round(float(row.get("composite_score", 0.0)) - 0.03, 3)
+
+    phase = str(row.get("wyckoff_phase") or "neutral")
+    if phase == "accumulation":
+        row["composite_score"] = round(float(row.get("composite_score", 0.0)) + 0.04, 3)
+        row["scenario_text"] = f"{row.get('scenario_text', '')} Wyckoff accumulation context supports a base-building read.".strip()
+    elif phase == "markup":
+        row["composite_score"] = round(float(row.get("composite_score", 0.0)) + 0.02, 3)
+    elif phase == "distribution":
+        row["composite_score"] = round(float(row.get("composite_score", 0.0)) - 0.03, 3)
+    elif phase == "markdown":
+        row["composite_score"] = round(float(row.get("composite_score", 0.0)) - 0.06, 3)
 
     return row
 
@@ -298,6 +320,7 @@ async def _build_confluence(
         + 0.10 * float(primary_row.get("historical_edge_score", 0.0))
         + 0.12 * float(primary_row.get("headroom_score", 0.0))
         + 0.10 * float(primary_row.get("trend_alignment_score", 0.0))
+        + 0.08 * float(primary_row.get("wyckoff_score", 0.0))
         + 0.10 * min(1.0, float(primary_row.get("reward_risk_ratio", 0.0)) / 2.5)
         + 0.10 * float(primary_row.get("data_quality", 0.0))
         + 0.08 * float(primary_row.get("recency_score", 0.0))
@@ -376,6 +399,9 @@ async def _analyze_one(
             "trend_alignment_score": analysis.trend_alignment_score,
             "trend_direction": analysis.trend_direction,
             "trend_warning": analysis.trend_warning,
+            "wyckoff_phase": analysis.wyckoff_phase,
+            "wyckoff_score": analysis.wyckoff_score,
+            "wyckoff_note": analysis.wyckoff_note,
             "no_signal_flag": analysis.no_signal_flag,
             "reason_summary": analysis.reason_summary,
             "completion_proximity": analysis.completion_proximity,
@@ -409,6 +435,7 @@ async def _analyze_one(
                         + 0.10 * float(result["historical_edge_score"])
                         + 0.14 * float(result["headroom_score"])
                         + 0.10 * float(result["trend_alignment_score"])
+                        + 0.08 * float(result.get("wyckoff_score", 0.0))
                         + 0.10 * min(1.0, float(result["reward_risk_ratio"]) / 2.5),
                         3,
                     ),

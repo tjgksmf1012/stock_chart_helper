@@ -322,6 +322,78 @@ def _trend_alignment_profile(df: pd.DataFrame, pattern_type: str) -> dict[str, A
     }
 
 
+def _wyckoff_profile(df: pd.DataFrame, pattern_type: str) -> dict[str, Any]:
+    close = pd.to_numeric(df["close"], errors="coerce").dropna()
+    volume = pd.to_numeric(df["volume"], errors="coerce").dropna()
+    if len(close) < 80:
+        return {
+            "wyckoff_phase": "neutral",
+            "wyckoff_score": 0.5,
+            "wyckoff_note": "와이코프 단계 판단에 필요한 바 수가 아직 충분하지 않습니다.",
+        }
+
+    last_close = float(close.iloc[-1])
+    ma20 = close.rolling(20).mean()
+    ma60 = close.rolling(60).mean()
+    ma20_now = float(ma20.iloc[-1])
+    ma60_now = float(ma60.iloc[-1])
+    ma60_prev = float(ma60.iloc[-21]) if len(ma60.dropna()) >= 21 and pd.notna(ma60.iloc[-21]) else ma60_now
+    slope = 0.0 if ma60_prev == 0 else (ma60_now - ma60_prev) / ma60_prev
+
+    range_window = close.tail(min(len(close), 252))
+    range_low = float(range_window.min())
+    range_high = float(range_window.max())
+    range_span = max(range_high - range_low, max(last_close * 0.01, 1.0))
+    range_pos = (last_close - range_low) / range_span
+
+    long_range = (close.tail(40).max() - close.tail(40).min()) / max(last_close, 1.0)
+    short_range = (close.tail(10).max() - close.tail(10).min()) / max(last_close, 1.0)
+    contraction = 1.0 - (short_range / max(long_range, 0.01))
+    volume_ratio = (
+        float(volume.tail(10).mean()) / max(float(volume.tail(40).mean()), 1.0)
+        if len(volume) >= 40
+        else 1.0
+    )
+
+    bullish = _is_bullish(pattern_type)
+    bearish = _is_bearish(pattern_type)
+
+    phase = "neutral"
+    score = 0.52
+    note = "와이코프 기준으로는 아직 뚜렷한 단계 확정 전의 중립 구간에 가깝습니다."
+
+    if last_close > ma20_now > ma60_now and slope > 0.02 and range_pos > 0.62:
+        phase = "markup"
+        score = 0.88 if contraction > 0.15 else 0.78
+        note = "중기 상승 추세가 유지되고 있어 와이코프 기준 상승 진행 구간으로 해석하는 편이 맞습니다."
+    elif last_close < ma20_now < ma60_now and slope < -0.02 and range_pos < 0.36:
+        phase = "markdown"
+        score = 0.88 if contraction < 0.1 else 0.78
+        note = "중기 하락 추세가 이어지는 구간이라 와이코프 기준 하락 진행 구간으로 보는 편이 안전합니다."
+    elif range_pos < 0.46 and abs(slope) < 0.04 and contraction > 0.18 and volume_ratio < 0.95:
+        phase = "accumulation"
+        score = 0.82 if bullish else 0.68
+        note = "하단에서 변동성 수축과 거래량 감소가 함께 보여 매집 말기 또는 재축적 가능성을 의심할 수 있습니다."
+    elif range_pos > 0.58 and abs(slope) < 0.04 and volume_ratio > 1.05:
+        phase = "distribution"
+        score = 0.82 if bearish else 0.68
+        note = "상단에서 거래량이 늘고 추세가 둔화돼 분산 또는 재분배 구간일 가능성을 함께 봐야 합니다."
+    elif last_close > ma60_now and contraction > 0.22 and volume_ratio < 0.92:
+        phase = "accumulation"
+        score = 0.72 if bullish else 0.58
+        note = "상승 추세 위에서 다시 타이트해지는 재축적 성격이 보입니다."
+    elif last_close < ma60_now and contraction > 0.18 and volume_ratio > 1.0:
+        phase = "distribution"
+        score = 0.72 if bearish else 0.58
+        note = "약세 추세 안에서 반등 에너지가 약해 분배 또는 재분배 성격을 경계해야 합니다."
+
+    return {
+        "wyckoff_phase": phase,
+        "wyckoff_score": round(float(max(0.0, min(1.0, score))), 3),
+        "wyckoff_note": note,
+    }
+
+
 def _opportunity_profile(pattern: PatternResult, current_close: float) -> dict[str, float]:
     target = pattern.target_level
     invalidation = pattern.invalidation_level
@@ -689,6 +761,9 @@ def build_no_signal_snapshot(
         trend_alignment_score=0.0,
         trend_direction="sideways",
         trend_warning="",
+        wyckoff_phase="neutral",
+        wyckoff_score=0.0,
+        wyckoff_note="",
         no_signal_flag=True,
         no_signal_reason=no_signal_reason,
         reason_summary=reason_summary,
@@ -754,6 +829,7 @@ async def analyze_symbol_dataframe(
     avg_bars_to_outcome = float(stats.get("avg_bars_to_outcome", 0.0))
     historical_edge_score = float(stats.get("historical_edge_score", 0.5))
     trend_profile = _trend_alignment_profile(df, best_pattern.pattern_type)
+    wyckoff_profile = _wyckoff_profile(df, best_pattern.pattern_type)
     regime_match = trend_profile["trend_alignment_score"]
     opportunity = _opportunity_profile(best_pattern, current_close)
 
@@ -786,6 +862,25 @@ async def analyze_symbol_dataframe(
         risk_penalty += 0.10
     elif best_pattern.variant_fit < 0.70:
         risk_penalty += 0.05
+    if _is_bullish(best_pattern.pattern_type):
+        if wyckoff_profile["wyckoff_phase"] == "markdown":
+            risk_penalty += 0.16
+        elif wyckoff_profile["wyckoff_phase"] == "distribution":
+            risk_penalty += 0.10
+        elif wyckoff_profile["wyckoff_phase"] == "accumulation":
+            risk_penalty -= 0.03
+        elif wyckoff_profile["wyckoff_phase"] == "markup":
+            risk_penalty -= 0.02
+    elif _is_bearish(best_pattern.pattern_type):
+        if wyckoff_profile["wyckoff_phase"] == "markup":
+            risk_penalty += 0.16
+        elif wyckoff_profile["wyckoff_phase"] == "accumulation":
+            risk_penalty += 0.10
+        elif wyckoff_profile["wyckoff_phase"] == "distribution":
+            risk_penalty -= 0.03
+        elif wyckoff_profile["wyckoff_phase"] == "markdown":
+            risk_penalty -= 0.02
+    risk_penalty = max(0.0, risk_penalty)
     if opportunity["reward_risk_ratio"] < 1.2:
         risk_penalty += 0.12
     if opportunity["headroom_score"] < 0.2:
@@ -882,6 +977,9 @@ async def analyze_symbol_dataframe(
         trend_alignment_score=trend_profile["trend_alignment_score"],
         trend_direction=trend_profile["trend_direction"],
         trend_warning=trend_profile["trend_warning"],
+        wyckoff_phase=wyckoff_profile["wyckoff_phase"],
+        wyckoff_score=wyckoff_profile["wyckoff_score"],
+        wyckoff_note=wyckoff_profile["wyckoff_note"],
         no_signal_flag=probability.no_signal_flag,
         no_signal_reason=probability.no_signal_reason,
         reason_summary=probability.reason_summary,

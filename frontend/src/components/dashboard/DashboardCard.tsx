@@ -6,7 +6,7 @@ import type { DashboardItem } from '@/types/api'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { ProbBar } from '@/components/ui/ProbBar'
-import { cn, fmtPct, fmtTurnoverBillion, PATTERN_NAMES, STATE_COLORS, STATE_LABELS } from '@/lib/utils'
+import { cn, fmtPct, fmtTurnoverBillion, PATTERN_NAMES, STATE_COLORS, STATE_LABELS, WYCKOFF_LABELS } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
 
 interface DashboardCardProps {
@@ -51,7 +51,7 @@ export function DashboardCard({ item }: DashboardCardProps) {
               품질 {fmtPct(item.data_quality, 0)}
             </Badge>
             <Badge variant={item.confluence_score >= 0.7 ? 'bullish' : item.confluence_score >= 0.5 ? 'muted' : 'warning'}>
-              합산 {fmtPct(item.confluence_score, 0)}
+              합의 {fmtPct(item.confluence_score, 0)}
             </Badge>
             <Badge variant={item.formation_quality >= 0.7 ? 'bullish' : item.formation_quality >= 0.5 ? 'muted' : 'warning'}>
               형성 {fmtPct(item.formation_quality, 0)}
@@ -70,6 +70,17 @@ export function DashboardCard({ item }: DashboardCardProps) {
               variant={item.reward_risk_ratio >= 1.8 ? 'bullish' : item.reward_risk_ratio >= 1.2 ? 'muted' : 'warning'}
             >
               손익비 {item.reward_risk_ratio.toFixed(1)}
+            </Badge>
+            <Badge
+              variant={
+                item.wyckoff_phase === 'accumulation' || item.wyckoff_phase === 'markup'
+                  ? 'bullish'
+                  : item.wyckoff_phase === 'distribution' || item.wyckoff_phase === 'markdown'
+                    ? 'warning'
+                    : 'muted'
+              }
+            >
+              {WYCKOFF_LABELS[item.wyckoff_phase] ?? item.wyckoff_phase}
             </Badge>
           </div>
 
@@ -112,7 +123,7 @@ export function DashboardCard({ item }: DashboardCardProps) {
         <span>레그 균형 {fmtPct(item.leg_balance_fit)}</span>
         <span className="text-right">반전 에너지 {fmtPct(item.reversal_energy_fit)}</span>
         <span>돌파 품질 {fmtPct(item.breakout_quality_fit)}</span>
-        <span className="text-right">retest 품질 {fmtPct(item.retest_quality_fit)}</span>
+        <span className="text-right">Retest 품질 {fmtPct(item.retest_quality_fit)}</span>
         <span>평균 MFE {fmtPct(item.avg_mfe_pct)}</span>
         <span className="text-right">평균 MAE {fmtPct(item.avg_mae_pct)}</span>
         <span>거래대금 {fmtTurnoverBillion(item.avg_turnover_billion)}</span>
@@ -129,6 +140,12 @@ export function DashboardCard({ item }: DashboardCardProps) {
         <p className="mt-1 text-xs text-muted-foreground">{item.confluence_summary}</p>
         <p className="mt-1 text-xs leading-relaxed text-foreground/90">{item.scenario_text}</p>
       </div>
+
+      {item.wyckoff_note && (
+        <div className="rounded-lg border border-sky-500/20 bg-sky-500/5 p-2.5 text-xs text-sky-100">
+          {item.wyckoff_note}
+        </div>
+      )}
 
       {(item.fetch_message || item.no_signal_flag) && (
         <div className="rounded-lg border border-border bg-background/60 p-2.5">
