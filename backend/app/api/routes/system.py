@@ -13,6 +13,7 @@ from ..schemas import (
     CacheRuntimeStatus,
     IntradayCandidateWarmupRequest,
     IntradayStoreStatus,
+    IntradayWarmupJobStatus,
     IntradayWarmupRequest,
     IntradayWarmupResponse,
     IntradayWarmupResult,
@@ -29,6 +30,24 @@ from ...services.timeframe_service import get_timeframe_spec, is_intraday_timefr
 
 router = APIRouter(prefix="/system", tags=["system"])
 settings = get_settings()
+_warmup_task: asyncio.Task | None = None
+_warmup_status: dict[str, Any] = {
+    "status": "idle",
+    "is_running": False,
+    "source": None,
+    "allow_live": False,
+    "started_at": None,
+    "finished_at": None,
+    "total_requests": 0,
+    "completed_count": 0,
+    "success_count": 0,
+    "failure_count": 0,
+    "symbols": [],
+    "timeframes": [],
+    "last_error": None,
+    "trigger_accepted": None,
+    "results": [],
+}
 
 
 def _read_token_cache_status(path_text: str) -> dict[str, Any]:
@@ -151,12 +170,47 @@ def _normalize_intraday_timeframes(timeframes: list[str]) -> list[str]:
     return normalized or ["15m", "30m", "60m"]
 
 
+def _set_warmup_status(**kwargs: Any) -> None:
+    _warmup_status.update(kwargs)
+
+
+def _get_warmup_status(trigger_accepted: bool | None = None) -> IntradayWarmupJobStatus:
+    payload = dict(_warmup_status)
+    if trigger_accepted is not None:
+        payload["trigger_accepted"] = trigger_accepted
+    return IntradayWarmupJobStatus(**payload)
+
+
+async def _candidate_symbols_for_warmup(request: IntradayCandidateWarmupRequest) -> list[str]:
+    source_timeframe = str(request.source_timeframe or "1d")
+    if source_timeframe not in {"1mo", "1wk", "1d", "60m", "30m", "15m", "1m"}:
+        raise HTTPException(status_code=422, detail=f"Unsupported source timeframe: {source_timeframe}")
+
+    rows = await get_scan_results(source_timeframe)
+    candidates = [
+        row
+        for row in rows
+        if row.get("code") and not row.get("no_signal_flag") and row.get("action_plan") != "cooling"
+    ]
+    candidates.sort(
+        key=lambda row: (
+            float(row.get("action_priority_score", 0.0)),
+            float(row.get("composite_score", 0.0)),
+            float(row.get("entry_score", 0.0)),
+            float(row.get("data_quality", 0.0)),
+        ),
+        reverse=True,
+    )
+    return _normalize_symbol_codes([str(row["code"]) for row in candidates[: request.limit]], max_count=request.limit)
+
+
 async def _run_intraday_warmup(
     *,
     symbols: list[str],
     timeframes: list[str],
     allow_live: bool,
     lookback_days: int | None,
+    on_result: Any | None = None,
 ) -> IntradayWarmupResponse:
     symbols = _normalize_symbol_codes(symbols)
     fetcher = get_data_fetcher()
@@ -195,7 +249,11 @@ async def _run_intraday_warmup(
                 )
 
     tasks = [collect(symbol, timeframe) for symbol in symbols for timeframe in timeframes]
-    results = list(await asyncio.gather(*tasks))
+    for task in asyncio.as_completed(tasks):
+        result = await task
+        results.append(result)
+        if on_result:
+            on_result(result, len(results), len(tasks))
     success_count = sum(1 for result in results if result.ok)
 
     return IntradayWarmupResponse(
@@ -228,30 +286,154 @@ async def warmup_intraday_cache(request: IntradayWarmupRequest) -> IntradayWarmu
 @router.post("/intraday/warmup-candidates", response_model=IntradayWarmupResponse)
 async def warmup_intraday_candidates(request: IntradayCandidateWarmupRequest) -> IntradayWarmupResponse:
     timeframes = _normalize_intraday_timeframes(request.timeframes)
-    source_timeframe = str(request.source_timeframe or "1d")
-    if source_timeframe not in {"1mo", "1wk", "1d", "60m", "30m", "15m", "1m"}:
-        raise HTTPException(status_code=422, detail=f"Unsupported source timeframe: {source_timeframe}")
-
-    rows = await get_scan_results(source_timeframe)
-    candidates = [
-        row
-        for row in rows
-        if row.get("code") and not row.get("no_signal_flag") and row.get("action_plan") != "cooling"
-    ]
-    candidates.sort(
-        key=lambda row: (
-            float(row.get("action_priority_score", 0.0)),
-            float(row.get("composite_score", 0.0)),
-            float(row.get("entry_score", 0.0)),
-            float(row.get("data_quality", 0.0)),
-        ),
-        reverse=True,
-    )
-    symbols = _normalize_symbol_codes([str(row["code"]) for row in candidates[: request.limit]])
+    symbols = await _candidate_symbols_for_warmup(request)
     if not symbols:
         raise HTTPException(status_code=404, detail="No eligible candidates were found for intraday warmup.")
 
     return await _run_intraday_warmup(
+        symbols=symbols,
+        timeframes=timeframes,
+        allow_live=request.allow_live,
+        lookback_days=request.lookback_days,
+    )
+
+
+@router.get("/intraday/warmup-status", response_model=IntradayWarmupJobStatus)
+async def get_intraday_warmup_status() -> IntradayWarmupJobStatus:
+    return _get_warmup_status()
+
+
+async def _run_warmup_background(
+    *,
+    source: str,
+    symbols: list[str],
+    timeframes: list[str],
+    allow_live: bool,
+    lookback_days: int | None,
+) -> None:
+    started_at = datetime.utcnow().isoformat()
+    total_requests = len(symbols) * len(timeframes)
+    _set_warmup_status(
+        status="running",
+        is_running=True,
+        source=source,
+        allow_live=allow_live,
+        started_at=started_at,
+        finished_at=None,
+        total_requests=total_requests,
+        completed_count=0,
+        success_count=0,
+        failure_count=0,
+        symbols=symbols,
+        timeframes=timeframes,
+        last_error=None,
+        trigger_accepted=True,
+        results=[],
+    )
+
+    def on_result(result: IntradayWarmupResult, completed: int, total: int) -> None:
+        current_results = list(_warmup_status.get("results") or [])
+        current_results.append(result)
+        success_count = sum(1 for item in current_results if item.ok)
+        _set_warmup_status(
+            total_requests=total,
+            completed_count=completed,
+            success_count=success_count,
+            failure_count=completed - success_count,
+            results=current_results[-30:],
+        )
+
+    try:
+        response = await _run_intraday_warmup(
+            symbols=symbols,
+            timeframes=timeframes,
+            allow_live=allow_live,
+            lookback_days=lookback_days,
+            on_result=on_result,
+        )
+        _set_warmup_status(
+            status="ready",
+            is_running=False,
+            finished_at=datetime.utcnow().isoformat(),
+            total_requests=response.total_requests,
+            completed_count=response.total_requests,
+            success_count=response.success_count,
+            failure_count=response.failure_count,
+            results=response.results[-30:],
+        )
+    except Exception as exc:
+        _set_warmup_status(
+            status="error",
+            is_running=False,
+            finished_at=datetime.utcnow().isoformat(),
+            last_error=str(exc),
+        )
+
+
+def _trigger_background_warmup(
+    *,
+    source: str,
+    symbols: list[str],
+    timeframes: list[str],
+    allow_live: bool,
+    lookback_days: int | None,
+) -> IntradayWarmupJobStatus:
+    global _warmup_task
+    if _warmup_task and not _warmup_task.done():
+        return _get_warmup_status(trigger_accepted=False)
+
+    _set_warmup_status(
+        status="queued",
+        is_running=True,
+        source=source,
+        allow_live=allow_live,
+        started_at=datetime.utcnow().isoformat(),
+        finished_at=None,
+        total_requests=len(symbols) * len(timeframes),
+        completed_count=0,
+        success_count=0,
+        failure_count=0,
+        symbols=symbols,
+        timeframes=timeframes,
+        last_error=None,
+        trigger_accepted=True,
+        results=[],
+    )
+    _warmup_task = asyncio.create_task(
+        _run_warmup_background(
+            source=source,
+            symbols=symbols,
+            timeframes=timeframes,
+            allow_live=allow_live,
+            lookback_days=lookback_days,
+        )
+    )
+    return _get_warmup_status(trigger_accepted=True)
+
+
+@router.post("/intraday/warmup/background", response_model=IntradayWarmupJobStatus)
+async def trigger_intraday_warmup_background(request: IntradayWarmupRequest) -> IntradayWarmupJobStatus:
+    symbols = _normalize_symbol_codes(request.symbols)
+    if not symbols:
+        raise HTTPException(status_code=422, detail="At least one symbol is required.")
+    timeframes = _normalize_intraday_timeframes(request.timeframes)
+    return _trigger_background_warmup(
+        source="manual_symbols",
+        symbols=symbols,
+        timeframes=timeframes,
+        allow_live=request.allow_live,
+        lookback_days=request.lookback_days,
+    )
+
+
+@router.post("/intraday/warmup-candidates/background", response_model=IntradayWarmupJobStatus)
+async def trigger_intraday_candidate_warmup_background(request: IntradayCandidateWarmupRequest) -> IntradayWarmupJobStatus:
+    timeframes = _normalize_intraday_timeframes(request.timeframes)
+    symbols = await _candidate_symbols_for_warmup(request)
+    if not symbols:
+        raise HTTPException(status_code=404, detail="No eligible candidates were found for intraday warmup.")
+    return _trigger_background_warmup(
+        source=f"candidates:{request.source_timeframe}",
         symbols=symbols,
         timeframes=timeframes,
         allow_live=request.allow_live,

@@ -8,7 +8,7 @@ import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { StatRow } from '@/components/ui/StatRow'
 import { systemApi } from '@/lib/api'
 import { fmtDateTime } from '@/lib/utils'
-import type { IntradayWarmupResponse, Timeframe } from '@/types/api'
+import type { IntradayWarmupJobStatus, Timeframe } from '@/types/api'
 
 const INTRADAY_TIMEFRAMES = ['15m', '30m', '60m']
 
@@ -24,31 +24,43 @@ export default function SystemStatusPage() {
     staleTime: 15_000,
     refetchInterval: 30_000,
   })
+  const warmupStatusQ = useQuery({
+    queryKey: ['system', 'intraday-warmup-status'],
+    queryFn: systemApi.warmupStatus,
+    staleTime: 2_000,
+    refetchInterval: query => (query.state.data?.is_running ? 2_000 : 15_000),
+  })
 
   const manualWarmup = useMutation({
     mutationFn: (allowLive: boolean) =>
-      systemApi.warmupIntraday({
+      systemApi.warmupIntradayBackground({
         symbols: parseSymbols(manualSymbols),
         timeframes: INTRADAY_TIMEFRAMES,
         allow_live: allowLive,
       }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['system', 'status'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['system', 'status'] })
+      queryClient.invalidateQueries({ queryKey: ['system', 'intraday-warmup-status'] })
+    },
   })
 
   const candidateWarmup = useMutation({
     mutationFn: (allowLive: boolean) =>
-      systemApi.warmupCandidates({
+      systemApi.warmupCandidatesBackground({
         source_timeframe: sourceTimeframe,
         limit: candidateLimit,
         timeframes: INTRADAY_TIMEFRAMES,
         allow_live: allowLive,
       }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['system', 'status'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['system', 'status'] })
+      queryClient.invalidateQueries({ queryKey: ['system', 'intraday-warmup-status'] })
+    },
   })
 
   const data = statusQ.data
-  const latestWarmup = candidateWarmup.data ?? manualWarmup.data
-  const isWarming = manualWarmup.isPending || candidateWarmup.isPending
+  const warmupStatus = warmupStatusQ.data
+  const isWarming = manualWarmup.isPending || candidateWarmup.isPending || Boolean(warmupStatus?.is_running)
 
   return (
     <div className="space-y-5">
@@ -231,8 +243,7 @@ export default function SystemStatusPage() {
               </div>
             </div>
 
-            {isWarming && <p className="text-xs text-muted-foreground">분봉 데이터를 예열하는 중입니다. 종목 수가 많으면 조금 걸릴 수 있습니다.</p>}
-            {latestWarmup && <WarmupResultSummary result={latestWarmup} />}
+            {warmupStatus && warmupStatus.status !== 'idle' && <WarmupJobStatusCard status={warmupStatus} />}
             {(manualWarmup.isError || candidateWarmup.isError) && (
               <p className="text-xs text-red-300">분봉 예열 중 오류가 발생했습니다. 종목 코드와 백엔드 로그를 확인해 주세요.</p>
             )}
@@ -271,20 +282,32 @@ export default function SystemStatusPage() {
   )
 }
 
-function WarmupResultSummary({ result }: { result: IntradayWarmupResponse }) {
+function WarmupJobStatusCard({ status }: { status: IntradayWarmupJobStatus }) {
+  const progress = status.total_requests > 0 ? status.completed_count / status.total_requests : 0
   return (
     <div className="rounded-lg border border-border bg-background/60 p-3">
       <div className="flex flex-wrap items-center gap-2 text-xs">
-        <Badge variant={result.failure_count > 0 ? 'warning' : 'bullish'}>
-          성공 {result.success_count}/{result.total_requests}
+        <Badge variant={status.is_running ? 'neutral' : status.failure_count > 0 ? 'warning' : 'bullish'}>
+          {statusLabel(status.status)}
         </Badge>
-        <Badge variant={result.allow_live ? 'bullish' : 'muted'}>
-          {result.allow_live ? 'KIS 포함' : '저장/공개 우선'}
+        <Badge variant={status.failure_count > 0 ? 'warning' : 'bullish'}>
+          성공 {status.success_count}/{status.total_requests}
         </Badge>
-        <span className="text-muted-foreground">{result.symbols.length}종목 / {result.timeframes.join(', ')}</span>
+        <Badge variant={status.allow_live ? 'bullish' : 'muted'}>
+          {status.allow_live ? 'KIS 포함' : '저장/공개 우선'}
+        </Badge>
+        <span className="text-muted-foreground">{status.symbols.length}종목 / {status.timeframes.join(', ')}</span>
       </div>
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-background">
+        <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.round(progress * 100)}%` }} />
+      </div>
+      <div className="mt-1 flex justify-between text-[11px] text-muted-foreground">
+        <span>{status.completed_count}/{status.total_requests} 완료</span>
+        <span>{Math.round(progress * 100)}%</span>
+      </div>
+      {status.last_error && <p className="mt-2 text-xs text-red-300">{status.last_error}</p>}
       <div className="mt-2 grid grid-cols-1 gap-1.5 md:grid-cols-2 xl:grid-cols-3">
-        {result.results.slice(0, 9).map(item => (
+        {status.results.slice(-9).map(item => (
           <div key={`${item.symbol}-${item.timeframe}`} className="flex items-center justify-between gap-2 rounded-md border border-border bg-card px-2 py-1.5 text-xs">
             <span>{item.symbol} {item.timeframe}</span>
             <span className={item.ok ? 'text-emerald-300' : 'text-red-300'}>{item.ok ? `${item.bars}봉` : '실패'}</span>
@@ -293,6 +316,13 @@ function WarmupResultSummary({ result }: { result: IntradayWarmupResponse }) {
       </div>
     </div>
   )
+}
+
+function statusLabel(status: string): string {
+  if (status === 'running') return '진행 중'
+  if (status === 'ready') return '완료'
+  if (status === 'error') return '오류'
+  return '대기'
 }
 
 function StatusSummary({

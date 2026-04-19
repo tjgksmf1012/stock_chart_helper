@@ -338,6 +338,24 @@ export interface IntradayWarmupResponse {
   results: IntradayWarmupResult[]
 }
 
+export interface IntradayWarmupJobStatus {
+  status: string
+  is_running: boolean
+  source: string | null
+  allow_live: boolean
+  started_at: string | null
+  finished_at: string | null
+  total_requests: number
+  completed_count: number
+  success_count: number
+  failure_count: number
+  symbols: string[]
+  timeframes: string[]
+  last_error: string | null
+  trigger_accepted?: boolean | null
+  results: IntradayWarmupResult[]
+}
+
 export interface ScreenerRequest {
   pattern_types?: string[]
   states?: string[]

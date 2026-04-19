@@ -301,6 +301,24 @@ class IntradayWarmupResponse(BaseModel):
     results: list[IntradayWarmupResult]
 
 
+class IntradayWarmupJobStatus(BaseModel):
+    status: str = "idle"
+    is_running: bool = False
+    source: str | None = None
+    allow_live: bool = False
+    started_at: str | None = None
+    finished_at: str | None = None
+    total_requests: int = 0
+    completed_count: int = 0
+    success_count: int = 0
+    failure_count: int = 0
+    symbols: list[str] = Field(default_factory=list)
+    timeframes: list[str] = Field(default_factory=list)
+    last_error: str | None = None
+    trigger_accepted: bool | None = None
+    results: list[IntradayWarmupResult] = Field(default_factory=list)
+
+
 class IntradayCandidateWarmupRequest(BaseModel):
     source_timeframe: str = "1d"
     limit: int = Field(default=20, ge=1, le=50)

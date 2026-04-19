@@ -2,7 +2,7 @@ import axios from 'axios'
 import type {
   SymbolInfo, OHLCVBar, AnalysisResult, PriceInfo,
   DashboardResponse, PatternLibraryEntry, ScreenerRequest, DashboardItem, ScanStatusResponse, Timeframe,
-  IntradayCandidateWarmupRequest, IntradayWarmupRequest, IntradayWarmupResponse, PatternStatsResponse, RuntimeStatusResponse,
+  IntradayCandidateWarmupRequest, IntradayWarmupJobStatus, IntradayWarmupRequest, IntradayWarmupResponse, PatternStatsResponse, RuntimeStatusResponse,
 } from '@/types/api'
 
 const api = axios.create({ baseURL: '/api/v1' })
@@ -42,8 +42,13 @@ export const screenerApi = {
 
 export const systemApi = {
   status: () => api.get<RuntimeStatusResponse>('/system/status').then(r => r.data),
+  warmupStatus: () => api.get<IntradayWarmupJobStatus>('/system/intraday/warmup-status').then(r => r.data),
   warmupIntraday: (req: IntradayWarmupRequest) =>
     api.post<IntradayWarmupResponse>('/system/intraday/warmup', req).then(r => r.data),
   warmupCandidates: (req: IntradayCandidateWarmupRequest) =>
     api.post<IntradayWarmupResponse>('/system/intraday/warmup-candidates', req).then(r => r.data),
+  warmupIntradayBackground: (req: IntradayWarmupRequest) =>
+    api.post<IntradayWarmupJobStatus>('/system/intraday/warmup/background', req).then(r => r.data),
+  warmupCandidatesBackground: (req: IntradayCandidateWarmupRequest) =>
+    api.post<IntradayWarmupJobStatus>('/system/intraday/warmup-candidates/background', req).then(r => r.data),
 }
