@@ -62,6 +62,7 @@ export function DashboardCard({ item, intradayPreset }: DashboardCardProps) {
             <Badge variant={scoreVariant(item.trade_readiness_score ?? 0)}>준비 {fmtPct(item.trade_readiness_score ?? 0, 0)}</Badge>
             <Badge variant={scoreVariant(item.entry_window_score ?? 0)}>진입 {fmtPct(item.entry_window_score ?? 0, 0)}</Badge>
             <Badge variant={scoreVariant(item.freshness_score ?? 0)}>신선 {fmtPct(item.freshness_score ?? 0, 0)}</Badge>
+            <Badge variant={scoreVariant(item.reentry_score ?? 0)}>재진입 {fmtPct(item.reentry_score ?? 0, 0)}</Badge>
             <Badge variant={scoreVariant(item.active_setup_score ?? 0)}>활성 {fmtPct(item.active_setup_score ?? 0, 0)}</Badge>
             <Badge variant={item.data_quality >= 0.8 ? 'bullish' : item.data_quality >= 0.6 ? 'neutral' : 'warning'}>
               품질 {fmtPct(item.data_quality, 0)}
@@ -101,6 +102,7 @@ export function DashboardCard({ item, intradayPreset }: DashboardCardProps) {
       {item.trade_readiness_summary && <SummaryBlock tone="emerald" title={item.trade_readiness_label} score={item.trade_readiness_score}>{item.trade_readiness_summary}</SummaryBlock>}
       {item.entry_window_summary && <SummaryBlock tone="sky" title={item.entry_window_label} score={item.entry_window_score}>{item.entry_window_summary}</SummaryBlock>}
       {item.freshness_summary && <SummaryBlock tone="violet" title={item.freshness_label} score={item.freshness_score}>{item.freshness_summary}</SummaryBlock>}
+      {item.reentry_summary && <SummaryBlock tone="amber" title={item.reentry_label} score={item.reentry_score}>{item.reentry_summary}</SummaryBlock>}
       {item.active_setup_summary && <SummaryBlock tone="cyan" title={item.active_setup_label}>{item.active_setup_summary}</SummaryBlock>}
 
       {(item.next_trigger || item.risk_flags?.length > 0) && (
@@ -171,7 +173,7 @@ function SummaryBlock({
   score,
   children,
 }: {
-  tone: 'primary' | 'emerald' | 'sky' | 'violet' | 'cyan'
+  tone: 'primary' | 'emerald' | 'sky' | 'violet' | 'amber' | 'cyan'
   title: string
   score?: number
   children: React.ReactNode
@@ -181,6 +183,7 @@ function SummaryBlock({
     emerald: 'border-emerald-400/20 bg-emerald-400/5 text-emerald-300',
     sky: 'border-sky-400/20 bg-sky-400/5 text-sky-200',
     violet: 'border-violet-400/20 bg-violet-400/5 text-violet-200',
+    amber: 'border-amber-400/20 bg-amber-400/5 text-amber-200',
     cyan: 'border-cyan-400/20 bg-cyan-400/5 text-cyan-200',
   }[tone]
 

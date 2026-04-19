@@ -67,6 +67,7 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
       <TradeReadinessCard analysis={analysis} />
       <EntryWindowCard analysis={analysis} />
       <FreshnessCard analysis={analysis} />
+      <ReentryCard analysis={analysis} />
       <ActiveSetupCard analysis={analysis} />
       <DecisionSupportCard analysis={analysis} />
 
@@ -94,6 +95,7 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
           <StatRow label="거래 준비도" value={fmtPct(analysis.trade_readiness_score ?? 0)} />
           <StatRow label="진입 구간" value={fmtPct(analysis.entry_window_score ?? 0)} />
           <StatRow label="패턴 신선도" value={fmtPct(analysis.freshness_score ?? 0)} />
+          <StatRow label="재진입 구조" value={fmtPct(analysis.reentry_score ?? 0)} />
           <StatRow label="활성 셋업" value={fmtPct(analysis.active_setup_score ?? 0)} />
           <StatRow label="손익비" value={analysis.reward_risk_ratio.toFixed(2)} />
           <StatRow label="백테스트 edge" value={fmtPct(analysis.historical_edge_score)} />
@@ -289,6 +291,23 @@ function FreshnessCard({ analysis }: { analysis: AnalysisResult }) {
       </div>
       <ProgressBar score={score} color="bg-violet-300" />
       <p className="text-xs leading-relaxed text-muted-foreground">{analysis.freshness_summary}</p>
+    </Card>
+  )
+}
+
+function ReentryCard({ analysis }: { analysis: AnalysisResult }) {
+  const score = analysis.reentry_score ?? 0
+  return (
+    <Card className="space-y-3 border-amber-400/20 bg-amber-400/5">
+      <div className="flex items-center gap-2 text-sm font-semibold">
+        <Target size={15} className="text-amber-300" />
+        재진입 구조
+        <Badge variant={scoreVariant(score)} className="ml-auto">
+          {analysis.reentry_label}
+        </Badge>
+      </div>
+      <ProgressBar score={score} color="bg-amber-300" />
+      <p className="text-xs leading-relaxed text-muted-foreground">{analysis.reentry_summary}</p>
     </Card>
   )
 }

@@ -143,6 +143,7 @@ export default function ChartPage() {
                 <Badge variant={scoreVariant(analysis.trade_readiness_score ?? 0)}>준비 {Math.round((analysis.trade_readiness_score ?? 0) * 100)}%</Badge>
                 <Badge variant={scoreVariant(analysis.entry_window_score ?? 0)}>진입 {Math.round((analysis.entry_window_score ?? 0) * 100)}%</Badge>
                 <Badge variant={scoreVariant(analysis.freshness_score ?? 0)}>신선 {Math.round((analysis.freshness_score ?? 0) * 100)}%</Badge>
+                <Badge variant={scoreVariant(analysis.reentry_score ?? 0)}>재진입 {Math.round((analysis.reentry_score ?? 0) * 100)}%</Badge>
                 <Badge variant={scoreVariant(analysis.active_setup_score ?? 0)}>활성 {Math.round((analysis.active_setup_score ?? 0) * 100)}%</Badge>
                 {analysis.is_provisional && <Badge variant="warning">잠정</Badge>}
                 <button
@@ -193,13 +194,14 @@ export default function ChartPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 text-right sm:grid-cols-4 xl:grid-cols-7">
+            <div className="grid grid-cols-2 gap-3 text-right sm:grid-cols-4 xl:grid-cols-9">
               <MetricCell label="상승 확률" value={`${(analysis.p_up * 100).toFixed(0)}%`} tone="text-green-400" />
               <MetricCell label="하락 확률" value={`${(analysis.p_down * 100).toFixed(0)}%`} tone="text-red-400" />
               <MetricCell label="신뢰도" value={`${(analysis.confidence * 100).toFixed(0)}%`} />
               <MetricCell label="거래 준비도" value={`${Math.round((analysis.trade_readiness_score ?? 0) * 100)}%`} />
               <MetricCell label="진입 구간" value={`${Math.round((analysis.entry_window_score ?? 0) * 100)}%`} />
               <MetricCell label="패턴 신선도" value={`${Math.round((analysis.freshness_score ?? 0) * 100)}%`} />
+              <MetricCell label="재진입 구조" value={`${Math.round((analysis.reentry_score ?? 0) * 100)}%`} />
               <MetricCell label="활성 셋업" value={`${Math.round((analysis.active_setup_score ?? 0) * 100)}%`} />
               <MetricCell label="시가총액" value={analysis.symbol.market_cap ? fmtNumber(analysis.symbol.market_cap) : '-'} />
             </div>
@@ -223,6 +225,11 @@ export default function ChartPage() {
           {analysis.freshness_summary && (
             <div className="mt-3 rounded-lg border border-violet-400/20 bg-violet-400/5 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
               <span className="font-semibold text-violet-200">패턴 신선도:</span> {analysis.freshness_summary}
+            </div>
+          )}
+          {analysis.reentry_summary && (
+            <div className="mt-3 rounded-lg border border-amber-400/20 bg-amber-400/5 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+              <span className="font-semibold text-amber-200">재진입 구조:</span> {analysis.reentry_summary}
             </div>
           )}
         </div>
@@ -321,6 +328,10 @@ function ContextCard({
           <span>{fmtPct(analysis.freshness_score ?? 0, 0)}</span>
         </div>
         <div className="flex items-center justify-between">
+          <span>재진입 구조</span>
+          <span>{fmtPct(analysis.reentry_score ?? 0, 0)}</span>
+        </div>
+        <div className="flex items-center justify-between">
           <span>상태</span>
           <span>{analysis.action_plan_label}</span>
         </div>
@@ -346,7 +357,7 @@ function summarizeContext(primary: AnalysisResult | undefined, contexts: Analysi
     (left, right) => (right.trade_readiness_score ?? 0) + right.p_up - ((left.trade_readiness_score ?? 0) + left.p_up),
   )[0]
 
-  return `${primary.timeframe_label} 기준 현재 판단은 ${primary.action_plan_label}입니다. 보조 타임프레임 중에서는 ${strongest.timeframe_label}가 가장 강하며, 준비도 ${fmtPct(strongest.trade_readiness_score ?? 0, 0)} / 신선도 ${fmtPct(strongest.freshness_score ?? 0, 0)} 수준입니다.`
+  return `${primary.timeframe_label} 기준 현재 판단은 ${primary.action_plan_label}입니다. 보조 타임프레임 중에서는 ${strongest.timeframe_label}가 가장 강하며, 준비도 ${fmtPct(strongest.trade_readiness_score ?? 0, 0)} / 신선도 ${fmtPct(strongest.freshness_score ?? 0, 0)} / 재진입 ${fmtPct(strongest.reentry_score ?? 0, 0)} 수준입니다.`
 }
 
 function actionPlanVariant(plan: string): 'bullish' | 'warning' | 'muted' | 'neutral' {

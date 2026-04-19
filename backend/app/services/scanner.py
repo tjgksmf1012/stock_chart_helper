@@ -200,6 +200,7 @@ def _live_intraday_priority(row: dict[str, Any], timeframe: str) -> float:
         0.22 * float(row.get("entry_score", 0.0))
         + 0.18 * float(row.get("entry_window_score", 0.0))
         + 0.12 * float(row.get("freshness_score", 0.0))
+        + 0.08 * float(row.get("reentry_score", 0.0))
         + 0.18 * float(row.get("completion_proximity", 0.0))
         + 0.14 * float(row.get("liquidity_score", 0.0))
         + 0.10 * float(row.get("confidence", 0.0))
@@ -278,6 +279,8 @@ def _non_live_intraday_reason(
         reasons.append("signal freshness is lagging")
     if float(row.get("freshness_score", 0.0)) < 0.5:
         reasons.append("pattern freshness is below the live cutoff")
+    if float(row.get("reentry_score", 0.0)) < 0.35:
+        reasons.append("re-entry structure is still weak")
 
     fetch_status = str(row.get("fetch_status") or "")
     if fetch_status == "scanner_store_only":
@@ -394,6 +397,25 @@ def _apply_setup_metadata(row: dict[str, Any]) -> dict[str, Any]:
         row["composite_score"] = round(float(row.get("composite_score", 0.0)) - 0.18, 3)
     elif freshness_score < 0.35:
         row["composite_score"] = round(float(row.get("composite_score", 0.0)) - 0.06, 3)
+
+    reentry_score = float(row.get("reentry_score", 0.0))
+    reentry_label = str(row.get("reentry_label") or "")
+    if reentry_label == "재돌파 대기":
+        row["composite_score"] = round(float(row.get("composite_score", 0.0)) + 0.05, 3)
+        row["scenario_text"] = (
+            f"{row.get('scenario_text', '')} The structure looks like a possible re-breakout candidate after cooling near the trigger."
+        ).strip()
+    elif reentry_label == "재축적 관찰":
+        row["composite_score"] = round(float(row.get("composite_score", 0.0)) + 0.02, 3)
+    elif reentry_label == "실패 후 복구 관찰":
+        row["composite_score"] = round(float(row.get("composite_score", 0.0)) - 0.03, 3)
+        row["scenario_text"] = (
+            f"{row.get('scenario_text', '')} Prior failure means this setup still needs a cleaner recovery before it deserves full trust."
+        ).strip()
+    elif reentry_label == "재진입 비선호":
+        row["composite_score"] = round(float(row.get("composite_score", 0.0)) - 0.12, 3)
+    elif reentry_score < 0.30:
+        row["composite_score"] = round(float(row.get("composite_score", 0.0)) - 0.04, 3)
 
     phase = str(row.get("wyckoff_phase") or "neutral")
     if phase == "accumulation":
@@ -684,6 +706,9 @@ async def _analyze_one(
             "freshness_score": analysis.freshness_score,
             "freshness_label": analysis.freshness_label,
             "freshness_summary": analysis.freshness_summary,
+            "reentry_score": analysis.reentry_score,
+            "reentry_label": analysis.reentry_label,
+            "reentry_summary": analysis.reentry_summary,
             "score_factors": [factor.model_dump() for factor in analysis.score_factors],
             "active_setup_score": analysis.active_setup_score,
             "active_setup_label": analysis.active_setup_label,
@@ -889,6 +914,7 @@ async def run_scan(
                         row.get("trade_readiness_score", 0),
                         row.get("entry_window_score", 0),
                         row.get("freshness_score", 0),
+                        row.get("reentry_score", 0),
                         row.get("active_setup_score", 0),
                     row.get("composite_score", 0),
                     row.get("historical_edge_score", 0),
@@ -1002,6 +1028,7 @@ async def get_scan_results(timeframe: str = DEFAULT_TIMEFRAME) -> list[dict[str,
             row.get("trade_readiness_score", 0),
             row.get("entry_window_score", 0),
             row.get("freshness_score", 0),
+            row.get("reentry_score", 0),
             row.get("active_setup_score", 0),
             row.get("composite_score", row.get("entry_score", 0)),
             row.get("historical_edge_score", 0),

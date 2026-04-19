@@ -20,6 +20,7 @@ SORT_KEYS = {
     "trade_readiness_score": lambda row: row.get("trade_readiness_score", 0.0),
     "entry_window_score": lambda row: row.get("entry_window_score", 0.0),
     "freshness_score": lambda row: row.get("freshness_score", 0.0),
+    "reentry_score": lambda row: row.get("reentry_score", 0.0),
     "active_setup_score": lambda row: row.get("active_setup_score", 0.0),
     "confluence_score": lambda row: row.get("confluence_score", 0.0),
     "data_quality": lambda row: row.get("data_quality", 0.0),
@@ -57,6 +58,7 @@ async def run_screener(req: ScreenerRequest) -> list[DashboardItem]:
     filtered = [row for row in filtered if row.get("trade_readiness_score", 0) >= req.min_trade_readiness_score]
     filtered = [row for row in filtered if row.get("entry_window_score", 0) >= req.min_entry_window_score]
     filtered = [row for row in filtered if row.get("freshness_score", 0) >= req.min_freshness_score]
+    filtered = [row for row in filtered if row.get("reentry_score", 0) >= req.min_reentry_score]
     filtered = [row for row in filtered if row.get("active_setup_score", 0) >= req.min_active_setup_score]
     filtered = [row for row in filtered if row.get("confluence_score", 0) >= req.min_confluence_score]
     filtered = [row for row in filtered if row.get("historical_edge_score", 0) >= req.min_historical_edge_score]

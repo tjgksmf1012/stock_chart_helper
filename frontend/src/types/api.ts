@@ -119,6 +119,9 @@ export interface AnalysisResult {
   freshness_score: number
   freshness_label: string
   freshness_summary: string
+  reentry_score: number
+  reentry_label: string
+  reentry_summary: string
   score_factors: ScoreFactor[]
   active_setup_score: number
   active_setup_label: string
@@ -201,6 +204,9 @@ export interface DashboardItem {
   freshness_score: number
   freshness_label: string
   freshness_summary: string
+  reentry_score: number
+  reentry_label: string
+  reentry_summary: string
   score_factors: ScoreFactor[]
   active_setup_score: number
   active_setup_label: string
@@ -421,6 +427,7 @@ export interface ScreenerRequest {
   min_trade_readiness_score?: number
   min_entry_window_score?: number
   min_freshness_score?: number
+  min_reentry_score?: number
   min_active_setup_score?: number
   min_confluence_score?: number
   min_historical_edge_score?: number
@@ -438,6 +445,7 @@ export interface ScreenerRequest {
   | 'trade_readiness_score'
   | 'entry_window_score'
   | 'freshness_score'
+  | 'reentry_score'
   | 'active_setup_score'
     | 'confluence_score'
     | 'data_quality'

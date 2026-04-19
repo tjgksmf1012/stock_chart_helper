@@ -791,6 +791,131 @@ def _freshness_profile(
         "freshness_summary": f"{label} 기준 아직 형성 단계라 신선도는 남아 있지만 확인 전 해석 오차도 함께 큽니다.",
     }
 
+def _reentry_profile(
+    *,
+    timeframe: str,
+    pattern: PatternResult | None,
+    current_close: float,
+    completion_proximity: float,
+    recency_score: float,
+    headroom_score: float,
+    target_distance_pct: float,
+    stop_distance_pct: float,
+    entry_window_score: float,
+    target_hit_at: str | None,
+    invalidated_at: str | None,
+) -> dict[str, Any]:
+    label = timeframe_label(timeframe)
+    if pattern is None or current_close <= 0:
+        return {
+            "reentry_score": 0.0,
+            "reentry_label": "재확인 필요",
+            "reentry_summary": f"{label} 기준 아직 재진입 구조를 평가할 만한 패턴 정보가 부족합니다.",
+        }
+
+    neckline = pattern.neckline
+    invalidation = pattern.invalidation_level
+    target = pattern.target_level
+    anchor_level = neckline if neckline is not None else current_close
+    span = max(abs((target or current_close) - anchor_level), max(current_close * 0.015, 1.0))
+
+    distance_to_trigger = 0.0
+    if neckline is not None:
+        distance_to_trigger = max(0.0, 1.0 - min(1.0, abs(current_close - neckline) / span))
+
+    recovery_from_invalidation = 0.0
+    if invalidation is not None:
+        if target and abs(target - invalidation) > 1e-9:
+            recovery_from_invalidation = max(
+                0.0,
+                min(1.0, (current_close - invalidation) / abs(target - invalidation)),
+            )
+        else:
+            recovery_from_invalidation = 1.0 if current_close > invalidation else 0.0
+
+    rebuild_score = max(
+        0.0,
+        min(
+            1.0,
+            0.34 * distance_to_trigger
+            + 0.20 * headroom_score
+            + 0.16 * recency_score
+            + 0.14 * completion_proximity
+            + 0.08 * min(1.0, target_distance_pct / 0.08)
+            + 0.08 * min(1.0, stop_distance_pct / 0.03),
+        ),
+    )
+
+    if invalidated_at or pattern.state == "invalidated":
+        repaired = (
+            recovery_from_invalidation >= 0.45
+            and distance_to_trigger >= 0.46
+            and headroom_score >= 0.24
+            and recency_score >= 0.22
+        )
+        if repaired:
+            score = round(max(0.28, min(0.54, 0.78 * rebuild_score + 0.22 * recovery_from_invalidation)), 3)
+            return {
+                "reentry_score": score,
+                "reentry_label": "실패 후 복구 관찰",
+                "reentry_summary": f"{label} 기준 한 차례 무효화된 뒤 구조를 다시 회복하는 중입니다. 즉시 진입보다 복구 지속 여부를 먼저 확인하는 편이 좋습니다.",
+            }
+        return {
+            "reentry_score": 0.06,
+            "reentry_label": "재진입 비선호",
+            "reentry_summary": f"{label} 기준 무효화 이후 구조 복구가 충분하지 않아 재진입 후보로 보기 어렵습니다.",
+        }
+
+    if target_hit_at or pattern.state == "played_out":
+        reset_ready = (
+            distance_to_trigger >= 0.56
+            and headroom_score >= 0.34
+            and target_distance_pct >= 0.04
+            and stop_distance_pct >= 0.01
+        )
+        if reset_ready and entry_window_score >= 0.46:
+            score = round(max(0.46, min(0.72, rebuild_score * 0.94)), 3)
+            return {
+                "reentry_score": score,
+                "reentry_label": "재돌파 대기",
+                "reentry_summary": f"{label} 기준 과거 목표 소화 후 다시 기준선 근처에서 구조를 재정비하고 있습니다. 재돌파가 붙는지 보는 단계입니다.",
+            }
+        if reset_ready:
+            score = round(max(0.28, min(0.52, rebuild_score * 0.78)), 3)
+            return {
+                "reentry_score": score,
+                "reentry_label": "재축적 관찰",
+                "reentry_summary": f"{label} 기준 이전 목표 달성 이후 숨 고르기와 재축적이 진행 중입니다. 아직은 추격보다 재형성 확인이 우선입니다.",
+            }
+        return {
+            "reentry_score": 0.12,
+            "reentry_label": "재진입 비선호",
+            "reentry_summary": f"{label} 기준 이미 목표가를 소화했고 재축적도 아직 약해 당장 재진입할 자리는 아닙니다.",
+        }
+
+    if pattern.state == "confirmed" and entry_window_score >= 0.64 and headroom_score >= 0.32:
+        score = round(max(0.64, min(0.84, 0.56 * entry_window_score + 0.44 * headroom_score)), 3)
+        return {
+            "reentry_score": score,
+            "reentry_label": "신규 셋업 우선",
+            "reentry_summary": f"{label} 기준 아직 1차 셋업이 살아 있어 재진입보다 현재 신규 셋업 해석이 더 적절합니다.",
+        }
+
+    if pattern.state in {"armed", "forming"} and distance_to_trigger >= 0.52 and headroom_score >= 0.24:
+        score = round(max(0.44, min(0.68, rebuild_score * 0.92)), 3)
+        return {
+            "reentry_score": score,
+            "reentry_label": "재돌파 대기",
+            "reentry_summary": f"{label} 기준 기준선 재접근 이후 재돌파를 시도할 수 있는 구조입니다. 확인 전까지는 관찰 우선 구간입니다.",
+        }
+
+    score = round(max(0.22, min(0.52, 0.72 * rebuild_score + 0.28 * entry_window_score)), 3)
+    return {
+        "reentry_score": score,
+        "reentry_label": "신규 셋업 우선",
+        "reentry_summary": f"{label} 기준 현재는 재진입보다는 기존 셋업의 완성도와 타이밍을 우선 해석하는 편이 좋습니다.",
+    }
+
 def _stats_timeframe(timeframe: str) -> str:
     if timeframe in {"1mo", "1wk", "1d"}:
         return timeframe
@@ -1078,6 +1203,8 @@ def _action_plan_profile(
     entry_window_label: str,
     freshness_score: float,
     freshness_label: str,
+    reentry_score: float,
+    reentry_label: str,
     historical_edge_score: float,
     trend_alignment_score: float,
     intraday_session_score: float,
@@ -1095,6 +1222,7 @@ def _action_plan_profile(
         + 0.08 * headroom_score
         + 0.08 * entry_window_score
         + 0.08 * freshness_score
+        + 0.06 * reentry_score
         + 0.08 * historical_edge_score
         + 0.06 * trend_alignment_score
     )
@@ -1117,6 +1245,12 @@ def _action_plan_profile(
         priority -= 0.08
     elif freshness_score < 0.30:
         priority -= 0.10
+    if reentry_label == "재진입 비선호":
+        priority -= 0.16
+    elif reentry_label == "실패 후 복구 관찰":
+        priority -= 0.08
+    elif reentry_label == "재축적 관찰":
+        priority -= 0.04
     if entry_window_label in {"확장 추격", "목표 근접"}:
         priority -= 0.12
     elif entry_window_label in {"트리거 대기", "관망"}:
@@ -1128,6 +1262,13 @@ def _action_plan_profile(
     label = timeframe_label(timeframe)
 
     if invalidated_at or pattern.state == "invalidated":
+        if reentry_label == "실패 후 복구 관찰":
+            return {
+                "action_plan": "recheck",
+                "action_plan_label": "복구 관찰",
+                "action_plan_summary": f"{label} 기준 무효화 이후 구조 복구를 시도하고 있어 즉시 {direction} 대응보다 복구 확인이 우선입니다.",
+                "action_priority_score": priority,
+            }
         return {
             "action_plan": "cooling",
             "action_plan_label": "무효 만료",
@@ -1136,7 +1277,14 @@ def _action_plan_profile(
         }
 
     if target_hit_at or pattern.state == "played_out":
-        if freshness_label == "재기초 관찰":
+        if reentry_label == "재돌파 대기":
+            return {
+                "action_plan": "watch",
+                "action_plan_label": "재돌파 대기",
+                "action_plan_summary": f"{label} 기준 기존 목표를 소화한 뒤 재돌파형 구조가 다시 만들어지고 있습니다. 재돌파 확인 전까지는 관찰이 적절합니다.",
+                "action_priority_score": priority,
+            }
+        if reentry_label == "재축적 관찰" or freshness_label == "재기초 관찰":
             return {
                 "action_plan": "watch",
                 "action_plan_label": "재기초 관찰",
@@ -1165,11 +1313,27 @@ def _action_plan_profile(
             "action_priority_score": priority,
         }
 
+    if reentry_label == "재돌파 대기":
+        return {
+            "action_plan": "watch",
+            "action_plan_label": "재돌파 대기",
+            "action_plan_summary": f"{label} 기준 기준선 재접근 뒤 재돌파를 노려볼 수 있는 구조입니다. 돌파 확인 전까지는 관찰 우선입니다.",
+            "action_priority_score": priority,
+        }
+
     if freshness_label == "재기초 관찰":
         return {
             "action_plan": "watch",
             "action_plan_label": "재기초 관찰",
             "action_plan_summary": f"{label} 기준 과거 패턴이 끝난 뒤 재형성 가능성이 보여 즉시 대응보다 재확인이 중요합니다.",
+            "action_priority_score": priority,
+        }
+
+    if reentry_label == "실패 후 복구 관찰":
+        return {
+            "action_plan": "recheck",
+            "action_plan_label": "복구 확인",
+            "action_plan_summary": f"{label} 기준 실패했던 구조를 복구하는 중이라, 추격보다 복구 지속과 거래대금 회복 여부를 먼저 보는 편이 좋습니다.",
             "action_priority_score": priority,
         }
 
@@ -1355,6 +1519,7 @@ def _trade_readiness_profile(
     action_plan: dict[str, Any],
     entry_window: dict[str, Any] | None,
     freshness: dict[str, Any] | None,
+    reentry: dict[str, Any] | None,
     p_up: float,
     p_down: float,
     entry_score: float,
@@ -1415,6 +1580,9 @@ def _trade_readiness_profile(
     freshness_score = float((freshness or {}).get("freshness_score", 0.0))
     freshness_label = str((freshness or {}).get("freshness_label") or "재확인 필요")
     freshness_summary = str((freshness or {}).get("freshness_summary") or "")
+    reentry_score = float((reentry or {}).get("reentry_score", 0.0))
+    reentry_label = str((reentry or {}).get("reentry_label") or "재확인 필요")
+    reentry_summary = str((reentry or {}).get("reentry_summary") or "")
     evidence_score = 0.56 * sample_reliability + 0.44 * historical_edge_score
     context_score = trend_alignment_score
     if is_intraday_timeframe(timeframe):
@@ -1432,6 +1600,12 @@ def _trade_readiness_profile(
         action_score = min(action_score, 0.20)
     elif freshness_label == "재기초 관찰":
         action_score = min(max(action_score, 0.42), 0.58)
+    if reentry_label == "재진입 비선호":
+        action_score = min(action_score, 0.22)
+    elif reentry_label == "실패 후 복구 관찰":
+        action_score = min(max(action_score, 0.34), 0.48)
+    elif reentry_label in {"재축적 관찰", "재돌파 대기"}:
+        action_score = min(max(action_score, 0.42), 0.62)
 
     factors = [
         {
@@ -1467,8 +1641,14 @@ def _trade_readiness_profile(
         {
             "label": "패턴 신선도",
             "score": round(freshness_score, 3),
-            "weight": 0.12,
+            "weight": 0.10,
             "note": freshness_summary or f"현재 패턴 신선도는 {freshness_label} 상태입니다.",
+        },
+        {
+            "label": "재진입 구조",
+            "score": round(reentry_score, 3),
+            "weight": 0.08,
+            "note": reentry_summary or f"현재 재진입 평가는 {reentry_label} 상태입니다.",
         },
         {
             "label": "데이터 품질",
@@ -1515,6 +1695,12 @@ def _trade_readiness_profile(
         raw_score = min(raw_score, 0.46)
     elif freshness_score < 0.28:
         raw_score = min(raw_score, 0.50)
+    if reentry_label == "재진입 비선호":
+        raw_score = min(raw_score, 0.34 if target_hit_at or invalidated_at or pattern.state in {"played_out", "invalidated"} else 0.44)
+    elif reentry_label == "실패 후 복구 관찰":
+        raw_score = min(raw_score, 0.52)
+    elif reentry_label == "재축적 관찰":
+        raw_score = min(raw_score, 0.56)
 
     score = round(max(0.0, min(1.0, raw_score)), 3)
     label = _readiness_label(score)
@@ -1725,6 +1911,7 @@ def build_no_signal_snapshot(
         action_plan=action_plan,
         entry_window=None,
         freshness=None,
+        reentry=None,
         p_up=0.5,
         p_down=0.5,
         entry_score=0.0,
@@ -1787,6 +1974,9 @@ def build_no_signal_snapshot(
         freshness_score=0.0,
         freshness_label="재확인 필요",
         freshness_summary="의미 있는 활성 패턴이 아직 없어 패턴 신선도를 평가하지 않았습니다.",
+        reentry_score=0.0,
+        reentry_label="재확인 필요",
+        reentry_summary="활성 패턴이 없어 재진입 구조 평가는 아직 보류했습니다.",
         score_factors=readiness["score_factors"],
         active_setup_score=0.0,
         active_setup_label="활성 셋업 없음",
@@ -1885,6 +2075,19 @@ async def analyze_symbol_dataframe(
         target_distance_pct=opportunity["target_distance_pct"],
         stop_distance_pct=opportunity["stop_distance_pct"],
         bars_since_signal=bars_since_signal,
+        target_hit_at=best_target_hit_at,
+        invalidated_at=best_invalidated_at,
+    )
+    reentry = _reentry_profile(
+        timeframe=timeframe,
+        pattern=best_pattern,
+        current_close=current_close,
+        completion_proximity=best_completion,
+        recency_score=best_recency,
+        headroom_score=opportunity["headroom_score"],
+        target_distance_pct=opportunity["target_distance_pct"],
+        stop_distance_pct=opportunity["stop_distance_pct"],
+        entry_window_score=entry_window["entry_window_score"],
         target_hit_at=best_target_hit_at,
         invalidated_at=best_invalidated_at,
     )
@@ -2050,6 +2253,8 @@ async def analyze_symbol_dataframe(
         entry_window["entry_window_label"],
         freshness["freshness_score"],
         freshness["freshness_label"],
+        reentry["reentry_score"],
+        reentry["reentry_label"],
         probability.historical_edge_score,
         trend_profile["trend_alignment_score"],
         intraday_profile["intraday_session_score"],
@@ -2085,6 +2290,7 @@ async def analyze_symbol_dataframe(
         action_plan=action_plan,
         entry_window=entry_window,
         freshness=freshness,
+        reentry=reentry,
         p_up=probability.p_up,
         p_down=probability.p_down,
         entry_score=probability.entry_score,
@@ -2148,6 +2354,9 @@ async def analyze_symbol_dataframe(
         freshness_score=freshness["freshness_score"],
         freshness_label=freshness["freshness_label"],
         freshness_summary=freshness["freshness_summary"],
+        reentry_score=reentry["reentry_score"],
+        reentry_label=reentry["reentry_label"],
+        reentry_summary=reentry["reentry_summary"],
         score_factors=readiness["score_factors"],
         active_setup_score=active_setup["active_setup_score"],
         active_setup_label=active_setup["active_setup_label"],
