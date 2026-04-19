@@ -55,12 +55,12 @@ _KST = ZoneInfo("Asia/Seoul")
 
 
 def _full_scan_cache_key(timeframe: str) -> str:
-    return f"scanner:v4:full_results:{timeframe}"
+    return f"scanner:v5:full_results:{timeframe}"
 
 
 def _single_scan_cache_key(timeframe: str, code: str, allow_live_intraday: bool = True) -> str:
     mode = "live" if allow_live_intraday else "budget"
-    return f"scan:v4:result:{timeframe}:{code}:{mode}"
+    return f"scan:v5:result:{timeframe}:{code}:{mode}"
 
 
 def _utc_now_iso() -> str:
@@ -640,6 +640,10 @@ async def _analyze_one(
             "risk_flags": analysis.risk_flags,
             "confirmation_checklist": analysis.confirmation_checklist,
             "next_trigger": analysis.next_trigger,
+            "trade_readiness_score": analysis.trade_readiness_score,
+            "trade_readiness_label": analysis.trade_readiness_label,
+            "trade_readiness_summary": analysis.trade_readiness_summary,
+            "score_factors": [factor.model_dump() for factor in analysis.score_factors],
             "no_signal_flag": analysis.no_signal_flag,
             "reason_summary": analysis.reason_summary,
             "completion_proximity": analysis.completion_proximity,
@@ -836,6 +840,7 @@ async def run_scan(
             results.sort(
                 key=lambda row: (
                     0 if row["no_signal_flag"] else 1,
+                    row.get("trade_readiness_score", 0),
                     row.get("composite_score", 0),
                     row.get("historical_edge_score", 0),
                     row.get("sample_reliability", 0),
@@ -945,6 +950,7 @@ async def get_scan_results(timeframe: str = DEFAULT_TIMEFRAME) -> list[dict[str,
             item["intraday_collection_mode"] = _intraday_collection_mode(item)
     results.sort(
         key=lambda row: (
+            row.get("trade_readiness_score", 0),
             row.get("composite_score", row.get("entry_score", 0)),
             row.get("historical_edge_score", 0),
             row.get("sample_reliability", 0),

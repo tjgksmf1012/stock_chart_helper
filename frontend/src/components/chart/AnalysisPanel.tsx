@@ -41,6 +41,7 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
         <p className="text-xs text-muted-foreground">{analysis.no_signal_reason}</p>
         <p className="text-xs text-muted-foreground">{analysis.reason_summary}</p>
         <ActionPlanCard analysis={analysis} />
+        <TradeReadinessCard analysis={analysis} />
         <DecisionSupportCard analysis={analysis} />
         <div className="rounded-lg border border-border bg-background/60 p-3 text-xs text-muted-foreground">
           <div>데이터 품질 {fmtPct(analysis.data_quality, 0)}</div>
@@ -77,6 +78,7 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
       </Card>
 
       <ActionPlanCard analysis={analysis} />
+      <TradeReadinessCard analysis={analysis} />
       <DecisionSupportCard analysis={analysis} />
 
       {bestPattern && (
@@ -300,6 +302,53 @@ function ActionPlanCard({ analysis }: { analysis: AnalysisResult }) {
   )
 }
 
+function TradeReadinessCard({ analysis }: { analysis: AnalysisResult }) {
+  const factors = analysis.score_factors ?? []
+  const readiness = analysis.trade_readiness_score ?? 0
+
+  return (
+    <Card className="space-y-3 border-emerald-400/20 bg-emerald-400/5">
+      <div className="flex items-center gap-2 text-sm font-semibold">
+        <Target size={15} className="text-emerald-300" />
+        거래 준비도
+        <Badge variant={readinessVariant(readiness)} className="ml-auto">
+          {analysis.trade_readiness_label || readinessLabel(readiness)}
+        </Badge>
+      </div>
+      <div>
+        <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
+          <span>실전 점검 점수</span>
+          <span className="font-mono">{fmtPct(readiness, 0)}</span>
+        </div>
+        <div className="h-2 overflow-hidden rounded-full bg-background">
+          <div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${Math.round(readiness * 100)}%` }} />
+        </div>
+      </div>
+      {analysis.trade_readiness_summary && (
+        <p className="text-xs leading-relaxed text-muted-foreground">{analysis.trade_readiness_summary}</p>
+      )}
+      {factors.length > 0 && (
+        <div className="grid grid-cols-1 gap-2">
+          {factors.map(factor => (
+            <div key={factor.label} className="rounded-lg border border-border bg-background/60 p-2.5">
+              <div className="mb-1 flex items-center justify-between gap-2 text-xs">
+                <span className="font-medium text-foreground">{factor.label}</span>
+                <span className="font-mono text-muted-foreground">
+                  {fmtPct(factor.score, 0)} · 가중 {Math.round(factor.weight * 100)}%
+                </span>
+              </div>
+              <div className="h-1.5 overflow-hidden rounded-full bg-card">
+                <div className="h-full rounded-full bg-primary/80" style={{ width: `${Math.round(factor.score * 100)}%` }} />
+              </div>
+              {factor.note && <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">{factor.note}</p>}
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  )
+}
+
 function DecisionSupportCard({ analysis }: { analysis: AnalysisResult }) {
   const flags = analysis.risk_flags ?? []
   const checklist = analysis.confirmation_checklist ?? []
@@ -353,6 +402,20 @@ function actionPlanVariant(plan: string): 'bullish' | 'warning' | 'muted' | 'neu
   if (plan === 'watch') return 'neutral'
   if (plan === 'recheck') return 'warning'
   return 'muted'
+}
+
+function readinessVariant(score: number): 'bullish' | 'warning' | 'muted' | 'neutral' {
+  if (score >= 0.72) return 'bullish'
+  if (score >= 0.58) return 'neutral'
+  if (score >= 0.44) return 'warning'
+  return 'muted'
+}
+
+function readinessLabel(score: number): string {
+  if (score >= 0.72) return '실전 후보'
+  if (score >= 0.58) return '관찰 후보'
+  if (score >= 0.44) return '재확인 필요'
+  return '보류'
 }
 
 function trendDirectionLabel(direction: string): string {

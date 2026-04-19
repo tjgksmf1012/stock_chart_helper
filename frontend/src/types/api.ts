@@ -64,6 +64,13 @@ export interface ProjectionPoint {
   kind: string
 }
 
+export interface ScoreFactor {
+  label: string
+  score: number
+  weight: number
+  note: string
+}
+
 export interface AnalysisResult {
   symbol: SymbolInfo
   timeframe: Timeframe
@@ -100,6 +107,10 @@ export interface AnalysisResult {
   risk_flags: string[]
   confirmation_checklist: string[]
   next_trigger: string
+  trade_readiness_score: number
+  trade_readiness_label: string
+  trade_readiness_summary: string
+  score_factors: ScoreFactor[]
   no_signal_flag: boolean
   no_signal_reason: string
   reason_summary: string
@@ -167,6 +178,10 @@ export interface DashboardItem {
   risk_flags: string[]
   confirmation_checklist: string[]
   next_trigger: string
+  trade_readiness_score: number
+  trade_readiness_label: string
+  trade_readiness_summary: string
+  score_factors: ScoreFactor[]
   no_signal_flag: boolean
   reason_summary: string
   completion_proximity: number
@@ -378,11 +393,12 @@ export interface ScreenerRequest {
   min_confidence?: number
   min_sample_reliability?: number
   min_data_quality?: number
+  min_trade_readiness_score?: number
   min_confluence_score?: number
   min_historical_edge_score?: number
   timeframes?: Timeframe[]
   min_market_cap?: number
   exclude_no_signal?: boolean
-  sort_by?: 'composite_score' | 'entry_score' | 'p_up' | 'textbook_similarity' | 'confidence' | 'p_down' | 'sample_reliability' | 'confluence_score' | 'data_quality' | 'historical_edge_score'
+  sort_by?: 'composite_score' | 'entry_score' | 'p_up' | 'textbook_similarity' | 'confidence' | 'p_down' | 'sample_reliability' | 'trade_readiness_score' | 'confluence_score' | 'data_quality' | 'historical_edge_score'
   limit?: number
 }

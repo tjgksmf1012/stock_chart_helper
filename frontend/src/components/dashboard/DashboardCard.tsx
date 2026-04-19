@@ -52,6 +52,9 @@ export function DashboardCard({ item, intradayPreset }: DashboardCardProps) {
             <span>·</span>
             <span>{item.timeframe_label}</span>
             <Badge variant={actionPlanVariant(item.action_plan)}>{item.action_plan_label}</Badge>
+            <Badge variant={readinessVariant(item.trade_readiness_score ?? 0)}>
+              준비도 {fmtPct(item.trade_readiness_score ?? 0, 0)}
+            </Badge>
             <Badge variant={item.data_quality >= 0.8 ? 'bullish' : item.data_quality >= 0.6 ? 'muted' : 'warning'}>
               품질 {fmtPct(item.data_quality, 0)}
             </Badge>
@@ -144,6 +147,16 @@ export function DashboardCard({ item, intradayPreset }: DashboardCardProps) {
             <span>{fmtPct(item.action_priority_score ?? 0, 0)}</span>
           </div>
           {item.action_plan_summary}
+        </div>
+      )}
+
+      {item.trade_readiness_summary && (
+        <div className="rounded-lg border border-emerald-400/20 bg-emerald-400/5 p-2.5 text-xs leading-relaxed text-muted-foreground">
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <span className="font-medium text-emerald-300">거래 준비도 · {item.trade_readiness_label}</span>
+            <span>{fmtPct(item.trade_readiness_score ?? 0, 0)}</span>
+          </div>
+          {item.trade_readiness_summary}
         </div>
       )}
 
@@ -294,6 +307,13 @@ function actionPlanVariant(plan: string): 'bullish' | 'warning' | 'muted' | 'neu
   if (plan === 'ready_now') return 'bullish'
   if (plan === 'watch') return 'neutral'
   if (plan === 'recheck') return 'warning'
+  return 'muted'
+}
+
+function readinessVariant(score: number): 'bullish' | 'warning' | 'muted' | 'neutral' {
+  if (score >= 0.72) return 'bullish'
+  if (score >= 0.58) return 'neutral'
+  if (score >= 0.44) return 'warning'
   return 'muted'
 }
 

@@ -964,6 +964,167 @@ def _decision_support_profile(
     }
 
 
+def _readiness_label(score: float) -> str:
+    if score >= 0.72:
+        return "실전 후보"
+    if score >= 0.58:
+        return "관찰 후보"
+    if score >= 0.44:
+        return "재확인 필요"
+    return "보류"
+
+
+def _trade_readiness_profile(
+    *,
+    timeframe: str,
+    pattern: PatternResult | None,
+    action_plan: dict[str, Any],
+    p_up: float,
+    p_down: float,
+    entry_score: float,
+    confidence: float,
+    completion_proximity: float,
+    recency_score: float,
+    data_quality: float,
+    reward_risk_ratio: float,
+    headroom_score: float,
+    sample_reliability: float,
+    historical_edge_score: float,
+    trend_alignment_score: float,
+    intraday_session_score: float,
+    target_hit_at: str | None,
+    invalidated_at: str | None,
+    bars_since_signal: int | None,
+) -> dict[str, Any]:
+    action_score = {
+        "ready_now": 0.86,
+        "watch": 0.62,
+        "recheck": 0.38,
+        "cooling": 0.16,
+    }.get(str(action_plan.get("action_plan") or "watch"), 0.45)
+
+    if pattern is None:
+        factors = [
+            {"label": "데이터", "score": round(data_quality, 3), "weight": 0.35, "note": "사용 가능한 봉 수와 데이터 출처 기준입니다."},
+            {"label": "패턴", "score": 0.0, "weight": 0.35, "note": "현재 의미 있는 패턴이 확인되지 않았습니다."},
+            {"label": "재확인", "score": action_score, "weight": 0.30, "note": str(action_plan.get("action_plan_summary") or "")},
+        ]
+        score = sum(float(item["score"]) * float(item["weight"]) for item in factors)
+        return {
+            "trade_readiness_score": round(max(0.0, min(1.0, score)), 3),
+            "trade_readiness_label": _readiness_label(score),
+            "trade_readiness_summary": "패턴이 없거나 데이터가 부족해 실전 후보가 아니라 관찰/재확인 후보로만 봅니다.",
+            "score_factors": factors,
+        }
+
+    formation_quality = max(
+        0.0,
+        min(
+            1.0,
+            0.24 * pattern.textbook_similarity
+            + 0.18 * pattern.leg_balance_fit
+            + 0.18 * pattern.reversal_energy_fit
+            + 0.16 * pattern.breakout_quality_fit
+            + 0.14 * pattern.retest_quality_fit
+            + 0.10 * pattern.variant_fit,
+        ),
+    )
+    probability_score = max(p_up, p_down) * 0.58 + confidence * 0.42
+    timing_score = 0.55 * recency_score + 0.45 * completion_proximity
+    rr_score = min(1.0, max(0.0, reward_risk_ratio / 2.4))
+    opportunity_score = 0.56 * rr_score + 0.44 * headroom_score
+    evidence_score = 0.56 * sample_reliability + 0.44 * historical_edge_score
+    context_score = trend_alignment_score
+    if is_intraday_timeframe(timeframe):
+        context_score = 0.62 * trend_alignment_score + 0.38 * intraday_session_score
+
+    if pattern.state in {"played_out", "invalidated"} or target_hit_at or invalidated_at:
+        timing_score = min(timing_score, 0.16)
+        opportunity_score = min(opportunity_score, 0.20)
+        action_score = min(action_score, 0.18)
+    if bars_since_signal is not None and bars_since_signal > 0 and recency_score < 0.35:
+        timing_score = min(timing_score, 0.34)
+
+    factors = [
+        {
+            "label": "패턴 완성도",
+            "score": round(formation_quality, 3),
+            "weight": 0.16,
+            "note": "교과서 유사도, 레그 균형, 반전 에너지, 돌파/리테스트 품질을 합산했습니다.",
+        },
+        {
+            "label": "타이밍",
+            "score": round(timing_score, 3),
+            "weight": 0.15,
+            "note": "완성 임박도와 신호 최신성을 함께 봅니다. 목표 도달/무효화 패턴은 강하게 깎습니다.",
+        },
+        {
+            "label": "확률/신뢰도",
+            "score": round(probability_score, 3),
+            "weight": 0.14,
+            "note": "상승/하락 우위 확률과 종합 신뢰도를 같이 반영합니다.",
+        },
+        {
+            "label": "손익비/여지",
+            "score": round(opportunity_score, 3),
+            "weight": 0.15,
+            "note": "목표까지 남은 공간과 손절 거리 대비 기대 보상을 봅니다.",
+        },
+        {
+            "label": "데이터 품질",
+            "score": round(data_quality, 3),
+            "weight": 0.11,
+            "note": "KRX/KIS/공개/저장 캐시 출처와 수집 상태를 반영합니다.",
+        },
+        {
+            "label": "통계 근거",
+            "score": round(evidence_score, 3),
+            "weight": 0.12,
+            "note": "유사 패턴 표본 신뢰도와 백테스트 edge를 합산했습니다.",
+        },
+        {
+            "label": "추세/세션",
+            "score": round(context_score, 3),
+            "weight": 0.10,
+            "note": "상위 추세 정렬과 분봉의 장중 시간대 품질을 봅니다.",
+        },
+        {
+            "label": "실전 액션",
+            "score": round(action_score, 3),
+            "weight": 0.07,
+            "note": str(action_plan.get("action_plan_summary") or ""),
+        },
+    ]
+
+    raw_score = sum(float(item["score"]) * float(item["weight"]) for item in factors)
+    if action_plan.get("action_plan") == "cooling":
+        raw_score = min(raw_score, 0.42)
+    elif action_plan.get("action_plan") == "recheck":
+        raw_score = min(raw_score, 0.56)
+    if data_quality < 0.55:
+        raw_score = min(raw_score, 0.52)
+    if reward_risk_ratio < 1.0 or headroom_score < 0.15:
+        raw_score = min(raw_score, 0.48)
+
+    score = round(max(0.0, min(1.0, raw_score)), 3)
+    label = _readiness_label(score)
+    if label == "실전 후보":
+        summary = "패턴, 타이밍, 손익비, 데이터 근거가 동시에 맞는 편입니다. 그래도 실제 매매 전에는 트리거와 무효화 기준을 먼저 확인해야 합니다."
+    elif label == "관찰 후보":
+        summary = "구조는 볼 만하지만 아직 한두 가지 조건이 부족합니다. 바로 추격하기보다 다음 트리거를 기다리는 쪽이 안전합니다."
+    elif label == "재확인 필요":
+        summary = "일부 신호는 있지만 데이터, 타이밍, 손익비 중 약한 부분이 있습니다. 최신 봉 갱신 후 다시 판단하는 후보입니다."
+    else:
+        summary = "목표 도달, 무효화, 낮은 손익비, 낮은 데이터 신뢰도 중 하나 이상이 커서 현재 실전 후보로 보기는 어렵습니다."
+
+    return {
+        "trade_readiness_score": score,
+        "trade_readiness_label": label,
+        "trade_readiness_summary": summary,
+        "score_factors": factors,
+    }
+
+
 def _future_timestamp(last_ts: pd.Timestamp, timeframe: str, step: int) -> pd.Timestamp:
     base = pd.Timestamp(last_ts)
     if timeframe == "1mo":
@@ -1162,6 +1323,27 @@ def build_no_signal_snapshot(
         profile["available_bars"],
         profile["fetch_status"],
     )
+    readiness = _trade_readiness_profile(
+        timeframe=timeframe,
+        pattern=None,
+        action_plan=action_plan,
+        p_up=0.5,
+        p_down=0.5,
+        entry_score=0.0,
+        confidence=0.0,
+        completion_proximity=0.0,
+        recency_score=0.0,
+        data_quality=profile["data_quality"],
+        reward_risk_ratio=0.0,
+        headroom_score=0.0,
+        sample_reliability=0.0,
+        historical_edge_score=0.0,
+        trend_alignment_score=0.0,
+        intraday_session_score=0.5,
+        target_hit_at=None,
+        invalidated_at=None,
+        bars_since_signal=None,
+    )
     return AnalysisResult(
         symbol=symbol,
         timeframe=timeframe,
@@ -1198,6 +1380,10 @@ def build_no_signal_snapshot(
         risk_flags=decision_support["risk_flags"],
         confirmation_checklist=decision_support["confirmation_checklist"],
         next_trigger=decision_support["next_trigger"],
+        trade_readiness_score=readiness["trade_readiness_score"],
+        trade_readiness_label=readiness["trade_readiness_label"],
+        trade_readiness_summary=readiness["trade_readiness_summary"],
+        score_factors=readiness["score_factors"],
         no_signal_flag=True,
         no_signal_reason=no_signal_reason,
         reason_summary=reason_summary,
@@ -1443,6 +1629,27 @@ async def analyze_symbol_dataframe(
         best_invalidated_at,
         bars_since_signal,
     )
+    readiness = _trade_readiness_profile(
+        timeframe=timeframe,
+        pattern=best_pattern,
+        action_plan=action_plan,
+        p_up=probability.p_up,
+        p_down=probability.p_down,
+        entry_score=probability.entry_score,
+        confidence=probability.confidence,
+        completion_proximity=probability.completion_proximity,
+        recency_score=probability.recency_score,
+        data_quality=profile["data_quality"],
+        reward_risk_ratio=probability.reward_risk_ratio,
+        headroom_score=probability.headroom_score,
+        sample_reliability=probability.sample_reliability,
+        historical_edge_score=probability.historical_edge_score,
+        trend_alignment_score=trend_profile["trend_alignment_score"],
+        intraday_session_score=intraday_profile["intraday_session_score"],
+        target_hit_at=best_target_hit_at,
+        invalidated_at=best_invalidated_at,
+        bars_since_signal=bars_since_signal,
+    )
 
     return AnalysisResult(
         symbol=symbol,
@@ -1480,6 +1687,10 @@ async def analyze_symbol_dataframe(
         risk_flags=decision_support["risk_flags"],
         confirmation_checklist=decision_support["confirmation_checklist"],
         next_trigger=decision_support["next_trigger"],
+        trade_readiness_score=readiness["trade_readiness_score"],
+        trade_readiness_label=readiness["trade_readiness_label"],
+        trade_readiness_summary=readiness["trade_readiness_summary"],
+        score_factors=readiness["score_factors"],
         no_signal_flag=probability.no_signal_flag,
         no_signal_reason=probability.no_signal_reason,
         reason_summary=probability.reason_summary,

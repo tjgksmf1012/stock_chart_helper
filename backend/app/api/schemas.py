@@ -69,6 +69,13 @@ class ProjectionPoint(BaseModel):
     kind: str
 
 
+class ScoreFactor(BaseModel):
+    label: str
+    score: float
+    weight: float
+    note: str = ""
+
+
 class AnalysisResult(BaseModel):
     symbol: SymbolInfo
     timeframe: str
@@ -105,6 +112,10 @@ class AnalysisResult(BaseModel):
     risk_flags: list[str] = Field(default_factory=list)
     confirmation_checklist: list[str] = Field(default_factory=list)
     next_trigger: str = ""
+    trade_readiness_score: float = 0.0
+    trade_readiness_label: str = "보류"
+    trade_readiness_summary: str = ""
+    score_factors: list[ScoreFactor] = Field(default_factory=list)
     no_signal_flag: bool
     no_signal_reason: str
     reason_summary: str
@@ -172,6 +183,10 @@ class DashboardItem(BaseModel):
     risk_flags: list[str] = Field(default_factory=list)
     confirmation_checklist: list[str] = Field(default_factory=list)
     next_trigger: str = ""
+    trade_readiness_score: float = 0.0
+    trade_readiness_label: str = "보류"
+    trade_readiness_summary: str = ""
+    score_factors: list[ScoreFactor] = Field(default_factory=list)
     no_signal_flag: bool
     reason_summary: str
     completion_proximity: float = 0.0
@@ -383,6 +398,7 @@ class ScreenerRequest(BaseModel):
     min_confidence: float = 0.0
     min_sample_reliability: float = 0.0
     min_data_quality: float = 0.0
+    min_trade_readiness_score: float = 0.0
     min_confluence_score: float = 0.0
     min_historical_edge_score: float = 0.0
     timeframes: list[str] | None = None

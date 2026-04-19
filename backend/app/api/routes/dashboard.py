@@ -57,6 +57,10 @@ def _make_item(rank: int, row: dict) -> DashboardItem:
         risk_flags=row.get("risk_flags", []),
         confirmation_checklist=row.get("confirmation_checklist", []),
         next_trigger=row.get("next_trigger", ""),
+        trade_readiness_score=row.get("trade_readiness_score", 0.0),
+        trade_readiness_label=row.get("trade_readiness_label", "보류"),
+        trade_readiness_summary=row.get("trade_readiness_summary", ""),
+        score_factors=row.get("score_factors", []),
         no_signal_flag=row["no_signal_flag"],
         reason_summary=row["reason_summary"],
         completion_proximity=row.get("completion_proximity", 0.0),
@@ -119,6 +123,7 @@ async def dashboard_long(
     ranked = [row for row in data if not row["no_signal_flag"] and row["p_up"] > 0.55 and row.get("action_plan") != "cooling"]
     ranked.sort(
         key=lambda row: (
+            row.get("trade_readiness_score", 0.0),
             row.get("composite_score", row["entry_score"]),
             row.get("historical_edge_score", 0.0),
             row["data_quality"],
@@ -140,6 +145,7 @@ async def dashboard_short(
     ranked = [row for row in data if not row["no_signal_flag"] and row["p_down"] > 0.55 and row.get("action_plan") != "cooling"]
     ranked.sort(
         key=lambda row: (
+            row.get("trade_readiness_score", 0.0),
             row.get("composite_score", row["p_down"]),
             row.get("historical_edge_score", 0.0),
             row["data_quality"],
@@ -161,6 +167,7 @@ async def dashboard_similarity(
     ranked = sorted(
         data,
         key=lambda row: (
+            row.get("trade_readiness_score", 0.0),
             row["textbook_similarity"],
             row.get("historical_edge_score", 0.0),
             row.get("confluence_score", 0.5),
@@ -198,6 +205,7 @@ async def dashboard_armed(
     ]
     ranked.sort(
         key=lambda row: (
+            row.get("trade_readiness_score", 0.0),
             row["completion_proximity"],
             row.get("historical_edge_score", 0.0),
             row.get("confluence_score", 0.5),
@@ -224,6 +232,7 @@ async def dashboard_forming(
     ]
     ranked.sort(
         key=lambda row: (
+            row.get("trade_readiness_score", 0.0),
             0.34 * row.get("completion_proximity", 0.0)
             + 0.24 * row.get("formation_quality", 0.0)
             + 0.18 * row.get("confluence_score", 0.5)
@@ -251,6 +260,7 @@ async def dashboard_live_intraday(
     ]
     ranked.sort(
         key=lambda row: (
+            row.get("trade_readiness_score", 0.0),
             row.get("composite_score", row.get("entry_score", 0.0)),
             row.get("historical_edge_score", 0.0),
             row.get("completion_proximity", 0.0),

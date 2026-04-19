@@ -140,6 +140,9 @@ export default function ChartPage() {
                 <span className="text-xs text-muted-foreground">{analysis.symbol.market}</span>
                 <Badge variant={qualityTone}>{analysis.timeframe_label}</Badge>
                 <Badge variant={actionPlanVariant(analysis.action_plan)}>{analysis.action_plan_label}</Badge>
+                <Badge variant={readinessVariant(analysis.trade_readiness_score ?? 0)}>
+                  준비도 {Math.round((analysis.trade_readiness_score ?? 0) * 100)}%
+                </Badge>
                 <Badge variant={qualityTone}>품질 {Math.round(analysis.data_quality * 100)}%</Badge>
                 {analysis.is_provisional && <Badge variant="warning">잠정</Badge>}
                 <button
@@ -192,10 +195,11 @@ export default function ChartPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 text-right sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 text-right sm:grid-cols-5">
               <MetricCell label="상승 확률" value={`${(analysis.p_up * 100).toFixed(0)}%`} tone="text-green-400" />
               <MetricCell label="하락 확률" value={`${(analysis.p_down * 100).toFixed(0)}%`} tone="text-red-400" />
               <MetricCell label="신뢰도" value={`${(analysis.confidence * 100).toFixed(0)}%`} />
+              <MetricCell label="준비도" value={`${Math.round((analysis.trade_readiness_score ?? 0) * 100)}%`} />
               <MetricCell label="시총" value={analysis.symbol.market_cap ? `${fmtNumber(analysis.symbol.market_cap)}억` : '-'} />
             </div>
           </div>
@@ -287,6 +291,13 @@ function actionPlanVariant(plan: string): 'bullish' | 'warning' | 'muted' | 'neu
   if (plan === 'ready_now') return 'bullish'
   if (plan === 'watch') return 'neutral'
   if (plan === 'recheck') return 'warning'
+  return 'muted'
+}
+
+function readinessVariant(score: number): 'bullish' | 'warning' | 'muted' | 'neutral' {
+  if (score >= 0.72) return 'bullish'
+  if (score >= 0.58) return 'neutral'
+  if (score >= 0.44) return 'warning'
   return 'muted'
 }
 
