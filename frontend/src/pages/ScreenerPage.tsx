@@ -40,12 +40,26 @@ const FETCH_STATUS_OPTIONS = [
   { value: 'daily_ok', label: '일봉 수집 성공' },
 ]
 
+const REENTRY_CASE_OPTIONS = [
+  { value: 'box_reaccumulation', label: '박스 재축적형' },
+  { value: 'pullback_relaunch', label: '눌림 후 재상승형' },
+  { value: 'failed_breakout_recovery', label: '실패 돌파 복구형' },
+  { value: 'range_reset', label: '재축적 준비형' },
+  { value: 'primary_setup', label: '신규 셋업 우선형' },
+  { value: 'avoid', label: '재진입 비선호' },
+]
+
 const SORT_OPTIONS: Array<{ value: NonNullable<ScreenerRequest['sort_by']>; label: string }> = [
   { value: 'composite_score', label: '종합 점수' },
   { value: 'trade_readiness_score', label: '거래 준비도' },
   { value: 'entry_window_score', label: '진입 구간' },
   { value: 'freshness_score', label: '패턴 신선도' },
   { value: 'reentry_score', label: '재진입 구조' },
+  { value: 'reentry_compression_score', label: '박스 수축도' },
+  { value: 'reentry_volume_recovery_score', label: '거래량 복원' },
+  { value: 'reentry_trigger_hold_score', label: '기준선 유지력' },
+  { value: 'reentry_wick_absorption_score', label: '꼬리 흡수력' },
+  { value: 'reentry_failure_burden_score', label: '실패 부담 관리' },
   { value: 'active_setup_score', label: '활성 셋업' },
   { value: 'entry_score', label: '진입 적합도' },
   { value: 'sample_reliability', label: '표본 신뢰도' },
@@ -69,6 +83,11 @@ export default function ScreenerPage() {
     min_entry_window_score: 0.3,
     min_freshness_score: 0.3,
     min_reentry_score: 0.2,
+    min_reentry_compression_score: 0.2,
+    min_reentry_volume_recovery_score: 0.2,
+    min_reentry_trigger_hold_score: 0.2,
+    min_reentry_wick_absorption_score: 0.2,
+    min_reentry_failure_burden_score: 0.2,
     min_active_setup_score: 0.25,
     min_confluence_score: 0.0,
     min_historical_edge_score: 0.25,
@@ -154,7 +173,7 @@ export default function ScreenerPage() {
     refetch()
   }
 
-  const toggleMultiValue = (field: 'pattern_types' | 'states' | 'markets' | 'fetch_statuses', value: string) => {
+  const toggleMultiValue = (field: 'pattern_types' | 'states' | 'markets' | 'fetch_statuses' | 'reentry_cases', value: string) => {
     setReq(current => {
       const selected = current[field]?.includes(value)
       return {
@@ -181,7 +200,7 @@ export default function ScreenerPage() {
         <div>
           <h1 className="text-xl font-bold">스크리너</h1>
           <p className="text-xs text-muted-foreground">
-            패턴, 상태, 시장, 타임프레임뿐 아니라 거래 준비도, 진입 구간, 패턴 신선도를 함께 걸러서 지금 실전에 가까운 후보를 찾습니다.
+            패턴, 상태, 시장, 타임프레임뿐 아니라 거래 준비도, 진입 구간, 패턴 신선도와 재진입 세부 구조까지 함께 걸러서 지금 실전에 가까운 후보를 찾습니다.
           </p>
         </div>
       </div>
@@ -282,6 +301,25 @@ export default function ScreenerPage() {
           </div>
         </FilterGroup>
 
+        <FilterGroup label="재진입 유형">
+          <div className="flex flex-wrap gap-1.5">
+            {REENTRY_CASE_OPTIONS.map(option => {
+              const selected = req.reentry_cases?.includes(option.value)
+              return (
+                <button
+                  key={option.value}
+                  onClick={() => toggleMultiValue('reentry_cases', option.value)}
+                  className={`rounded px-2 py-1 text-xs transition-colors ${
+                    selected ? 'bg-primary text-primary-foreground' : 'bg-muted/50 text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              )
+            })}
+          </div>
+        </FilterGroup>
+
         <SliderGroup label="최소 교과서 유사도" value={req.min_textbook_similarity ?? 0} onChange={value => setReq(current => ({ ...current, min_textbook_similarity: value }))} />
         <SliderGroup label="최소 상승 확률" value={req.min_p_up ?? 0} onChange={value => setReq(current => ({ ...current, min_p_up: value }))} />
         <SliderGroup label="최소 신뢰도" value={req.min_confidence ?? 0} onChange={value => setReq(current => ({ ...current, min_confidence: value }))} />
@@ -291,6 +329,11 @@ export default function ScreenerPage() {
         <SliderGroup label="최소 진입 구간" value={req.min_entry_window_score ?? 0} onChange={value => setReq(current => ({ ...current, min_entry_window_score: value }))} />
         <SliderGroup label="최소 패턴 신선도" value={req.min_freshness_score ?? 0} onChange={value => setReq(current => ({ ...current, min_freshness_score: value }))} />
         <SliderGroup label="최소 재진입 구조" value={req.min_reentry_score ?? 0} onChange={value => setReq(current => ({ ...current, min_reentry_score: value }))} />
+        <SliderGroup label="최소 박스 수축도" value={req.min_reentry_compression_score ?? 0} onChange={value => setReq(current => ({ ...current, min_reentry_compression_score: value }))} />
+        <SliderGroup label="최소 거래량 복원" value={req.min_reentry_volume_recovery_score ?? 0} onChange={value => setReq(current => ({ ...current, min_reentry_volume_recovery_score: value }))} />
+        <SliderGroup label="최소 기준선 유지력" value={req.min_reentry_trigger_hold_score ?? 0} onChange={value => setReq(current => ({ ...current, min_reentry_trigger_hold_score: value }))} />
+        <SliderGroup label="최소 꼬리 흡수력" value={req.min_reentry_wick_absorption_score ?? 0} onChange={value => setReq(current => ({ ...current, min_reentry_wick_absorption_score: value }))} />
+        <SliderGroup label="최소 실패 부담 관리" value={req.min_reentry_failure_burden_score ?? 0} onChange={value => setReq(current => ({ ...current, min_reentry_failure_burden_score: value }))} />
         <SliderGroup label="최소 활성 셋업" value={req.min_active_setup_score ?? 0} onChange={value => setReq(current => ({ ...current, min_active_setup_score: value }))} />
         <SliderGroup label="최소 정렬 점수" value={req.min_confluence_score ?? 0} onChange={value => setReq(current => ({ ...current, min_confluence_score: value }))} />
         <SliderGroup label="최소 백테스트 edge" value={req.min_historical_edge_score ?? 0} onChange={value => setReq(current => ({ ...current, min_historical_edge_score: value }))} />

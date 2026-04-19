@@ -971,10 +971,23 @@ def _reentry_profile(
             "reentry_case": "none",
             "reentry_case_label": "구조 없음",
             "reentry_trigger": "활성 패턴이 충분히 쌓이면 재진입 구조를 계산합니다.",
+            "reentry_compression_score": 0.0,
+            "reentry_volume_recovery_score": 0.0,
+            "reentry_trigger_hold_score": 0.0,
+            "reentry_wick_absorption_score": 0.0,
+            "reentry_failure_burden_score": 0.0,
             "reentry_factors": [],
         }
 
     factor_profile = _reentry_factor_breakdown(df=df, timeframe=timeframe, pattern=pattern)
+    detail_fields = {
+        "reentry_compression_score": factor_profile["compression_score"],
+        "reentry_volume_recovery_score": factor_profile["volume_recovery_score"],
+        "reentry_trigger_hold_score": factor_profile["trigger_hold_score"],
+        "reentry_wick_absorption_score": factor_profile["wick_absorption_score"],
+        "reentry_failure_burden_score": factor_profile["failure_burden_score"],
+        "reentry_factors": factor_profile["reentry_factors"],
+    }
 
     neckline = pattern.neckline
     invalidation = pattern.invalidation_level
@@ -1031,7 +1044,7 @@ def _reentry_profile(
                 "reentry_case": "failed_breakout_recovery",
                 "reentry_case_label": "실패 돌파 복구형",
                 "reentry_trigger": f"무효화 구간 회복 유지와 {trigger_price:,.0f} 재돌파가 함께 확인되는지 보세요.",
-                "reentry_factors": factor_profile["reentry_factors"],
+                **detail_fields,
             }
         return {
             "reentry_score": 0.06,
@@ -1040,7 +1053,7 @@ def _reentry_profile(
             "reentry_case": "avoid",
             "reentry_case_label": "재진입 비선호",
             "reentry_trigger": "추가 복구 없이 재진입을 서두르지 않는 편이 좋습니다.",
-            "reentry_factors": factor_profile["reentry_factors"],
+            **detail_fields,
         }
 
     if target_hit_at or pattern.state == "played_out":
@@ -1059,7 +1072,7 @@ def _reentry_profile(
                 "reentry_case": "box_reaccumulation",
                 "reentry_case_label": "박스 재축적형",
                 "reentry_trigger": f"목선 {trigger_price:,.0f} 부근 박스 유지 후 거래대금 동반 재돌파를 기다리세요.",
-                "reentry_factors": factor_profile["reentry_factors"],
+                **detail_fields,
             }
         if reset_ready and shallow_pullback and above_neckline and entry_window_score >= 0.46 and factor_profile["volume_recovery_score"] >= 0.5:
             score = round(max(0.44, min(0.70, 0.44 * rebuild_score + 0.22 * entry_window_score + 0.20 * factor_profile["volume_recovery_score"] + 0.14 * factor_profile["wick_absorption_score"])), 3)
@@ -1070,7 +1083,7 @@ def _reentry_profile(
                 "reentry_case": "pullback_relaunch",
                 "reentry_case_label": "눌림 후 재상승형",
                 "reentry_trigger": f"목선 위 안착 유지와 최근 고점 재돌파가 함께 나오는지 보세요.",
-                "reentry_factors": factor_profile["reentry_factors"],
+                **detail_fields,
             }
         if reset_ready:
             score = round(max(0.28, min(0.52, 0.62 * rebuild_score + 0.38 * factor_profile["detail_score"])), 3)
@@ -1081,7 +1094,7 @@ def _reentry_profile(
                 "reentry_case": "range_reset",
                 "reentry_case_label": "재축적 준비형",
                 "reentry_trigger": f"박스 하단 이탈 없이 {trigger_price:,.0f} 재접근이 이어지는지 확인하세요.",
-                "reentry_factors": factor_profile["reentry_factors"],
+                **detail_fields,
             }
         return {
             "reentry_score": 0.12,
@@ -1090,7 +1103,7 @@ def _reentry_profile(
             "reentry_case": "avoid",
             "reentry_case_label": "재진입 비선호",
             "reentry_trigger": "목표 소화 직후라 구조가 다시 쌓일 때까지 기다리는 편이 좋습니다.",
-            "reentry_factors": factor_profile["reentry_factors"],
+            **detail_fields,
         }
 
     if pattern.state == "confirmed" and entry_window_score >= 0.64 and headroom_score >= 0.32:
@@ -1102,7 +1115,7 @@ def _reentry_profile(
             "reentry_case": "primary_setup",
             "reentry_case_label": "신규 셋업 우선형",
             "reentry_trigger": "재진입보다 현재 1차 셋업의 추세 유지와 손익비를 먼저 보세요.",
-            "reentry_factors": factor_profile["reentry_factors"],
+            **detail_fields,
         }
 
     if pattern.state in {"armed", "forming"} and distance_to_trigger >= 0.52 and headroom_score >= 0.24:
@@ -1114,7 +1127,7 @@ def _reentry_profile(
             "reentry_case": "pullback_relaunch",
             "reentry_case_label": "눌림 후 재상승형",
             "reentry_trigger": f"기준선 {trigger_price:,.0f} 재확인 뒤 돌파 캔들과 거래량 회복을 같이 확인하세요.",
-            "reentry_factors": factor_profile["reentry_factors"],
+            **detail_fields,
         }
 
     score = round(max(0.22, min(0.52, 0.50 * rebuild_score + 0.20 * entry_window_score + 0.30 * factor_profile["detail_score"])), 3)
@@ -1125,7 +1138,7 @@ def _reentry_profile(
         "reentry_case": "primary_setup",
         "reentry_case_label": "신규 셋업 우선형",
         "reentry_trigger": "현재 셋업 완성도가 먼저이며 재진입 시나리오는 보조적으로만 보세요.",
-        "reentry_factors": factor_profile["reentry_factors"],
+        **detail_fields,
     }
 
 def _stats_timeframe(timeframe: str) -> str:
@@ -2234,6 +2247,11 @@ def build_no_signal_snapshot(
         reentry_case="none",
         reentry_case_label="구조 없음",
         reentry_trigger="활성 패턴이 충분히 쌓이면 재진입 유형을 계산합니다.",
+        reentry_compression_score=0.0,
+        reentry_volume_recovery_score=0.0,
+        reentry_trigger_hold_score=0.0,
+        reentry_wick_absorption_score=0.0,
+        reentry_failure_burden_score=0.0,
         reentry_factors=[],
         score_factors=readiness["score_factors"],
         active_setup_score=0.0,
@@ -2620,6 +2638,11 @@ async def analyze_symbol_dataframe(
         reentry_case=reentry["reentry_case"],
         reentry_case_label=reentry["reentry_case_label"],
         reentry_trigger=reentry["reentry_trigger"],
+        reentry_compression_score=reentry["reentry_compression_score"],
+        reentry_volume_recovery_score=reentry["reentry_volume_recovery_score"],
+        reentry_trigger_hold_score=reentry["reentry_trigger_hold_score"],
+        reentry_wick_absorption_score=reentry["reentry_wick_absorption_score"],
+        reentry_failure_burden_score=reentry["reentry_failure_burden_score"],
         reentry_factors=reentry["reentry_factors"],
         score_factors=readiness["score_factors"],
         active_setup_score=active_setup["active_setup_score"],

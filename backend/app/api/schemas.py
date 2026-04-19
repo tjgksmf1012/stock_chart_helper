@@ -130,6 +130,11 @@ class AnalysisResult(BaseModel):
     reentry_case: str = "none"
     reentry_case_label: str = "구조 없음"
     reentry_trigger: str = ""
+    reentry_compression_score: float = 0.0
+    reentry_volume_recovery_score: float = 0.0
+    reentry_trigger_hold_score: float = 0.0
+    reentry_wick_absorption_score: float = 0.0
+    reentry_failure_burden_score: float = 0.0
     reentry_factors: list[ScoreFactor] = Field(default_factory=list)
     score_factors: list[ScoreFactor] = Field(default_factory=list)
     active_setup_score: float = 0.0
@@ -219,6 +224,11 @@ class DashboardItem(BaseModel):
     reentry_case: str = "none"
     reentry_case_label: str = "구조 없음"
     reentry_trigger: str = ""
+    reentry_compression_score: float = 0.0
+    reentry_volume_recovery_score: float = 0.0
+    reentry_trigger_hold_score: float = 0.0
+    reentry_wick_absorption_score: float = 0.0
+    reentry_failure_burden_score: float = 0.0
     reentry_factors: list[ScoreFactor] = Field(default_factory=list)
     score_factors: list[ScoreFactor] = Field(default_factory=list)
     active_setup_score: float = 0.0
@@ -431,6 +441,7 @@ class ScreenerRequest(BaseModel):
     states: list[str] | None = None
     markets: list[str] | None = None
     fetch_statuses: list[str] | None = None
+    reentry_cases: list[str] | None = None
     min_textbook_similarity: float = 0.0
     min_p_up: float = 0.0
     max_p_down: float = 1.0
@@ -441,6 +452,11 @@ class ScreenerRequest(BaseModel):
     min_entry_window_score: float = 0.0
     min_freshness_score: float = 0.0
     min_reentry_score: float = 0.0
+    min_reentry_compression_score: float = 0.0
+    min_reentry_volume_recovery_score: float = 0.0
+    min_reentry_trigger_hold_score: float = 0.0
+    min_reentry_wick_absorption_score: float = 0.0
+    min_reentry_failure_burden_score: float = 0.0
     min_active_setup_score: float = 0.0
     min_confluence_score: float = 0.0
     min_historical_edge_score: float = 0.0

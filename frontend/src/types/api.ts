@@ -125,6 +125,11 @@ export interface AnalysisResult {
   reentry_case: string
   reentry_case_label: string
   reentry_trigger: string
+  reentry_compression_score: number
+  reentry_volume_recovery_score: number
+  reentry_trigger_hold_score: number
+  reentry_wick_absorption_score: number
+  reentry_failure_burden_score: number
   reentry_factors: ScoreFactor[]
   score_factors: ScoreFactor[]
   active_setup_score: number
@@ -214,6 +219,11 @@ export interface DashboardItem {
   reentry_case: string
   reentry_case_label: string
   reentry_trigger: string
+  reentry_compression_score: number
+  reentry_volume_recovery_score: number
+  reentry_trigger_hold_score: number
+  reentry_wick_absorption_score: number
+  reentry_failure_burden_score: number
   reentry_factors: ScoreFactor[]
   score_factors: ScoreFactor[]
   active_setup_score: number
@@ -426,6 +436,7 @@ export interface ScreenerRequest {
   states?: string[]
   markets?: string[]
   fetch_statuses?: string[]
+  reentry_cases?: string[]
   min_textbook_similarity?: number
   min_p_up?: number
   max_p_down?: number
@@ -436,6 +447,11 @@ export interface ScreenerRequest {
   min_entry_window_score?: number
   min_freshness_score?: number
   min_reentry_score?: number
+  min_reentry_compression_score?: number
+  min_reentry_volume_recovery_score?: number
+  min_reentry_trigger_hold_score?: number
+  min_reentry_wick_absorption_score?: number
+  min_reentry_failure_burden_score?: number
   min_active_setup_score?: number
   min_confluence_score?: number
   min_historical_edge_score?: number
@@ -454,6 +470,11 @@ export interface ScreenerRequest {
   | 'entry_window_score'
   | 'freshness_score'
   | 'reentry_score'
+  | 'reentry_compression_score'
+  | 'reentry_volume_recovery_score'
+  | 'reentry_trigger_hold_score'
+  | 'reentry_wick_absorption_score'
+  | 'reentry_failure_burden_score'
   | 'active_setup_score'
     | 'confluence_score'
     | 'data_quality'

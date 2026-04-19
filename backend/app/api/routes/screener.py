@@ -21,6 +21,11 @@ SORT_KEYS = {
     "entry_window_score": lambda row: row.get("entry_window_score", 0.0),
     "freshness_score": lambda row: row.get("freshness_score", 0.0),
     "reentry_score": lambda row: row.get("reentry_score", 0.0),
+    "reentry_compression_score": lambda row: row.get("reentry_compression_score", 0.0),
+    "reentry_volume_recovery_score": lambda row: row.get("reentry_volume_recovery_score", 0.0),
+    "reentry_trigger_hold_score": lambda row: row.get("reentry_trigger_hold_score", 0.0),
+    "reentry_wick_absorption_score": lambda row: row.get("reentry_wick_absorption_score", 0.0),
+    "reentry_failure_burden_score": lambda row: row.get("reentry_failure_burden_score", 0.0),
     "active_setup_score": lambda row: row.get("active_setup_score", 0.0),
     "confluence_score": lambda row: row.get("confluence_score", 0.0),
     "data_quality": lambda row: row.get("data_quality", 0.0),
@@ -46,6 +51,8 @@ async def run_screener(req: ScreenerRequest) -> list[DashboardItem]:
         filtered = [row for row in filtered if row.get("market") in req.markets]
     if req.fetch_statuses:
         filtered = [row for row in filtered if row.get("fetch_status") in req.fetch_statuses]
+    if req.reentry_cases:
+        filtered = [row for row in filtered if row.get("reentry_case") in req.reentry_cases]
     if req.min_market_cap is not None:
         filtered = [row for row in filtered if (row.get("market_cap") or 0) >= req.min_market_cap]
 
@@ -59,6 +66,11 @@ async def run_screener(req: ScreenerRequest) -> list[DashboardItem]:
     filtered = [row for row in filtered if row.get("entry_window_score", 0) >= req.min_entry_window_score]
     filtered = [row for row in filtered if row.get("freshness_score", 0) >= req.min_freshness_score]
     filtered = [row for row in filtered if row.get("reentry_score", 0) >= req.min_reentry_score]
+    filtered = [row for row in filtered if row.get("reentry_compression_score", 0) >= req.min_reentry_compression_score]
+    filtered = [row for row in filtered if row.get("reentry_volume_recovery_score", 0) >= req.min_reentry_volume_recovery_score]
+    filtered = [row for row in filtered if row.get("reentry_trigger_hold_score", 0) >= req.min_reentry_trigger_hold_score]
+    filtered = [row for row in filtered if row.get("reentry_wick_absorption_score", 0) >= req.min_reentry_wick_absorption_score]
+    filtered = [row for row in filtered if row.get("reentry_failure_burden_score", 0) >= req.min_reentry_failure_burden_score]
     filtered = [row for row in filtered if row.get("active_setup_score", 0) >= req.min_active_setup_score]
     filtered = [row for row in filtered if row.get("confluence_score", 0) >= req.min_confluence_score]
     filtered = [row for row in filtered if row.get("historical_edge_score", 0) >= req.min_historical_edge_score]

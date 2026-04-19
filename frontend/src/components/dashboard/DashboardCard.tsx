@@ -107,6 +107,12 @@ export function DashboardCard({ item, intradayPreset }: DashboardCardProps) {
           <div className="space-y-1">
             <div>{item.reentry_summary}</div>
             {item.reentry_trigger && <div className="text-[11px] text-amber-100/90">확인 포인트: {item.reentry_trigger}</div>}
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-amber-100/90">
+              <span>수축 {fmtPct(item.reentry_compression_score ?? 0, 0)}</span>
+              <span className="text-right">거래량 {fmtPct(item.reentry_volume_recovery_score ?? 0, 0)}</span>
+              <span>유지력 {fmtPct(item.reentry_trigger_hold_score ?? 0, 0)}</span>
+              <span className="text-right">꼬리 흡수 {fmtPct(item.reentry_wick_absorption_score ?? 0, 0)}</span>
+            </div>
           </div>
         </SummaryBlock>
       )}
