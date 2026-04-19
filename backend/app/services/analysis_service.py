@@ -394,6 +394,128 @@ def _wyckoff_profile(df: pd.DataFrame, pattern_type: str) -> dict[str, Any]:
     }
 
 
+def _intraday_session_profile(df: pd.DataFrame, timeframe: str, pattern_type: str) -> dict[str, Any]:
+    if not is_intraday_timeframe(timeframe) or "datetime" not in df.columns:
+        return {
+            "intraday_session_phase": "neutral",
+            "intraday_session_score": 0.5,
+            "intraday_session_note": "",
+        }
+
+    timestamps = _timestamp_series(df).dropna()
+    if timestamps.empty:
+        return {
+            "intraday_session_phase": "neutral",
+            "intraday_session_score": 0.5,
+            "intraday_session_note": "장중 시간대 판정을 위한 타임스탬프가 부족합니다.",
+        }
+
+    last_ts = timestamps.iloc[-1]
+    hhmm = last_ts.hour * 100 + last_ts.minute
+    close = pd.to_numeric(df["close"], errors="coerce").dropna()
+    volume = pd.to_numeric(df["volume"], errors="coerce").dropna()
+    if len(close) < 6:
+        return {
+            "intraday_session_phase": "neutral",
+            "intraday_session_score": 0.5,
+            "intraday_session_note": "장중 흐름을 읽기엔 최근 분봉 수가 아직 부족합니다.",
+        }
+
+    recent_close = close.tail(min(len(close), 4))
+    recent_volume = volume.tail(min(len(volume), 4))
+    base_volume = volume.tail(min(len(volume), 24)).head(max(len(volume.tail(min(len(volume), 24))) - len(recent_volume), 1))
+
+    start_price = float(recent_close.iloc[0])
+    end_price = float(recent_close.iloc[-1])
+    momentum = 0.0 if start_price == 0 else (end_price - start_price) / start_price
+    volume_ratio = (
+        float(recent_volume.mean()) / max(float(base_volume.mean()) if not base_volume.empty else float(recent_volume.mean()), 1.0)
+    )
+
+    bullish = _is_bullish(pattern_type)
+    bearish = _is_bearish(pattern_type)
+
+    if hhmm < 1000:
+        phase = "open_drive"
+    elif 1130 <= hhmm < 1400:
+        phase = "midday"
+    elif 1430 <= hhmm <= 1530:
+        phase = "closing_drive"
+    elif 1000 <= hhmm < 1130 or 1400 <= hhmm < 1430:
+        phase = "regular_session"
+    else:
+        phase = "off_hours"
+
+    score = 0.52
+    note = "현재 시간대 문맥은 중립에 가깝습니다."
+
+    if phase == "open_drive":
+        if bullish:
+            if momentum > 0.008 and volume_ratio > 1.15:
+                score = 0.84
+                note = "장 초반 수급이 강하게 붙는 구간이라 상승형 패턴 확인에는 우호적인 시간대입니다."
+            elif momentum < -0.004:
+                score = 0.32
+                note = "장 초반부터 밀리는 흐름이라 추격 매수보다는 실패 가능성을 더 경계해야 합니다."
+            else:
+                score = 0.58
+                note = "장 초반 방향성은 보이지만, 한쪽으로 확정하기엔 아직 이릅니다."
+        elif bearish:
+            if momentum < -0.008 and volume_ratio > 1.15:
+                score = 0.84
+                note = "장 초반 매도 압력이 강해 하락형 패턴 확인에는 우호적인 시간대입니다."
+            elif momentum > 0.004:
+                score = 0.32
+                note = "장 초반부터 반등이 강해 하락 지속 시나리오를 바로 믿기는 어렵습니다."
+            else:
+                score = 0.58
+                note = "장 초반 방향성은 보이지만, 추가 확인이 더 필요합니다."
+    elif phase == "midday":
+        if abs(momentum) < 0.003 or volume_ratio < 0.9:
+            score = 0.40
+            note = "점심장 특유의 소강 구간에 가까워, 분봉 패턴은 신호 과신보다 대기 쪽이 더 안전합니다."
+        else:
+            score = 0.56
+            note = "점심장치고는 움직임이 있는 편이지만, 마감 전 재확인이 더 중요합니다."
+    elif phase == "closing_drive":
+        if bullish:
+            if momentum > 0.006:
+                score = 0.88 if volume_ratio > 1.0 else 0.78
+                note = "마감 전 재가속이 붙는 흐름이라 상승형 패턴 확인에는 가장 좋은 시간대 중 하나입니다."
+            elif momentum < -0.004:
+                score = 0.30
+                note = "마감 전 힘이 꺾이면 당일 패턴 신뢰도는 크게 낮아집니다."
+            else:
+                score = 0.60
+                note = "마감 전 흐름은 무난하지만, 확신을 주는 재가속까지는 아닙니다."
+        elif bearish:
+            if momentum < -0.006:
+                score = 0.88 if volume_ratio > 1.0 else 0.78
+                note = "마감 전 하방 재가속이 붙는 흐름이라 하락형 패턴 확인에는 우호적입니다."
+            elif momentum > 0.004:
+                score = 0.30
+                note = "마감 전 되받음이 강해 하락형 패턴을 과신하기 어렵습니다."
+            else:
+                score = 0.60
+                note = "마감 전 흐름은 무난하지만, 강한 확인 구간까지는 아닙니다."
+    elif phase == "regular_session":
+        if bullish:
+            score = 0.64 if momentum > 0.004 else 0.46
+            note = "장중 일반 구간에서는 방향성은 참고하되, 거래량 동반 여부를 함께 보는 편이 좋습니다."
+        elif bearish:
+            score = 0.64 if momentum < -0.004 else 0.46
+            note = "장중 일반 구간에서는 하락 지속 여부보다 이탈 유지 여부를 함께 봐야 합니다."
+    else:
+        score = 0.44
+        note = "정규장 바깥 시점이라 마지막 분봉의 시간대 해석은 보수적으로 보는 편이 맞습니다."
+
+    return {
+        "intraday_session_phase": phase,
+        "intraday_session_score": round(float(max(0.0, min(1.0, score))), 3),
+        "intraday_session_note": note,
+    }
+
+
 def _opportunity_profile(pattern: PatternResult, current_close: float) -> dict[str, float]:
     target = pattern.target_level
     invalidation = pattern.invalidation_level
@@ -764,6 +886,9 @@ def build_no_signal_snapshot(
         wyckoff_phase="neutral",
         wyckoff_score=0.0,
         wyckoff_note="",
+        intraday_session_phase="neutral",
+        intraday_session_score=0.5,
+        intraday_session_note="",
         no_signal_flag=True,
         no_signal_reason=no_signal_reason,
         reason_summary=reason_summary,
@@ -830,6 +955,7 @@ async def analyze_symbol_dataframe(
     historical_edge_score = float(stats.get("historical_edge_score", 0.5))
     trend_profile = _trend_alignment_profile(df, best_pattern.pattern_type)
     wyckoff_profile = _wyckoff_profile(df, best_pattern.pattern_type)
+    intraday_profile = _intraday_session_profile(df, timeframe, best_pattern.pattern_type)
     regime_match = trend_profile["trend_alignment_score"]
     opportunity = _opportunity_profile(best_pattern, current_close)
 
@@ -866,6 +992,13 @@ async def analyze_symbol_dataframe(
         risk_penalty += 0.12
     elif best_pattern.candlestick_confirmation_fit < 0.48:
         risk_penalty += 0.06
+    if is_intraday_timeframe(timeframe):
+        if intraday_profile["intraday_session_score"] < 0.34:
+            risk_penalty += 0.12
+        elif intraday_profile["intraday_session_score"] < 0.48:
+            risk_penalty += 0.06
+        elif intraday_profile["intraday_session_score"] > 0.82:
+            risk_penalty -= 0.02
     if _is_bullish(best_pattern.pattern_type):
         if wyckoff_profile["wyckoff_phase"] == "markdown":
             risk_penalty += 0.16
@@ -987,6 +1120,9 @@ async def analyze_symbol_dataframe(
         wyckoff_phase=wyckoff_profile["wyckoff_phase"],
         wyckoff_score=wyckoff_profile["wyckoff_score"],
         wyckoff_note=wyckoff_profile["wyckoff_note"],
+        intraday_session_phase=intraday_profile["intraday_session_phase"],
+        intraday_session_score=intraday_profile["intraday_session_score"],
+        intraday_session_note=intraday_profile["intraday_session_note"],
         no_signal_flag=probability.no_signal_flag,
         no_signal_reason=probability.no_signal_reason,
         reason_summary=probability.reason_summary,

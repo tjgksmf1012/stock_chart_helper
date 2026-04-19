@@ -110,6 +110,18 @@ def _wyckoff_label(phase: str) -> str:
     return labels.get(phase, phase or "neutral")
 
 
+def _intraday_session_label(phase: str) -> str:
+    labels = {
+        "open_drive": "open_drive",
+        "midday": "midday",
+        "closing_drive": "closing_drive",
+        "regular_session": "regular_session",
+        "off_hours": "off_hours",
+        "neutral": "neutral",
+    }
+    return labels.get(phase, phase or "neutral")
+
+
 def _formation_quality_from_row(row: dict[str, Any]) -> float:
     return float(
         row.get("formation_quality")
@@ -173,6 +185,15 @@ def _apply_setup_metadata(row: dict[str, Any]) -> dict[str, Any]:
         row["composite_score"] = round(float(row.get("composite_score", 0.0)) - 0.03, 3)
     elif phase == "markdown":
         row["composite_score"] = round(float(row.get("composite_score", 0.0)) - 0.06, 3)
+
+    intraday_phase = str(row.get("intraday_session_phase") or "neutral")
+    intraday_score = float(row.get("intraday_session_score", 0.5))
+    if intraday_phase == "closing_drive" and intraday_score >= 0.75:
+        row["composite_score"] = round(float(row.get("composite_score", 0.0)) + 0.03, 3)
+    elif intraday_phase == "midday" and intraday_score <= 0.45:
+        row["composite_score"] = round(float(row.get("composite_score", 0.0)) - 0.03, 3)
+    elif intraday_phase == "off_hours":
+        row["composite_score"] = round(float(row.get("composite_score", 0.0)) - 0.02, 3)
 
     return row
 
@@ -257,6 +278,7 @@ async def _build_confluence(
                 + 0.10 * float(primary_row.get("historical_edge_score", 0.0))
                 + 0.14 * float(primary_row.get("headroom_score", 0.0))
                 + 0.10 * float(primary_row.get("trend_alignment_score", 0.0))
+                + 0.06 * float(primary_row.get("intraday_session_score", 0.5))
                 + 0.12 * min(1.0, float(primary_row.get("reward_risk_ratio", 0.0)) / 2.5)
                 + 0.12 * float(primary_row.get("data_quality", 0.0))
                 + 0.06 * float(primary_row.get("recency_score", 0.0)),
@@ -321,6 +343,7 @@ async def _build_confluence(
         + 0.12 * float(primary_row.get("headroom_score", 0.0))
         + 0.10 * float(primary_row.get("trend_alignment_score", 0.0))
         + 0.08 * float(primary_row.get("wyckoff_score", 0.0))
+        + 0.06 * float(primary_row.get("intraday_session_score", 0.5))
         + 0.10 * min(1.0, float(primary_row.get("reward_risk_ratio", 0.0)) / 2.5)
         + 0.10 * float(primary_row.get("data_quality", 0.0))
         + 0.08 * float(primary_row.get("recency_score", 0.0))
@@ -402,6 +425,9 @@ async def _analyze_one(
             "wyckoff_phase": analysis.wyckoff_phase,
             "wyckoff_score": analysis.wyckoff_score,
             "wyckoff_note": analysis.wyckoff_note,
+            "intraday_session_phase": analysis.intraday_session_phase,
+            "intraday_session_score": analysis.intraday_session_score,
+            "intraday_session_note": analysis.intraday_session_note,
             "no_signal_flag": analysis.no_signal_flag,
             "reason_summary": analysis.reason_summary,
             "completion_proximity": analysis.completion_proximity,
@@ -436,6 +462,7 @@ async def _analyze_one(
                         + 0.14 * float(result["headroom_score"])
                         + 0.10 * float(result["trend_alignment_score"])
                         + 0.08 * float(result.get("wyckoff_score", 0.0))
+                        + 0.06 * float(result.get("intraday_session_score", 0.5))
                         + 0.10 * min(1.0, float(result["reward_risk_ratio"]) / 2.5),
                         3,
                     ),

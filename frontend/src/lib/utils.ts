@@ -99,6 +99,15 @@ export const CANDLE_CONFIRMATION_LABELS: Record<string, string> = {
   neutral: '중립 캔들',
 }
 
+export const INTRADAY_SESSION_LABELS: Record<string, string> = {
+  open_drive: '장초반',
+  midday: '점심장',
+  closing_drive: '마감 전',
+  regular_session: '장중',
+  off_hours: '장외 시점',
+  neutral: '중립',
+}
+
 export function getPatternBias(patternType: string | null | undefined): 'bullish' | 'bearish' | 'neutral' {
   if (!patternType) return 'neutral'
 

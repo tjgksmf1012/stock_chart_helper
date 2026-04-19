@@ -95,6 +95,9 @@ class AnalysisResult(BaseModel):
     wyckoff_phase: str
     wyckoff_score: float
     wyckoff_note: str
+    intraday_session_phase: str
+    intraday_session_score: float
+    intraday_session_note: str
     no_signal_flag: bool
     no_signal_reason: str
     reason_summary: str
@@ -152,6 +155,9 @@ class DashboardItem(BaseModel):
     wyckoff_phase: str = "neutral"
     wyckoff_score: float = 0.0
     wyckoff_note: str = ""
+    intraday_session_phase: str = "neutral"
+    intraday_session_score: float = 0.0
+    intraday_session_note: str = ""
     no_signal_flag: bool
     reason_summary: str
     completion_proximity: float = 0.0

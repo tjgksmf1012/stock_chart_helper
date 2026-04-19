@@ -6,7 +6,7 @@ import type { DashboardItem } from '@/types/api'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { ProbBar } from '@/components/ui/ProbBar'
-import { cn, fmtPct, fmtTurnoverBillion, PATTERN_NAMES, STATE_COLORS, STATE_LABELS, WYCKOFF_LABELS } from '@/lib/utils'
+import { cn, fmtPct, fmtTurnoverBillion, INTRADAY_SESSION_LABELS, PATTERN_NAMES, STATE_COLORS, STATE_LABELS, WYCKOFF_LABELS } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
 
 interface DashboardCardProps {
@@ -82,6 +82,13 @@ export function DashboardCard({ item }: DashboardCardProps) {
             >
               {WYCKOFF_LABELS[item.wyckoff_phase] ?? item.wyckoff_phase}
             </Badge>
+            <Badge
+              variant={
+                item.intraday_session_score >= 0.72 ? 'bullish' : item.intraday_session_score <= 0.44 ? 'warning' : 'muted'
+              }
+            >
+              {INTRADAY_SESSION_LABELS[item.intraday_session_phase] ?? item.intraday_session_phase}
+            </Badge>
           </div>
 
           {item.pattern_type ? (
@@ -144,6 +151,12 @@ export function DashboardCard({ item }: DashboardCardProps) {
       {item.wyckoff_note && (
         <div className="rounded-lg border border-sky-500/20 bg-sky-500/5 p-2.5 text-xs text-sky-100">
           {item.wyckoff_note}
+        </div>
+      )}
+
+      {item.intraday_session_note && (
+        <div className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-2.5 text-xs text-violet-100">
+          {item.intraday_session_note}
         </div>
       )}
 

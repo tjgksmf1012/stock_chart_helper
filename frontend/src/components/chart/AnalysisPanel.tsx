@@ -12,6 +12,7 @@ import {
   fmtPct,
   fmtPrice,
   fmtTurnoverBillion,
+  INTRADAY_SESSION_LABELS,
   getPatternBias,
   PATTERN_NAMES,
   PATTERN_VARIANT_NAMES,
@@ -179,6 +180,11 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
           <StatRow label="유동성 점수" value={fmtPct(analysis.liquidity_score)} />
           <StatRow label="추세 방향" value={trendDirectionLabel(analysis.trend_direction)} />
           <StatRow label="와이코프 국면" value={WYCKOFF_LABELS[analysis.wyckoff_phase] ?? analysis.wyckoff_phase} />
+          <StatRow
+            label="장중 시간대"
+            value={INTRADAY_SESSION_LABELS[analysis.intraday_session_phase] ?? analysis.intraday_session_phase}
+          />
+          <StatRow label="장중 문맥 점수" value={fmtPct(analysis.intraday_session_score)} />
           <StatRow label="통계 기준" value={analysis.stats_timeframe} />
           <StatRow label="사용 가능 바 수" value={`${analysis.available_bars.toLocaleString('ko-KR')}개`} />
           {analysis.bars_since_signal !== null && (
@@ -186,6 +192,7 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
           )}
           <p className="pt-1 text-xs leading-relaxed text-muted-foreground">{analysis.source_note}</p>
           {analysis.wyckoff_note && <p className="text-xs text-sky-200">{analysis.wyckoff_note}</p>}
+          {analysis.intraday_session_note && <p className="text-xs text-violet-200">{analysis.intraday_session_note}</p>}
           {analysis.trend_warning && <p className="text-xs text-amber-300">{analysis.trend_warning}</p>}
           {analysis.fetch_message && <p className="text-xs text-muted-foreground">{analysis.fetch_message}</p>}
         </div>

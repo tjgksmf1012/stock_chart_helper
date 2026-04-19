@@ -90,6 +90,9 @@ export interface AnalysisResult {
   wyckoff_phase: string
   wyckoff_score: number
   wyckoff_note: string
+  intraday_session_phase: string
+  intraday_session_score: number
+  intraday_session_note: string
   no_signal_flag: boolean
   no_signal_reason: string
   reason_summary: string
@@ -147,6 +150,9 @@ export interface DashboardItem {
   wyckoff_phase: string
   wyckoff_score: number
   wyckoff_note: string
+  intraday_session_phase: string
+  intraday_session_score: number
+  intraday_session_note: string
   no_signal_flag: boolean
   reason_summary: string
   completion_proximity: number
