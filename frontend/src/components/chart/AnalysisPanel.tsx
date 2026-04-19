@@ -318,6 +318,22 @@ function ReentryCard({ analysis }: { analysis: AnalysisResult }) {
           <span className="font-medium text-amber-200">확인 포인트:</span> {analysis.reentry_trigger}
         </div>
       )}
+      {analysis.reentry_factors?.length > 0 && (
+        <div className="grid grid-cols-1 gap-2">
+          {analysis.reentry_factors.map(factor => (
+            <div key={factor.label} className="rounded-lg border border-border bg-background/60 p-2.5">
+              <div className="mb-1 flex items-center justify-between gap-2 text-xs">
+                <span className="font-medium text-foreground">{factor.label}</span>
+                <span className="font-mono text-muted-foreground">{fmtPct(factor.score, 0)} / {Math.round(factor.weight * 100)}%</span>
+              </div>
+              <div className="h-1.5 overflow-hidden rounded-full bg-card">
+                <div className="h-full rounded-full bg-amber-300" style={{ width: `${Math.round(factor.score * 100)}%` }} />
+              </div>
+              {factor.note && <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">{factor.note}</p>}
+            </div>
+          ))}
+        </div>
+      )}
     </Card>
   )
 }

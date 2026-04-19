@@ -791,8 +791,165 @@ def _freshness_profile(
         "freshness_summary": f"{label} 기준 아직 형성 단계라 신선도는 남아 있지만 확인 전 해석 오차도 함께 큽니다.",
     }
 
+def _score_clamp(value: float) -> float:
+    return round(max(0.0, min(1.0, value)), 3)
+
+
+def _reentry_window_size(timeframe: str) -> int:
+    if timeframe == "1mo":
+        return 6
+    if timeframe == "1wk":
+        return 8
+    if timeframe == "1d":
+        return 10
+    if timeframe == "60m":
+        return 12
+    if timeframe in {"30m", "15m"}:
+        return 14
+    return 18
+
+
+def _reentry_factor_breakdown(
+    *,
+    df: pd.DataFrame,
+    timeframe: str,
+    pattern: PatternResult,
+) -> dict[str, Any]:
+    if df.empty:
+        return {
+            "compression_score": 0.5,
+            "volume_recovery_score": 0.5,
+            "trigger_hold_score": 0.5,
+            "wick_absorption_score": 0.5,
+            "failure_burden_score": 0.5,
+            "detail_score": 0.5,
+            "reentry_factors": [],
+        }
+
+    bullish = _is_bullish(pattern.pattern_type) or not _is_bearish(pattern.pattern_type)
+    neckline = pattern.neckline
+    window = min(len(df), _reentry_window_size(timeframe))
+    recent = df.tail(window).copy()
+    prior = df.iloc[max(0, len(df) - window * 2): max(0, len(df) - window)].copy()
+
+    recent_high = pd.to_numeric(recent["high"], errors="coerce")
+    recent_low = pd.to_numeric(recent["low"], errors="coerce")
+    recent_open = pd.to_numeric(recent["open"], errors="coerce")
+    recent_close = pd.to_numeric(recent["close"], errors="coerce")
+    recent_volume = pd.to_numeric(recent["volume"], errors="coerce").fillna(0.0)
+
+    range_floor = max(float(recent_close.iloc[-1]) * 0.002, 1.0)
+    recent_range = float(recent_high.max() - recent_low.min()) if not recent.empty else range_floor
+    if prior.empty:
+        prior_range = recent_range
+        prior_volume = recent_volume
+    else:
+        prior_high = pd.to_numeric(prior["high"], errors="coerce")
+        prior_low = pd.to_numeric(prior["low"], errors="coerce")
+        prior_range = float(prior_high.max() - prior_low.min())
+        prior_volume = pd.to_numeric(prior["volume"], errors="coerce").fillna(0.0)
+
+    range_ratio = recent_range / max(prior_range, range_floor)
+    compression_score = _score_clamp((1.25 - range_ratio) / 0.85)
+
+    event_window = min(3, len(recent_volume))
+    event_volume = float(recent_volume.tail(event_window).mean()) if event_window else 0.0
+    base_volume_series = recent_volume.head(max(1, len(recent_volume) - event_window))
+    if base_volume_series.empty:
+        base_volume_series = prior_volume if not prior_volume.empty else recent_volume
+    base_volume = float(base_volume_series.mean()) if not base_volume_series.empty else 1.0
+    volume_ratio = event_volume / max(base_volume, 1.0)
+    volume_recovery_score = _score_clamp((volume_ratio - 0.72) / 0.88)
+
+    wick_scores: list[float] = []
+    for _, row in recent.tail(min(len(recent), 5)).iterrows():
+        open_price = float(row["open"])
+        high_price = float(row["high"])
+        low_price = float(row["low"])
+        close_price = float(row["close"])
+        bar_range = max(high_price - low_price, range_floor)
+        upper_wick = max(high_price - max(open_price, close_price), 0.0) / bar_range
+        lower_wick = max(min(open_price, close_price) - low_price, 0.0) / bar_range
+        close_location = (close_price - low_price) / bar_range if bullish else (high_price - close_price) / bar_range
+        wick_quality = (1.0 - upper_wick) if bullish else (1.0 - lower_wick)
+        wick_scores.append(0.55 * wick_quality + 0.45 * close_location)
+    wick_absorption_score = _score_clamp(sum(wick_scores) / max(len(wick_scores), 1))
+
+    if neckline is None:
+        trigger_hold_score = 0.5
+        failure_burden_score = 0.5
+    else:
+        closes = recent_close
+        lows = recent_low
+        highs = recent_high
+        if bullish:
+            side_holds = float((closes >= neckline * 0.995).mean())
+            defense = float(((lows <= neckline * 1.01) & (closes >= neckline * 0.995)).mean())
+        else:
+            side_holds = float((closes <= neckline * 1.005).mean())
+            defense = float(((highs >= neckline * 0.99) & (closes <= neckline * 1.005)).mean())
+        trigger_hold_score = _score_clamp(0.62 * side_holds + 0.38 * defense)
+
+        fail_count = 0
+        for _, row in recent.iterrows():
+            high_price = float(row["high"])
+            low_price = float(row["low"])
+            close_price = float(row["close"])
+            if bullish:
+                if high_price >= neckline * 1.002 and close_price < neckline:
+                    fail_count += 1
+            else:
+                if low_price <= neckline * 0.998 and close_price > neckline:
+                    fail_count += 1
+        failure_burden_score = _score_clamp(1.0 - fail_count / 3.0)
+
+    reentry_factors = [
+        {
+            "label": "박스 수축도",
+            "score": compression_score,
+            "weight": 0.20,
+            "note": "최근 변동폭이 직전 구간보다 줄수록 재축적 구조로 해석합니다.",
+        },
+        {
+            "label": "거래량 복원",
+            "score": volume_recovery_score,
+            "weight": 0.22,
+            "note": "최근 2~3개 바에서 거래량이 다시 붙는지 확인합니다.",
+        },
+        {
+            "label": "기준선 유지력",
+            "score": trigger_hold_score,
+            "weight": 0.24,
+            "note": "목선 또는 기준선 위/아래를 얼마나 안정적으로 지키는지 반영합니다.",
+        },
+        {
+            "label": "꼬리 흡수력",
+            "score": wick_absorption_score,
+            "weight": 0.18,
+            "note": "윗꼬리 또는 아랫꼬리를 얼마나 잘 소화하는지 봅니다.",
+        },
+        {
+            "label": "실패 부담 관리",
+            "score": failure_burden_score,
+            "weight": 0.16,
+            "note": "최근 재돌파 실패 횟수가 적을수록 높은 점수를 줍니다.",
+        },
+    ]
+    detail_score = _score_clamp(sum(float(item["score"]) * float(item["weight"]) for item in reentry_factors))
+    return {
+        "compression_score": compression_score,
+        "volume_recovery_score": volume_recovery_score,
+        "trigger_hold_score": trigger_hold_score,
+        "wick_absorption_score": wick_absorption_score,
+        "failure_burden_score": failure_burden_score,
+        "detail_score": detail_score,
+        "reentry_factors": reentry_factors,
+    }
+
+
 def _reentry_profile(
     *,
+    df: pd.DataFrame,
     timeframe: str,
     pattern: PatternResult | None,
     current_close: float,
@@ -814,7 +971,10 @@ def _reentry_profile(
             "reentry_case": "none",
             "reentry_case_label": "구조 없음",
             "reentry_trigger": "활성 패턴이 충분히 쌓이면 재진입 구조를 계산합니다.",
+            "reentry_factors": [],
         }
+
+    factor_profile = _reentry_factor_breakdown(df=df, timeframe=timeframe, pattern=pattern)
 
     neckline = pattern.neckline
     invalidation = pattern.invalidation_level
@@ -845,12 +1005,13 @@ def _reentry_profile(
         0.0,
         min(
             1.0,
-            0.34 * distance_to_trigger
-            + 0.20 * headroom_score
-            + 0.16 * recency_score
-            + 0.14 * completion_proximity
+            0.24 * distance_to_trigger
+            + 0.14 * headroom_score
+            + 0.12 * recency_score
+            + 0.10 * completion_proximity
             + 0.08 * min(1.0, target_distance_pct / 0.08)
-            + 0.08 * min(1.0, stop_distance_pct / 0.03),
+            + 0.08 * min(1.0, stop_distance_pct / 0.03)
+            + 0.24 * factor_profile["detail_score"],
         ),
     )
 
@@ -862,7 +1023,7 @@ def _reentry_profile(
             and recency_score >= 0.22
         )
         if repaired:
-            score = round(max(0.28, min(0.54, 0.78 * rebuild_score + 0.22 * recovery_from_invalidation)), 3)
+            score = round(max(0.28, min(0.54, 0.54 * rebuild_score + 0.22 * recovery_from_invalidation + 0.24 * factor_profile["detail_score"])), 3)
             return {
                 "reentry_score": score,
                 "reentry_label": "실패 후 복구 관찰",
@@ -870,6 +1031,7 @@ def _reentry_profile(
                 "reentry_case": "failed_breakout_recovery",
                 "reentry_case_label": "실패 돌파 복구형",
                 "reentry_trigger": f"무효화 구간 회복 유지와 {trigger_price:,.0f} 재돌파가 함께 확인되는지 보세요.",
+                "reentry_factors": factor_profile["reentry_factors"],
             }
         return {
             "reentry_score": 0.06,
@@ -878,6 +1040,7 @@ def _reentry_profile(
             "reentry_case": "avoid",
             "reentry_case_label": "재진입 비선호",
             "reentry_trigger": "추가 복구 없이 재진입을 서두르지 않는 편이 좋습니다.",
+            "reentry_factors": factor_profile["reentry_factors"],
         }
 
     if target_hit_at or pattern.state == "played_out":
@@ -887,8 +1050,8 @@ def _reentry_profile(
             and target_distance_pct >= 0.04
             and stop_distance_pct >= 0.01
         )
-        if reset_ready and inside_reset_box:
-            score = round(max(0.46, min(0.72, rebuild_score * 0.94)), 3)
+        if reset_ready and inside_reset_box and factor_profile["compression_score"] >= 0.56 and factor_profile["trigger_hold_score"] >= 0.54:
+            score = round(max(0.46, min(0.72, 0.52 * rebuild_score + 0.30 * factor_profile["compression_score"] + 0.18 * factor_profile["trigger_hold_score"])), 3)
             return {
                 "reentry_score": score,
                 "reentry_label": "재돌파 대기",
@@ -896,9 +1059,10 @@ def _reentry_profile(
                 "reentry_case": "box_reaccumulation",
                 "reentry_case_label": "박스 재축적형",
                 "reentry_trigger": f"목선 {trigger_price:,.0f} 부근 박스 유지 후 거래대금 동반 재돌파를 기다리세요.",
+                "reentry_factors": factor_profile["reentry_factors"],
             }
-        if reset_ready and shallow_pullback and above_neckline and entry_window_score >= 0.46:
-            score = round(max(0.44, min(0.70, rebuild_score * 0.9 + entry_window_score * 0.1)), 3)
+        if reset_ready and shallow_pullback and above_neckline and entry_window_score >= 0.46 and factor_profile["volume_recovery_score"] >= 0.5:
+            score = round(max(0.44, min(0.70, 0.44 * rebuild_score + 0.22 * entry_window_score + 0.20 * factor_profile["volume_recovery_score"] + 0.14 * factor_profile["wick_absorption_score"])), 3)
             return {
                 "reentry_score": score,
                 "reentry_label": "재돌파 대기",
@@ -906,9 +1070,10 @@ def _reentry_profile(
                 "reentry_case": "pullback_relaunch",
                 "reentry_case_label": "눌림 후 재상승형",
                 "reentry_trigger": f"목선 위 안착 유지와 최근 고점 재돌파가 함께 나오는지 보세요.",
+                "reentry_factors": factor_profile["reentry_factors"],
             }
         if reset_ready:
-            score = round(max(0.28, min(0.52, rebuild_score * 0.78)), 3)
+            score = round(max(0.28, min(0.52, 0.62 * rebuild_score + 0.38 * factor_profile["detail_score"])), 3)
             return {
                 "reentry_score": score,
                 "reentry_label": "재축적 관찰",
@@ -916,6 +1081,7 @@ def _reentry_profile(
                 "reentry_case": "range_reset",
                 "reentry_case_label": "재축적 준비형",
                 "reentry_trigger": f"박스 하단 이탈 없이 {trigger_price:,.0f} 재접근이 이어지는지 확인하세요.",
+                "reentry_factors": factor_profile["reentry_factors"],
             }
         return {
             "reentry_score": 0.12,
@@ -924,10 +1090,11 @@ def _reentry_profile(
             "reentry_case": "avoid",
             "reentry_case_label": "재진입 비선호",
             "reentry_trigger": "목표 소화 직후라 구조가 다시 쌓일 때까지 기다리는 편이 좋습니다.",
+            "reentry_factors": factor_profile["reentry_factors"],
         }
 
     if pattern.state == "confirmed" and entry_window_score >= 0.64 and headroom_score >= 0.32:
-        score = round(max(0.64, min(0.84, 0.56 * entry_window_score + 0.44 * headroom_score)), 3)
+        score = round(max(0.64, min(0.84, 0.46 * entry_window_score + 0.30 * headroom_score + 0.24 * factor_profile["detail_score"])), 3)
         return {
             "reentry_score": score,
             "reentry_label": "신규 셋업 우선",
@@ -935,10 +1102,11 @@ def _reentry_profile(
             "reentry_case": "primary_setup",
             "reentry_case_label": "신규 셋업 우선형",
             "reentry_trigger": "재진입보다 현재 1차 셋업의 추세 유지와 손익비를 먼저 보세요.",
+            "reentry_factors": factor_profile["reentry_factors"],
         }
 
     if pattern.state in {"armed", "forming"} and distance_to_trigger >= 0.52 and headroom_score >= 0.24:
-        score = round(max(0.44, min(0.68, rebuild_score * 0.92)), 3)
+        score = round(max(0.44, min(0.68, 0.58 * rebuild_score + 0.18 * factor_profile["volume_recovery_score"] + 0.14 * factor_profile["wick_absorption_score"] + 0.10 * factor_profile["trigger_hold_score"])), 3)
         return {
             "reentry_score": score,
             "reentry_label": "재돌파 대기",
@@ -946,9 +1114,10 @@ def _reentry_profile(
             "reentry_case": "pullback_relaunch",
             "reentry_case_label": "눌림 후 재상승형",
             "reentry_trigger": f"기준선 {trigger_price:,.0f} 재확인 뒤 돌파 캔들과 거래량 회복을 같이 확인하세요.",
+            "reentry_factors": factor_profile["reentry_factors"],
         }
 
-    score = round(max(0.22, min(0.52, 0.72 * rebuild_score + 0.28 * entry_window_score)), 3)
+    score = round(max(0.22, min(0.52, 0.50 * rebuild_score + 0.20 * entry_window_score + 0.30 * factor_profile["detail_score"])), 3)
     return {
         "reentry_score": score,
         "reentry_label": "신규 셋업 우선",
@@ -956,6 +1125,7 @@ def _reentry_profile(
         "reentry_case": "primary_setup",
         "reentry_case_label": "신규 셋업 우선형",
         "reentry_trigger": "현재 셋업 완성도가 먼저이며 재진입 시나리오는 보조적으로만 보세요.",
+        "reentry_factors": factor_profile["reentry_factors"],
     }
 
 def _stats_timeframe(timeframe: str) -> str:
@@ -2064,6 +2234,7 @@ def build_no_signal_snapshot(
         reentry_case="none",
         reentry_case_label="구조 없음",
         reentry_trigger="활성 패턴이 충분히 쌓이면 재진입 유형을 계산합니다.",
+        reentry_factors=[],
         score_factors=readiness["score_factors"],
         active_setup_score=0.0,
         active_setup_label="활성 셋업 없음",
@@ -2166,6 +2337,7 @@ async def analyze_symbol_dataframe(
         invalidated_at=best_invalidated_at,
     )
     reentry = _reentry_profile(
+        df=df,
         timeframe=timeframe,
         pattern=best_pattern,
         current_close=current_close,
@@ -2448,6 +2620,7 @@ async def analyze_symbol_dataframe(
         reentry_case=reentry["reentry_case"],
         reentry_case_label=reentry["reentry_case_label"],
         reentry_trigger=reentry["reentry_trigger"],
+        reentry_factors=reentry["reentry_factors"],
         score_factors=readiness["score_factors"],
         active_setup_score=active_setup["active_setup_score"],
         active_setup_label=active_setup["active_setup_label"],

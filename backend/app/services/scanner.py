@@ -716,6 +716,7 @@ async def _analyze_one(
             "reentry_case": analysis.reentry_case,
             "reentry_case_label": analysis.reentry_case_label,
             "reentry_trigger": analysis.reentry_trigger,
+            "reentry_factors": [factor.model_dump() for factor in analysis.reentry_factors],
             "score_factors": [factor.model_dump() for factor in analysis.score_factors],
             "active_setup_score": analysis.active_setup_score,
             "active_setup_label": analysis.active_setup_label,

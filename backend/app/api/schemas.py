@@ -130,6 +130,7 @@ class AnalysisResult(BaseModel):
     reentry_case: str = "none"
     reentry_case_label: str = "구조 없음"
     reentry_trigger: str = ""
+    reentry_factors: list[ScoreFactor] = Field(default_factory=list)
     score_factors: list[ScoreFactor] = Field(default_factory=list)
     active_setup_score: float = 0.0
     active_setup_label: str = "활성 셋업 없음"
@@ -218,6 +219,7 @@ class DashboardItem(BaseModel):
     reentry_case: str = "none"
     reentry_case_label: str = "구조 없음"
     reentry_trigger: str = ""
+    reentry_factors: list[ScoreFactor] = Field(default_factory=list)
     score_factors: list[ScoreFactor] = Field(default_factory=list)
     active_setup_score: float = 0.0
     active_setup_label: str = "활성 셋업 없음"

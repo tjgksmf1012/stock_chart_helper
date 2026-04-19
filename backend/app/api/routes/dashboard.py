@@ -72,6 +72,7 @@ def _make_item(rank: int, row: dict) -> DashboardItem:
         reentry_case=row.get("reentry_case", "none"),
         reentry_case_label=row.get("reentry_case_label", "구조 없음"),
         reentry_trigger=row.get("reentry_trigger", ""),
+        reentry_factors=row.get("reentry_factors", []),
         score_factors=row.get("score_factors", []),
         active_setup_score=row.get("active_setup_score", 0.0),
         active_setup_label=row.get("active_setup_label", "활성 셋업 없음"),
