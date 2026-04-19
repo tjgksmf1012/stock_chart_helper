@@ -12,6 +12,7 @@ import { useAppStore } from '@/store/app'
 export default function DashboardPage() {
   const { selectedTimeframe, setTimeframe } = useAppStore()
   const timeframe = selectedTimeframe ?? DEFAULT_TIMEFRAME
+  const intradayMode = ['60m', '30m', '15m', '1m'].includes(timeframe)
   const opts = { staleTime: 30_000, refetchInterval: 60_000 }
   const [isTriggeringScan, setIsTriggeringScan] = useState(false)
   const lastFinishedAtRef = useRef<string | null>(null)
@@ -21,6 +22,12 @@ export default function DashboardPage() {
   const simQ = useQuery({ queryKey: ['dashboard', timeframe, 'sim'], queryFn: () => dashboardApi.highSimilarity(timeframe), ...opts })
   const armedQ = useQuery({ queryKey: ['dashboard', timeframe, 'armed'], queryFn: () => dashboardApi.armed(timeframe), ...opts })
   const formingQ = useQuery({ queryKey: ['dashboard', timeframe, 'forming'], queryFn: () => dashboardApi.forming(timeframe), ...opts })
+  const liveQ = useQuery({
+    queryKey: ['dashboard', timeframe, 'live'],
+    queryFn: () => dashboardApi.liveIntraday(timeframe),
+    enabled: intradayMode,
+    ...opts,
+  })
   const noSigQ = useQuery({ queryKey: ['dashboard', timeframe, 'nosig'], queryFn: () => dashboardApi.noSignal(timeframe), ...opts })
   const statusQ = useQuery({
     queryKey: ['dashboard', timeframe, 'scan-status'],
@@ -30,9 +37,15 @@ export default function DashboardPage() {
   })
 
   const isRefreshing =
-    longQ.isFetching || shortQ.isFetching || simQ.isFetching || armedQ.isFetching || formingQ.isFetching || noSigQ.isFetching
+    longQ.isFetching ||
+    shortQ.isFetching ||
+    simQ.isFetching ||
+    armedQ.isFetching ||
+    formingQ.isFetching ||
+    liveQ.isFetching ||
+    noSigQ.isFetching
+
   const isScanActive = isTriggeringScan || statusQ.data?.is_running
-  const intradayMode = ['60m', '30m', '15m', '1m'].includes(timeframe)
 
   const refreshBoards = () => {
     longQ.refetch()
@@ -40,6 +53,7 @@ export default function DashboardPage() {
     simQ.refetch()
     armedQ.refetch()
     formingQ.refetch()
+    if (intradayMode) liveQ.refetch()
     noSigQ.refetch()
     statusQ.refetch()
   }
@@ -75,7 +89,7 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-xl font-bold">대시보드</h1>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            KRX 기준으로 타임프레임별 상승 확률, 형성 품질, 멀티 타임프레임 정렬을 함께 보는 메인 스캔 화면입니다.
+            KRX 기준으로 타임프레임별 상승 확률, 패턴 완성 임박도, 상위 추세 정렬, 데이터 품질을 함께 보는 메인 스캔 화면입니다.
           </p>
         </div>
 
@@ -101,8 +115,8 @@ export default function DashboardPage() {
         <div className="space-y-1">
           <div className="text-sm font-semibold">완성 신호와 형성 후보를 분리해서 봅니다</div>
           <p className="text-xs leading-relaxed text-muted-foreground">
-            이제 카드 정렬은 단순 상승 확률만이 아니라 형성 품질, 상위 타임프레임 정렬, 표본 신뢰도, 데이터 품질까지 함께 반영합니다.
-            이미 끝난 패턴과 아직 베이스를 만들고 있는 후보를 같은 톤으로 보여주지 않도록 구분하는 방향입니다.
+            이제 카드 정렬은 단순 확률만이 아니라 형성 품질, 상위 타임프레임 정렬, 표본 신뢰도, 데이터 품질까지 함께 반영합니다.
+            이미 끝난 패턴과 아직 베이스를 만드는 후보를 같은 강도로 보지 않도록 나눠두었습니다.
           </p>
         </div>
       </Card>
@@ -183,19 +197,11 @@ export default function DashboardPage() {
             <StatusCell label="Live 단계" value={livePhaseLabel(statusQ.data?.intraday_live_phase)} />
             <StatusCell
               label="Live 사용 수"
-              value={
-                statusQ.data?.intraday_live_candidate_count != null
-                  ? `${statusQ.data.intraday_live_candidate_count}개`
-                  : '-'
-              }
+              value={statusQ.data?.intraday_live_candidate_count != null ? `${statusQ.data.intraday_live_candidate_count}개` : '-'}
             />
             <StatusCell
               label="Live 한도"
-              value={
-                statusQ.data?.intraday_live_candidate_limit != null
-                  ? `${statusQ.data.intraday_live_candidate_limit}개`
-                  : '-'
-              }
+              value={statusQ.data?.intraday_live_candidate_limit != null ? `${statusQ.data.intraday_live_candidate_limit}개` : '-'}
             />
             <StatusCell label="운용 메모" value={livePhaseNote(statusQ.data?.intraday_live_phase)} />
           </div>
@@ -217,10 +223,19 @@ export default function DashboardPage() {
 
       <DashboardSection
         title="패턴 완성 임박"
-        subtitle="이미 거의 다 만들어졌고, 돌파 감시 단계에 가까운 후보들입니다."
+        subtitle="거의 다 만들어졌고 돌파 감시 단계에 가까운 후보입니다."
         data={armedQ.data}
         isLoading={armedQ.isLoading}
       />
+
+      {intradayMode && (
+        <DashboardSection
+          title="Live 분봉 후보"
+          subtitle="지금 실제 live KIS 분봉까지 열어 확인 중인 후보입니다. 저장 분봉이나 공개 소스 기반 후보보다 우선 관찰할 묶음입니다."
+          data={liveQ.data}
+          isLoading={liveQ.isLoading}
+        />
+      )}
 
       <DashboardSection
         title="형성 중 후보"
@@ -230,15 +245,15 @@ export default function DashboardPage() {
       />
 
       <DashboardSection
-        title="교과서형 패턴"
-        subtitle="교과서 유사도가 높은 구조들입니다. 이제는 형성 품질이 낮으면 유사도 상한도 같이 깎이도록 보정했습니다."
+        title="교과서 유사형 패턴"
+        subtitle="교과서와의 유사도가 높은 구조입니다. 이제는 형성 품질과 최신성도 함께 보정합니다."
         data={simQ.data}
         isLoading={simQ.isLoading}
       />
 
       <DashboardSection
         title="하락 확률 상위"
-        subtitle="약세 패턴과 하락 방향 정렬이 같이 들어오는 종목입니다."
+        subtitle="약세 패턴과 하락 방향 정렬이 함께 들어온 종목입니다."
         data={shortQ.data}
         isLoading={shortQ.isLoading}
       />

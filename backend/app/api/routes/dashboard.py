@@ -224,3 +224,27 @@ async def dashboard_forming(
     )
     items = [_make_item(index + 1, row) for index, row in enumerate(ranked[:limit])]
     return _response("forming_candidates", timeframe, items)
+
+
+@router.get("/live-intraday-candidates")
+async def dashboard_live_intraday(
+    timeframe: str = Query(default=DEFAULT_TIMEFRAME),
+    limit: int = Query(default=10, le=50),
+) -> DashboardResponse:
+    timeframe = _timeframe_query(timeframe)
+    data = await get_scan_results(timeframe)
+    ranked = [
+        row for row in data
+        if row.get("fetch_status") in {"live_ok", "live_augmented_by_store"}
+    ]
+    ranked.sort(
+        key=lambda row: (
+            row.get("composite_score", row.get("entry_score", 0.0)),
+            row.get("historical_edge_score", 0.0),
+            row.get("completion_proximity", 0.0),
+            row.get("liquidity_score", 0.0),
+        ),
+        reverse=True,
+    )
+    items = [_make_item(index + 1, row) for index, row in enumerate(ranked[:limit])]
+    return _response("live_intraday_candidates", timeframe, items)
