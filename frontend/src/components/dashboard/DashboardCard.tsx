@@ -51,6 +51,7 @@ export function DashboardCard({ item, intradayPreset }: DashboardCardProps) {
             <span>{item.symbol.market}</span>
             <span>·</span>
             <span>{item.timeframe_label}</span>
+            <Badge variant={actionPlanVariant(item.action_plan)}>{item.action_plan_label}</Badge>
             <Badge variant={item.data_quality >= 0.8 ? 'bullish' : item.data_quality >= 0.6 ? 'muted' : 'warning'}>
               품질 {fmtPct(item.data_quality, 0)}
             </Badge>
@@ -135,6 +136,16 @@ export function DashboardCard({ item, intradayPreset }: DashboardCardProps) {
       </div>
 
       <ProbBar p_up={item.p_up} p_down={item.p_down} />
+
+      {item.action_plan_summary && (
+        <div className="rounded-lg border border-primary/20 bg-primary/5 p-2.5 text-xs leading-relaxed text-muted-foreground">
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <span className="font-medium text-primary">실전 행동</span>
+            <span>{fmtPct(item.action_priority_score ?? 0, 0)}</span>
+          </div>
+          {item.action_plan_summary}
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
         <span>신뢰도 {fmtPct(item.confidence)}</span>
@@ -258,6 +269,13 @@ function modeVariant(mode: string): 'bullish' | 'warning' | 'muted' {
     default:
       return 'muted'
   }
+}
+
+function actionPlanVariant(plan: string): 'bullish' | 'warning' | 'muted' | 'neutral' {
+  if (plan === 'ready_now') return 'bullish'
+  if (plan === 'watch') return 'neutral'
+  if (plan === 'recheck') return 'warning'
+  return 'muted'
 }
 
 function presetActionNote(item: DashboardItem, preset?: string): string {

@@ -55,12 +55,12 @@ _KST = ZoneInfo("Asia/Seoul")
 
 
 def _full_scan_cache_key(timeframe: str) -> str:
-    return f"scanner:v3:full_results:{timeframe}"
+    return f"scanner:v4:full_results:{timeframe}"
 
 
 def _single_scan_cache_key(timeframe: str, code: str, allow_live_intraday: bool = True) -> str:
     mode = "live" if allow_live_intraday else "budget"
-    return f"scan:v3:result:{timeframe}:{code}:{mode}"
+    return f"scan:v4:result:{timeframe}:{code}:{mode}"
 
 
 def _utc_now_iso() -> str:
@@ -175,6 +175,7 @@ def _effective_live_intraday_limit(timeframe: str, candidate_count: int, now: da
 
 def _live_intraday_priority(row: dict[str, Any], timeframe: str) -> float:
     setup_stage = str(row.get("setup_stage") or "")
+    action_plan = str(row.get("action_plan") or "watch")
     stage_bonus = {
         "confirmed": 0.12,
         "trigger_ready": 0.11,
@@ -189,6 +190,12 @@ def _live_intraday_priority(row: dict[str, Any], timeframe: str) -> float:
         "30m": 0.03,
         "60m": 0.02,
     }.get(timeframe, 0.0)
+    action_bonus = {
+        "ready_now": 0.08,
+        "watch": 0.03,
+        "recheck": -0.03,
+        "cooling": -0.14,
+    }.get(action_plan, 0.0)
     return (
         0.28 * float(row.get("entry_score", 0.0))
         + 0.18 * float(row.get("completion_proximity", 0.0))
@@ -198,8 +205,10 @@ def _live_intraday_priority(row: dict[str, Any], timeframe: str) -> float:
         + 0.08 * float(row.get("historical_edge_score", 0.0))
         + 0.08 * float(row.get("trend_alignment_score", 0.0))
         + 0.05 * float(row.get("data_quality", 0.0))
+        + 0.08 * float(row.get("action_priority_score", 0.0))
         + stage_bonus
         + timeframe_bias
+        + action_bonus
     )
 
 
@@ -333,6 +342,8 @@ def _apply_setup_metadata(row: dict[str, Any]) -> dict[str, Any]:
     formation_quality = round(_formation_quality_from_row(row), 3)
     row["formation_quality"] = formation_quality
     row["setup_stage"] = _setup_stage({**row, "formation_quality": formation_quality})
+    action_plan = str(row.get("action_plan") or "watch")
+    action_priority = float(row.get("action_priority_score", 0.0))
 
     if row["setup_stage"] == "late_base":
         row["scenario_text"] = (
@@ -368,6 +379,19 @@ def _apply_setup_metadata(row: dict[str, Any]) -> dict[str, Any]:
         row["composite_score"] = round(float(row.get("composite_score", 0.0)) - 0.03, 3)
     elif intraday_phase == "off_hours":
         row["composite_score"] = round(float(row.get("composite_score", 0.0)) - 0.02, 3)
+
+    action_adjustment = {
+        "ready_now": 0.08,
+        "watch": 0.03,
+        "recheck": -0.04,
+        "cooling": -0.16,
+    }.get(action_plan, 0.0)
+    row["composite_score"] = round(
+        float(row.get("composite_score", 0.0)) + action_adjustment + 0.06 * max(-0.5, min(0.5, action_priority - 0.5)),
+        3,
+    )
+    if action_plan in {"cooling", "recheck"} and row.get("action_plan_summary"):
+        row["scenario_text"] = str(row["action_plan_summary"])
 
     return row
 
@@ -609,6 +633,10 @@ async def _analyze_one(
             "intraday_session_phase": analysis.intraday_session_phase,
             "intraday_session_score": analysis.intraday_session_score,
             "intraday_session_note": analysis.intraday_session_note,
+            "action_plan": analysis.action_plan,
+            "action_plan_label": analysis.action_plan_label,
+            "action_plan_summary": analysis.action_plan_summary,
+            "action_priority_score": analysis.action_priority_score,
             "no_signal_flag": analysis.no_signal_flag,
             "reason_summary": analysis.reason_summary,
             "completion_proximity": analysis.completion_proximity,
@@ -683,7 +711,9 @@ async def _select_candidates(limit: int, timeframe: str) -> tuple[list[tuple[str
     daily_candidates = [
         row
         for row in daily_candidates
-        if row.get("entry_score", 0) >= 0.45 and row.get("confidence", 0) >= 0.30
+        if row.get("entry_score", 0) >= 0.45
+        and row.get("confidence", 0) >= 0.30
+        and row.get("action_plan") != "cooling"
     ]
     daily_candidates.sort(
         key=lambda row: (

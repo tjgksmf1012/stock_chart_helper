@@ -50,6 +50,10 @@ def _make_item(rank: int, row: dict) -> DashboardItem:
         trend_alignment_score=row.get("trend_alignment_score", 0.0),
         trend_direction=row.get("trend_direction", "sideways"),
         trend_warning=row.get("trend_warning", ""),
+        action_plan=row.get("action_plan", "watch"),
+        action_plan_label=row.get("action_plan_label", "관찰 후보"),
+        action_plan_summary=row.get("action_plan_summary", ""),
+        action_priority_score=row.get("action_priority_score", 0.0),
         no_signal_flag=row["no_signal_flag"],
         reason_summary=row["reason_summary"],
         completion_proximity=row.get("completion_proximity", 0.0),
@@ -109,7 +113,7 @@ async def dashboard_long(
 ) -> DashboardResponse:
     timeframe = _timeframe_query(timeframe)
     data = await get_scan_results(timeframe)
-    ranked = [row for row in data if not row["no_signal_flag"] and row["p_up"] > 0.55]
+    ranked = [row for row in data if not row["no_signal_flag"] and row["p_up"] > 0.55 and row.get("action_plan") != "cooling"]
     ranked.sort(
         key=lambda row: (
             row.get("composite_score", row["entry_score"]),
@@ -130,7 +134,7 @@ async def dashboard_short(
 ) -> DashboardResponse:
     timeframe = _timeframe_query(timeframe)
     data = await get_scan_results(timeframe)
-    ranked = [row for row in data if not row["no_signal_flag"] and row["p_down"] > 0.55]
+    ranked = [row for row in data if not row["no_signal_flag"] and row["p_down"] > 0.55 and row.get("action_plan") != "cooling"]
     ranked.sort(
         key=lambda row: (
             row.get("composite_score", row["p_down"]),

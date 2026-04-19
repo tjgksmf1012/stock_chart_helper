@@ -162,6 +162,10 @@ class DashboardItem(BaseModel):
     intraday_session_phase: str = "neutral"
     intraday_session_score: float = 0.0
     intraday_session_note: str = ""
+    action_plan: str = "watch"
+    action_plan_label: str = "관찰 후보"
+    action_plan_summary: str = ""
+    action_priority_score: float = 0.0
     no_signal_flag: bool
     reason_summary: str
     completion_proximity: float = 0.0

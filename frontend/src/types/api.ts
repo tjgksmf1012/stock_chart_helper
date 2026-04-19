@@ -157,6 +157,10 @@ export interface DashboardItem {
   intraday_session_phase: string
   intraday_session_score: number
   intraday_session_note: string
+  action_plan: string
+  action_plan_label: string
+  action_plan_summary: string
+  action_priority_score: number
   no_signal_flag: boolean
   reason_summary: string
   completion_proximity: number
