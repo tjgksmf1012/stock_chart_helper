@@ -11,9 +11,10 @@ import { useAppStore } from '@/store/app'
 
 interface DashboardCardProps {
   item: DashboardItem
+  intradayPreset?: string
 }
 
-export function DashboardCard({ item }: DashboardCardProps) {
+export function DashboardCard({ item, intradayPreset }: DashboardCardProps) {
   const nav = useNavigate()
   const { addToWatchlist, removeFromWatchlist, isWatched, setTimeframe } = useAppStore()
   const watched = isWatched(item.symbol.code)
@@ -27,6 +28,8 @@ export function DashboardCard({ item }: DashboardCardProps) {
       addToWatchlist({ code: item.symbol.code, name: item.symbol.name, market: item.symbol.market })
     }
   }
+
+  const presetNote = isIntraday ? presetActionNote(item, intradayPreset) : ''
 
   return (
     <Card
@@ -197,6 +200,12 @@ export function DashboardCard({ item }: DashboardCardProps) {
         </div>
       )}
 
+      {presetNote && (
+        <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 p-2.5 text-xs text-cyan-100">
+          {presetNote}
+        </div>
+      )}
+
       <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">{item.reason_summary}</p>
 
       {item.no_signal_flag && <Badge variant="warning">No Signal</Badge>}
@@ -248,5 +257,24 @@ function modeVariant(mode: string): 'bullish' | 'warning' | 'muted' {
       return 'warning'
     default:
       return 'muted'
+  }
+}
+
+function presetActionNote(item: DashboardItem, preset?: string): string {
+  switch (preset) {
+    case 'ready-now':
+      return item.live_intraday_candidate
+        ? '지금은 live 분봉으로 확인 중인 즉시 대응 후보입니다. 무효화 기준과 돌파 지속 여부를 먼저 보세요.'
+        : '즉시 대응 프리셋에 들어왔지만 live 추적까지는 아닙니다. 진입 전 한 번 더 확인하는 편이 좋습니다.'
+    case 'watch':
+      return '아직 완성 신호보다 형성 과정에 가깝습니다. 돌파 확인이나 상위 타임프레임 정렬이 붙는지 지켜보세요.'
+    case 'recheck':
+      return '저장 분봉이나 공개 소스 중심 후보입니다. 장중 변동이 크면 한 번 더 새로고침해서 상태를 확인하는 편이 좋습니다.'
+    case 'cooling':
+      return item.no_signal_flag
+        ? '지금은 관망 쪽에 더 가깝습니다. 품질 회복이나 새 트리거가 생길 때까지 기다리는 편이 낫습니다.'
+        : '냉각 구간 후보입니다. KIS 쿨다운 해제나 세팅 회복 뒤 다시 보는 흐름이 좋습니다.'
+    default:
+      return ''
   }
 }

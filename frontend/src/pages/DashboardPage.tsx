@@ -312,6 +312,7 @@ export default function DashboardPage() {
         subtitle="상승 확률, 형성 품질, 상위 타임프레임 정렬이 함께 좋은 종목입니다."
         data={filterDashboard(longQ.data)}
         isLoading={longQ.isLoading}
+        intradayPreset={intradayMode ? intradayPreset : undefined}
       />
 
       <DashboardSection
@@ -319,6 +320,7 @@ export default function DashboardPage() {
         subtitle="거의 다 만들어졌고 돌파 감시 단계에 가까운 후보입니다."
         data={filterDashboard(armedQ.data)}
         isLoading={armedQ.isLoading}
+        intradayPreset={intradayMode ? intradayPreset : undefined}
       />
 
       {intradayMode && (
@@ -327,6 +329,7 @@ export default function DashboardPage() {
           subtitle="지금 실제 live KIS 분봉까지 열어 확인 중인 후보입니다. 저장 분봉이나 공개 소스 기반 후보보다 우선 관찰할 묶음입니다."
           data={filterDashboard(liveQ.data)}
           isLoading={liveQ.isLoading}
+          intradayPreset={intradayPreset}
         />
       )}
 
@@ -335,6 +338,7 @@ export default function DashboardPage() {
         subtitle="아직 forming 상태지만 상위 추세와 구조가 받쳐주는 베이스 후보입니다. 완성 신호가 아니라 관찰용 후보군으로 보세요."
         data={filterDashboard(formingQ.data)}
         isLoading={formingQ.isLoading}
+        intradayPreset={intradayMode ? intradayPreset : undefined}
       />
 
       <DashboardSection
@@ -342,6 +346,7 @@ export default function DashboardPage() {
         subtitle="교과서와의 유사도가 높은 구조입니다. 이제는 형성 품질과 최신성도 함께 보정합니다."
         data={filterDashboard(simQ.data)}
         isLoading={simQ.isLoading}
+        intradayPreset={intradayMode ? intradayPreset : undefined}
       />
 
       <DashboardSection
@@ -349,6 +354,7 @@ export default function DashboardPage() {
         subtitle="약세 패턴과 하락 방향 정렬이 함께 들어온 종목입니다."
         data={filterDashboard(shortQ.data)}
         isLoading={shortQ.isLoading}
+        intradayPreset={intradayMode ? intradayPreset : undefined}
       />
 
       <DashboardSection
@@ -356,6 +362,7 @@ export default function DashboardPage() {
         subtitle="데이터 품질, 표본 신뢰도, 손익비, 형성 과정 점수 중 하나 이상이 부족해 보수적으로 관망 처리한 종목입니다."
         data={filterDashboard(noSigQ.data)}
         isLoading={noSigQ.isLoading}
+        intradayPreset={intradayMode ? intradayPreset : undefined}
       />
     </div>
   )

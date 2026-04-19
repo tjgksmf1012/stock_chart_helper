@@ -8,9 +8,10 @@ interface DashboardSectionProps {
   subtitle: string
   data: DashboardResponse | undefined
   isLoading: boolean
+  intradayPreset?: string
 }
 
-export function DashboardSection({ title, subtitle, data, isLoading }: DashboardSectionProps) {
+export function DashboardSection({ title, subtitle, data, isLoading, intradayPreset }: DashboardSectionProps) {
   return (
     <div className="space-y-3">
       <div>
@@ -27,7 +28,7 @@ export function DashboardSection({ title, subtitle, data, isLoading }: Dashboard
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {data.items.map(item => (
-            <DashboardCard key={`${item.timeframe}-${item.symbol.code}`} item={item} />
+            <DashboardCard key={`${item.timeframe}-${item.symbol.code}`} item={item} intradayPreset={intradayPreset} />
           ))}
         </div>
       )}
