@@ -70,6 +70,9 @@ def _make_item(rank: int, row: dict) -> DashboardItem:
         confluence_score=row.get("confluence_score", 0.0),
         confluence_summary=row.get("confluence_summary", ""),
         scenario_text=row.get("scenario_text", ""),
+        live_intraday_candidate=row.get("live_intraday_candidate", False),
+        live_intraday_priority_score=row.get("live_intraday_priority_score", 0.0),
+        live_intraday_reason=row.get("live_intraday_reason", ""),
     )
 
 

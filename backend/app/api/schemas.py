@@ -178,6 +178,9 @@ class DashboardItem(BaseModel):
     confluence_score: float = 0.0
     confluence_summary: str = ""
     scenario_text: str = ""
+    live_intraday_candidate: bool = False
+    live_intraday_priority_score: float = 0.0
+    live_intraday_reason: str = ""
 
 
 class DashboardResponse(BaseModel):

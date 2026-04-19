@@ -173,6 +173,9 @@ export interface DashboardItem {
   confluence_score: number
   confluence_summary: string
   scenario_text: string
+  live_intraday_candidate: boolean
+  live_intraday_priority_score: number
+  live_intraday_reason: string
 }
 
 export interface DashboardResponse {

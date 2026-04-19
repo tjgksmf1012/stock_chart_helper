@@ -203,6 +203,35 @@ def _live_intraday_priority(row: dict[str, Any], timeframe: str) -> float:
     )
 
 
+def _live_intraday_reason(row: dict[str, Any], timeframe: str, phase: str) -> str:
+    reasons: list[str] = []
+    if float(row.get("entry_score", 0.0)) >= 0.72:
+        reasons.append("진입 적합도")
+    if float(row.get("completion_proximity", 0.0)) >= 0.68:
+        reasons.append("완성 임박도")
+    if float(row.get("liquidity_score", 0.0)) >= 0.72:
+        reasons.append("유동성")
+    if float(row.get("recency_score", 0.0)) >= 0.62:
+        reasons.append("신호 최신성")
+    if str(row.get("setup_stage") or "") in {"trigger_ready", "confirmed", "breakout_watch"}:
+        reasons.append("세팅 단계")
+    if float(row.get("historical_edge_score", 0.0)) >= 0.58:
+        reasons.append("과거 edge")
+
+    if not reasons:
+        reasons.append("종합 우선순위")
+
+    phase_prefix = {
+        "open_drive": "장초반 확대",
+        "regular_session": "장중 선별",
+        "midday": "점심장 축소",
+        "closing_drive": "마감 전 확대",
+        "off_hours": "장외 절약",
+    }.get(phase, "분봉 선별")
+
+    return f"{phase_prefix} live 후보: {', '.join(reasons[:3])}"
+
+
 def _formation_quality_from_row(row: dict[str, Any]) -> float:
     return float(
         row.get("formation_quality")
@@ -568,6 +597,10 @@ async def _analyze_one(
             )
 
         result = _apply_setup_metadata(result)
+        if timeframe in {"1m", "15m", "30m", "60m"}:
+            result["live_intraday_priority_score"] = round(_live_intraday_priority(result, timeframe), 3)
+            result["live_intraday_candidate"] = False
+            result["live_intraday_reason"] = ""
         await cache_set(cache_key, result, ttl=1800)
         return result
     except Exception as exc:
@@ -685,6 +718,13 @@ async def run_scan(
                 batch_results = await asyncio.gather(*tasks, return_exceptions=True)
                 for item in batch_results:
                     if isinstance(item, dict):
+                        if timeframe in {"1m", "15m", "30m", "60m"}:
+                            item["live_intraday_candidate"] = item.get("code") in live_codes
+                            item["live_intraday_reason"] = (
+                                _live_intraday_reason(item, timeframe, live_phase)
+                                if item["live_intraday_candidate"]
+                                else ""
+                            )
                         results.append(item)
                 await asyncio.sleep(0.08)
 
@@ -784,6 +824,14 @@ async def get_scan_results(timeframe: str = DEFAULT_TIMEFRAME) -> list[dict[str,
         return_exceptions=True,
     )
     results = [item for item in quick if isinstance(item, dict)]
+    if timeframe in {"1m", "15m", "30m", "60m"}:
+        for item in results:
+            item["live_intraday_candidate"] = item.get("code") in fallback_live_codes
+            item["live_intraday_reason"] = (
+                _live_intraday_reason(item, timeframe, intraday_live_phase)
+                if item["live_intraday_candidate"]
+                else ""
+            )
     results.sort(
         key=lambda row: (
             row.get("composite_score", row.get("entry_score", 0)),

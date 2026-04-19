@@ -89,6 +89,9 @@ export function DashboardCard({ item }: DashboardCardProps) {
             >
               {INTRADAY_SESSION_LABELS[item.intraday_session_phase] ?? item.intraday_session_phase}
             </Badge>
+            {item.live_intraday_candidate && (
+              <Badge variant="bullish">live {fmtPct(item.live_intraday_priority_score, 0)}</Badge>
+            )}
           </div>
 
           {item.pattern_type ? (
@@ -157,6 +160,12 @@ export function DashboardCard({ item }: DashboardCardProps) {
       {item.intraday_session_note && (
         <div className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-2.5 text-xs text-violet-100">
           {item.intraday_session_note}
+        </div>
+      )}
+
+      {item.live_intraday_candidate && item.live_intraday_reason && (
+        <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-2.5 text-xs text-emerald-100">
+          {item.live_intraday_reason}
         </div>
       )}
 
