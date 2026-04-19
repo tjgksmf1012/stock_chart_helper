@@ -2,7 +2,7 @@ import axios from 'axios'
 import type {
   SymbolInfo, OHLCVBar, AnalysisResult, PriceInfo,
   DashboardResponse, PatternLibraryEntry, ScreenerRequest, DashboardItem, ScanStatusResponse, Timeframe,
-  IntradayWarmupRequest, IntradayWarmupResponse, PatternStatsResponse, RuntimeStatusResponse,
+  IntradayCandidateWarmupRequest, IntradayWarmupRequest, IntradayWarmupResponse, PatternStatsResponse, RuntimeStatusResponse,
 } from '@/types/api'
 
 const api = axios.create({ baseURL: '/api/v1' })
@@ -44,4 +44,6 @@ export const systemApi = {
   status: () => api.get<RuntimeStatusResponse>('/system/status').then(r => r.data),
   warmupIntraday: (req: IntradayWarmupRequest) =>
     api.post<IntradayWarmupResponse>('/system/intraday/warmup', req).then(r => r.data),
+  warmupCandidates: (req: IntradayCandidateWarmupRequest) =>
+    api.post<IntradayWarmupResponse>('/system/intraday/warmup-candidates', req).then(r => r.data),
 }

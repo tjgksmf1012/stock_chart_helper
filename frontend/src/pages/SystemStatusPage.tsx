@@ -1,14 +1,23 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
-import { Activity, Clock3, Database, KeyRound, RefreshCw, ServerCog, ShieldCheck } from 'lucide-react'
+import { useState } from 'react'
+import { Activity, Clock3, Database, DatabaseZap, KeyRound, RefreshCw, ServerCog, ShieldCheck } from 'lucide-react'
 
 import { Badge } from '@/components/ui/Badge'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { StatRow } from '@/components/ui/StatRow'
 import { systemApi } from '@/lib/api'
 import { fmtDateTime } from '@/lib/utils'
+import type { IntradayWarmupResponse, Timeframe } from '@/types/api'
+
+const INTRADAY_TIMEFRAMES = ['15m', '30m', '60m']
 
 export default function SystemStatusPage() {
+  const [manualSymbols, setManualSymbols] = useState('')
+  const [candidateLimit, setCandidateLimit] = useState(20)
+  const [sourceTimeframe, setSourceTimeframe] = useState<Timeframe>('1d')
+  const queryClient = useQueryClient()
+
   const statusQ = useQuery({
     queryKey: ['system', 'status'],
     queryFn: systemApi.status,
@@ -16,7 +25,30 @@ export default function SystemStatusPage() {
     refetchInterval: 30_000,
   })
 
+  const manualWarmup = useMutation({
+    mutationFn: (allowLive: boolean) =>
+      systemApi.warmupIntraday({
+        symbols: parseSymbols(manualSymbols),
+        timeframes: INTRADAY_TIMEFRAMES,
+        allow_live: allowLive,
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['system', 'status'] }),
+  })
+
+  const candidateWarmup = useMutation({
+    mutationFn: (allowLive: boolean) =>
+      systemApi.warmupCandidates({
+        source_timeframe: sourceTimeframe,
+        limit: candidateLimit,
+        timeframes: INTRADAY_TIMEFRAMES,
+        allow_live: allowLive,
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['system', 'status'] }),
+  })
+
   const data = statusQ.data
+  const latestWarmup = candidateWarmup.data ?? manualWarmup.data
+  const isWarming = manualWarmup.isPending || candidateWarmup.isPending
 
   return (
     <div className="space-y-5">
@@ -24,7 +56,7 @@ export default function SystemStatusPage() {
         <div>
           <h1 className="text-xl font-bold">운영 상태</h1>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            KIS 토큰, 캐시 백엔드, 데이터 수집 방식을 한 화면에서 확인합니다. 실전 사용 전에 여기서 데이터 신뢰도를 먼저 확인하면 좋습니다.
+            KIS 토큰, 캐시 백엔드, 분봉 저장 현황, 후보 분봉 예열을 한 화면에서 관리합니다.
           </p>
         </div>
         <button
@@ -60,9 +92,9 @@ export default function SystemStatusPage() {
             />
             <StatusSummary
               icon={<Database size={15} />}
-              label="캐시 백엔드"
-              value={data.cache.backend}
-              tone={data.cache.redis_available ? 'bullish' : 'muted'}
+              label="분봉 저장"
+              value={`${data.intraday_store.symbol_count}종목`}
+              tone={data.intraday_store.symbol_count > 0 ? 'bullish' : 'muted'}
             />
             <StatusSummary
               icon={<Activity size={15} />}
@@ -120,22 +152,91 @@ export default function SystemStatusPage() {
                     </div>
                   </div>
                 )}
-                <div className="rounded-lg border border-border bg-background/60 p-3">
-                  <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                    <Clock3 size={12} />
-                    데이터 메모
-                  </div>
-                  <div className="space-y-1.5">
-                    {data.data_notes.map((note, index) => (
-                      <p key={`${note}-${index}`} className="text-xs leading-relaxed text-muted-foreground">
-                        {index + 1}. {note}
-                      </p>
-                    ))}
-                  </div>
-                </div>
               </div>
             </Card>
           </div>
+
+          <Card className="space-y-4 border-primary/20 bg-primary/5">
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <DatabaseZap size={15} className="text-primary" />
+              분봉 캐시 예열
+            </div>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              대시보드 상위 후보나 직접 입력한 종목의 15분, 30분, 60분 데이터를 미리 저장합니다.
+              기본은 저장/공개 데이터 우선이고, 장중 최신성이 꼭 필요할 때만 KIS 포함 버튼을 사용하세요.
+            </p>
+
+            <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+              <div className="rounded-lg border border-border bg-background/60 p-3">
+                <div className="mb-2 text-xs font-semibold">대시보드 후보 예열</div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    value={sourceTimeframe}
+                    onChange={event => setSourceTimeframe(event.target.value as Timeframe)}
+                    className="rounded-md border border-border bg-card px-2 py-1.5 text-xs"
+                  >
+                    <option value="1d">일봉 후보</option>
+                    <option value="1wk">주봉 후보</option>
+                    <option value="60m">60분 후보</option>
+                  </select>
+                  <input
+                    type="number"
+                    min={1}
+                    max={50}
+                    value={candidateLimit}
+                    onChange={event => setCandidateLimit(Number(event.target.value))}
+                    className="w-20 rounded-md border border-border bg-card px-2 py-1.5 text-xs"
+                  />
+                  <button
+                    onClick={() => candidateWarmup.mutate(false)}
+                    disabled={isWarming}
+                    className="rounded-md border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground disabled:opacity-60"
+                  >
+                    저장/공개 예열
+                  </button>
+                  <button
+                    onClick={() => candidateWarmup.mutate(true)}
+                    disabled={isWarming}
+                    className="rounded-md border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs text-primary hover:bg-primary/15 disabled:opacity-60"
+                  >
+                    KIS 포함 예열
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-border bg-background/60 p-3">
+                <div className="mb-2 text-xs font-semibold">직접 종목 예열</div>
+                <textarea
+                  value={manualSymbols}
+                  onChange={event => setManualSymbols(event.target.value)}
+                  placeholder="예: 005930, 000660, 035420"
+                  className="min-h-16 w-full rounded-md border border-border bg-card px-2 py-1.5 text-xs outline-none focus:border-primary/60"
+                />
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    onClick={() => manualWarmup.mutate(false)}
+                    disabled={isWarming || parseSymbols(manualSymbols).length === 0}
+                    className="rounded-md border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground disabled:opacity-60"
+                  >
+                    저장/공개 예열
+                  </button>
+                  <button
+                    onClick={() => manualWarmup.mutate(true)}
+                    disabled={isWarming || parseSymbols(manualSymbols).length === 0}
+                    className="rounded-md border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs text-primary hover:bg-primary/15 disabled:opacity-60"
+                  >
+                    KIS 포함 예열
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {isWarming && <p className="text-xs text-muted-foreground">분봉 데이터를 예열하는 중입니다. 종목 수가 많으면 조금 걸릴 수 있습니다.</p>}
+            {latestWarmup && <WarmupResultSummary result={latestWarmup} />}
+            {(manualWarmup.isError || candidateWarmup.isError) && (
+              <p className="text-xs text-red-300">분봉 예열 중 오류가 발생했습니다. 종목 코드와 백엔드 로그를 확인해 주세요.</p>
+            )}
+          </Card>
 
           <Card className="space-y-3">
             <div className="flex items-center gap-2 text-sm font-semibold">
@@ -150,8 +251,46 @@ export default function SystemStatusPage() {
               ))}
             </div>
           </Card>
+
+          <Card>
+            <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <Clock3 size={12} />
+              데이터 메모
+            </div>
+            <div className="space-y-1.5">
+              {data.data_notes.map((note, index) => (
+                <p key={`${note}-${index}`} className="text-xs leading-relaxed text-muted-foreground">
+                  {index + 1}. {note}
+                </p>
+              ))}
+            </div>
+          </Card>
         </>
       )}
+    </div>
+  )
+}
+
+function WarmupResultSummary({ result }: { result: IntradayWarmupResponse }) {
+  return (
+    <div className="rounded-lg border border-border bg-background/60 p-3">
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <Badge variant={result.failure_count > 0 ? 'warning' : 'bullish'}>
+          성공 {result.success_count}/{result.total_requests}
+        </Badge>
+        <Badge variant={result.allow_live ? 'bullish' : 'muted'}>
+          {result.allow_live ? 'KIS 포함' : '저장/공개 우선'}
+        </Badge>
+        <span className="text-muted-foreground">{result.symbols.length}종목 / {result.timeframes.join(', ')}</span>
+      </div>
+      <div className="mt-2 grid grid-cols-1 gap-1.5 md:grid-cols-2 xl:grid-cols-3">
+        {result.results.slice(0, 9).map(item => (
+          <div key={`${item.symbol}-${item.timeframe}`} className="flex items-center justify-between gap-2 rounded-md border border-border bg-card px-2 py-1.5 text-xs">
+            <span>{item.symbol} {item.timeframe}</span>
+            <span className={item.ok ? 'text-emerald-300' : 'text-red-300'}>{item.ok ? `${item.bars}봉` : '실패'}</span>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -178,6 +317,13 @@ function StatusSummary({
       </div>
     </Card>
   )
+}
+
+function parseSymbols(value: string): string[] {
+  return value
+    .split(/[\s,]+/)
+    .map(item => item.trim())
+    .filter(Boolean)
 }
 
 function formatDuration(seconds: number | null): string {

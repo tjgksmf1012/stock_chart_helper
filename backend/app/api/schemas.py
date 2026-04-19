@@ -301,6 +301,15 @@ class IntradayWarmupResponse(BaseModel):
     results: list[IntradayWarmupResult]
 
 
+class IntradayCandidateWarmupRequest(BaseModel):
+    source_timeframe: str = "1d"
+    limit: int = Field(default=20, ge=1, le=50)
+    timeframes: list[str] = Field(default_factory=lambda: ["15m", "30m", "60m"])
+    allow_live: bool = False
+    include_watch: bool = True
+    lookback_days: int | None = None
+
+
 class PatternLibraryEntry(BaseModel):
     pattern_type: str
     name_kr: str

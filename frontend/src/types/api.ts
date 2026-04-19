@@ -308,6 +308,15 @@ export interface IntradayWarmupRequest {
   lookback_days?: number | null
 }
 
+export interface IntradayCandidateWarmupRequest {
+  source_timeframe: Timeframe
+  limit: number
+  timeframes: string[]
+  allow_live: boolean
+  include_watch?: boolean
+  lookback_days?: number | null
+}
+
 export interface IntradayWarmupResult {
   symbol: string
   timeframe: string

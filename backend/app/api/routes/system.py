@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException
 
 from ..schemas import (
     CacheRuntimeStatus,
+    IntradayCandidateWarmupRequest,
     IntradayStoreStatus,
     IntradayWarmupRequest,
     IntradayWarmupResponse,
@@ -23,6 +24,7 @@ from ...core.redis import cache_backend_status
 from ...services.data_fetcher import get_data_fetcher
 from ...services.intraday_store import get_intraday_store
 from ...services.kis_client import get_kis_client
+from ...services.scanner import get_scan_results
 from ...services.timeframe_service import get_timeframe_spec, is_intraday_timeframe
 
 router = APIRouter(prefix="/system", tags=["system"])
@@ -119,7 +121,7 @@ async def get_runtime_status() -> RuntimeStatusResponse:
     )
 
 
-def _normalize_symbol_codes(symbols: list[str]) -> list[str]:
+def _normalize_symbol_codes(symbols: list[str], max_count: int = 50) -> list[str]:
     seen: set[str] = set()
     normalized: list[str] = []
     for symbol in symbols:
@@ -131,7 +133,7 @@ def _normalize_symbol_codes(symbols: list[str]) -> list[str]:
         if code not in seen:
             seen.add(code)
             normalized.append(code)
-    return normalized[:30]
+    return normalized[:max_count]
 
 
 def _normalize_intraday_timeframes(timeframes: list[str]) -> list[str]:
@@ -149,27 +151,28 @@ def _normalize_intraday_timeframes(timeframes: list[str]) -> list[str]:
     return normalized or ["15m", "30m", "60m"]
 
 
-@router.post("/intraday/warmup", response_model=IntradayWarmupResponse)
-async def warmup_intraday_cache(request: IntradayWarmupRequest) -> IntradayWarmupResponse:
-    symbols = _normalize_symbol_codes(request.symbols)
-    if not symbols:
-        raise HTTPException(status_code=422, detail="At least one symbol is required.")
-
-    timeframes = _normalize_intraday_timeframes(request.timeframes)
+async def _run_intraday_warmup(
+    *,
+    symbols: list[str],
+    timeframes: list[str],
+    allow_live: bool,
+    lookback_days: int | None,
+) -> IntradayWarmupResponse:
+    symbols = _normalize_symbol_codes(symbols)
     fetcher = get_data_fetcher()
-    semaphore = asyncio.Semaphore(3 if request.allow_live else 6)
+    semaphore = asyncio.Semaphore(3 if allow_live else 6)
     results: list[IntradayWarmupResult] = []
 
     async def collect(symbol: str, timeframe: str) -> IntradayWarmupResult:
         async with semaphore:
             try:
                 spec = get_timeframe_spec(timeframe)
-                lookback_days = request.lookback_days or spec.chart_lookback_days
+                days = lookback_days or spec.chart_lookback_days
                 df = await fetcher.get_stock_ohlcv_by_timeframe(
                     symbol,
                     timeframe,
-                    lookback_days=lookback_days,
-                    allow_live_intraday=request.allow_live,
+                    lookback_days=days,
+                    allow_live_intraday=allow_live,
                 )
                 return IntradayWarmupResult(
                     symbol=symbol,
@@ -197,11 +200,60 @@ async def warmup_intraday_cache(request: IntradayWarmupRequest) -> IntradayWarmu
 
     return IntradayWarmupResponse(
         requested_at=datetime.utcnow().isoformat(),
-        allow_live=request.allow_live,
+        allow_live=allow_live,
         symbols=symbols,
         timeframes=timeframes,
         total_requests=len(results),
         success_count=success_count,
         failure_count=len(results) - success_count,
         results=results,
+    )
+
+
+@router.post("/intraday/warmup", response_model=IntradayWarmupResponse)
+async def warmup_intraday_cache(request: IntradayWarmupRequest) -> IntradayWarmupResponse:
+    symbols = _normalize_symbol_codes(request.symbols)
+    if not symbols:
+        raise HTTPException(status_code=422, detail="At least one symbol is required.")
+
+    timeframes = _normalize_intraday_timeframes(request.timeframes)
+    return await _run_intraday_warmup(
+        symbols=symbols,
+        timeframes=timeframes,
+        allow_live=request.allow_live,
+        lookback_days=request.lookback_days,
+    )
+
+
+@router.post("/intraday/warmup-candidates", response_model=IntradayWarmupResponse)
+async def warmup_intraday_candidates(request: IntradayCandidateWarmupRequest) -> IntradayWarmupResponse:
+    timeframes = _normalize_intraday_timeframes(request.timeframes)
+    source_timeframe = str(request.source_timeframe or "1d")
+    if source_timeframe not in {"1mo", "1wk", "1d", "60m", "30m", "15m", "1m"}:
+        raise HTTPException(status_code=422, detail=f"Unsupported source timeframe: {source_timeframe}")
+
+    rows = await get_scan_results(source_timeframe)
+    candidates = [
+        row
+        for row in rows
+        if row.get("code") and not row.get("no_signal_flag") and row.get("action_plan") != "cooling"
+    ]
+    candidates.sort(
+        key=lambda row: (
+            float(row.get("action_priority_score", 0.0)),
+            float(row.get("composite_score", 0.0)),
+            float(row.get("entry_score", 0.0)),
+            float(row.get("data_quality", 0.0)),
+        ),
+        reverse=True,
+    )
+    symbols = _normalize_symbol_codes([str(row["code"]) for row in candidates[: request.limit]])
+    if not symbols:
+        raise HTTPException(status_code=404, detail="No eligible candidates were found for intraday warmup.")
+
+    return await _run_intraday_warmup(
+        symbols=symbols,
+        timeframes=timeframes,
+        allow_live=request.allow_live,
+        lookback_days=request.lookback_days,
     )
