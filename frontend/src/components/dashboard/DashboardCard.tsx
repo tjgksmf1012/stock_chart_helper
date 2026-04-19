@@ -17,6 +17,7 @@ export function DashboardCard({ item }: DashboardCardProps) {
   const nav = useNavigate()
   const { addToWatchlist, removeFromWatchlist, isWatched, setTimeframe } = useAppStore()
   const watched = isWatched(item.symbol.code)
+  const isIntraday = ['1m', '15m', '30m', '60m'].includes(item.timeframe)
 
   const toggleWatch = (event: MouseEvent) => {
     event.stopPropagation()
@@ -166,6 +167,12 @@ export function DashboardCard({ item }: DashboardCardProps) {
       {item.live_intraday_candidate && item.live_intraday_reason && (
         <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-2.5 text-xs text-emerald-100">
           {item.live_intraday_reason}
+        </div>
+      )}
+
+      {isIntraday && !item.live_intraday_candidate && item.non_live_intraday_reason && (
+        <div className="rounded-lg border border-slate-500/20 bg-slate-500/5 p-2.5 text-xs text-slate-200">
+          {item.non_live_intraday_reason}
         </div>
       )}
 

@@ -176,6 +176,7 @@ export interface DashboardItem {
   live_intraday_candidate: boolean
   live_intraday_priority_score: number
   live_intraday_reason: string
+  non_live_intraday_reason: string
 }
 
 export interface DashboardResponse {

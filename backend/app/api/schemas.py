@@ -181,6 +181,7 @@ class DashboardItem(BaseModel):
     live_intraday_candidate: bool = False
     live_intraday_priority_score: float = 0.0
     live_intraday_reason: str = ""
+    non_live_intraday_reason: str = ""
 
 
 class DashboardResponse(BaseModel):

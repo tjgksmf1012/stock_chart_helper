@@ -232,6 +232,54 @@ def _live_intraday_reason(row: dict[str, Any], timeframe: str, phase: str) -> st
     return f"{phase_prefix} live 후보: {', '.join(reasons[:3])}"
 
 
+def _non_live_intraday_reason(
+    row: dict[str, Any],
+    timeframe: str,
+    phase: str,
+    live_limit: int,
+) -> str:
+    if phase == "off_hours" or live_limit <= 0:
+        return "Off-hours budget mode keeps intraday analysis on stored/public data unless a fresh live refresh is truly needed."
+
+    reasons: list[str] = []
+    if phase == "midday":
+        reasons.append("midday throttle keeps live KIS usage tight")
+    elif phase == "regular_session":
+        reasons.append("regular-session budget mode reserves live slots for stronger setups")
+    elif phase == "closing_drive":
+        reasons.append("closing-drive live slots are focused on trigger-ready names")
+    elif phase == "open_drive":
+        reasons.append("open-drive live slots are limited to the sharpest opening setups")
+
+    setup_stage = str(row.get("setup_stage") or "")
+    if setup_stage in {"base_building", "early_trigger_watch", "neutral"}:
+        reasons.append("setup is still early")
+
+    if float(row.get("completion_proximity", 0.0)) < 0.62:
+        reasons.append("completion proximity is below the live threshold")
+    if float(row.get("entry_score", 0.0)) < 0.68:
+        reasons.append("entry quality is not strong enough for live priority")
+    if float(row.get("liquidity_score", 0.0)) < 0.62:
+        reasons.append("liquidity is lighter than the current live cohort")
+    if float(row.get("recency_score", 0.0)) < 0.55:
+        reasons.append("signal freshness is lagging")
+
+    fetch_status = str(row.get("fetch_status") or "")
+    if fetch_status == "scanner_store_only":
+        reasons.append("recent stored intraday bars already cover this symbol")
+    elif fetch_status == "scanner_public_only":
+        reasons.append("public intraday data is sufficient for budget mode")
+    elif fetch_status == "scanner_public_augmented":
+        reasons.append("stored and public bars were blended to avoid an extra live call")
+    elif fetch_status == "kis_cooldown":
+        reasons.append("KIS cooldown is active after a recent failure")
+
+    if not reasons:
+        reasons.append("live priority score fell below the current session cutoff")
+
+    return f"Budget/store path: {', '.join(reasons[:3])}."
+
+
 def _formation_quality_from_row(row: dict[str, Any]) -> float:
     return float(
         row.get("formation_quality")
@@ -601,6 +649,7 @@ async def _analyze_one(
             result["live_intraday_priority_score"] = round(_live_intraday_priority(result, timeframe), 3)
             result["live_intraday_candidate"] = False
             result["live_intraday_reason"] = ""
+            result["non_live_intraday_reason"] = ""
         await cache_set(cache_key, result, ttl=1800)
         return result
     except Exception as exc:
@@ -725,6 +774,11 @@ async def run_scan(
                                 if item["live_intraday_candidate"]
                                 else ""
                             )
+                            item["non_live_intraday_reason"] = (
+                                ""
+                                if item["live_intraday_candidate"]
+                                else _non_live_intraday_reason(item, timeframe, live_phase, len(live_codes))
+                            )
                         results.append(item)
                 await asyncio.sleep(0.08)
 
@@ -831,6 +885,11 @@ async def get_scan_results(timeframe: str = DEFAULT_TIMEFRAME) -> list[dict[str,
                 _live_intraday_reason(item, timeframe, intraday_live_phase)
                 if item["live_intraday_candidate"]
                 else ""
+            )
+            item["non_live_intraday_reason"] = (
+                ""
+                if item["live_intraday_candidate"]
+                else _non_live_intraday_reason(item, timeframe, intraday_live_phase, intraday_live_limit)
             )
     results.sort(
         key=lambda row: (
