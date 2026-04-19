@@ -120,6 +120,19 @@ export default function DashboardPage() {
         </Card>
       )}
 
+      {intradayMode && (
+        <Card className="flex items-start gap-3 border-sky-500/20 bg-sky-500/5 p-4">
+          <Activity size={16} className="mt-0.5 text-sky-300" />
+          <div className="space-y-1">
+            <div className="text-sm font-semibold text-sky-200">Live KIS 후보는 시간대와 품질 기준으로만 열립니다</div>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              장초반과 마감 전에는 live 후보를 더 넓게 쓰고, 점심장과 장외에는 저장 분봉과 공개 소스를 우선합니다.
+              후보 안에서도 진입 적합도, 완성 임박도, 유동성, 신호 최신성이 높은 종목이 먼저 live 분봉을 사용합니다.
+            </p>
+          </div>
+        </Card>
+      )}
+
       <Card className="space-y-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="space-y-1">
@@ -164,6 +177,29 @@ export default function DashboardPage() {
           <StatusCell label="실행 주체" value={sourceLabel(statusQ.data?.source)} />
           <StatusCell label="소요 시간" value={statusQ.data?.duration_ms ? `${(statusQ.data.duration_ms / 1000).toFixed(1)}초` : '-'} />
         </div>
+
+        {intradayMode && (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <StatusCell label="Live 단계" value={livePhaseLabel(statusQ.data?.intraday_live_phase)} />
+            <StatusCell
+              label="Live 사용 수"
+              value={
+                statusQ.data?.intraday_live_candidate_count != null
+                  ? `${statusQ.data.intraday_live_candidate_count}개`
+                  : '-'
+              }
+            />
+            <StatusCell
+              label="Live 한도"
+              value={
+                statusQ.data?.intraday_live_candidate_limit != null
+                  ? `${statusQ.data.intraday_live_candidate_limit}개`
+                  : '-'
+              }
+            />
+            <StatusCell label="운용 메모" value={livePhaseNote(statusQ.data?.intraday_live_phase)} />
+          </div>
+        )}
 
         {statusQ.data?.last_error && (
           <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-xs text-red-200">
@@ -253,6 +289,40 @@ function sourceLabel(source: string | null | undefined): string {
       return '예약 실행'
     case 'fallback':
       return '초기 예열'
+    default:
+      return '-'
+  }
+}
+
+function livePhaseLabel(phase: string | null | undefined): string {
+  switch (phase) {
+    case 'open_drive':
+      return '장초반 확대'
+    case 'regular_session':
+      return '일반 장중'
+    case 'midday':
+      return '점심장 축소'
+    case 'closing_drive':
+      return '마감 전 확대'
+    case 'off_hours':
+      return '장외 절약 모드'
+    default:
+      return '-'
+  }
+}
+
+function livePhaseNote(phase: string | null | undefined): string {
+  switch (phase) {
+    case 'open_drive':
+      return '초기 추세 확인 구간이라 live 후보를 넓게 봅니다.'
+    case 'regular_session':
+      return '기본 후보만 live로 확인하고 나머지는 절약 모드로 둡니다.'
+    case 'midday':
+      return '노이즈가 많은 시간대라 live 사용을 더 줄입니다.'
+    case 'closing_drive':
+      return '마감 전 재가속 확인을 위해 live 후보를 다시 늘립니다.'
+    case 'off_hours':
+      return '장외에는 저장 분봉과 공개 소스를 우선 사용합니다.'
     default:
       return '-'
   }

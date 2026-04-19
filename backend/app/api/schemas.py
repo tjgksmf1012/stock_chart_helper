@@ -196,6 +196,9 @@ class ScanStatusResponse(BaseModel):
     source: str | None = None
     candidate_source: str | None = None
     candidate_count: int | None = None
+    intraday_live_candidate_limit: int | None = None
+    intraday_live_candidate_count: int | None = None
+    intraday_live_phase: str | None = None
     cached_result_count: int = 0
     universe_size: int | None = None
     last_started_at: str | None = None

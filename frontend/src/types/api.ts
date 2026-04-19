@@ -191,6 +191,9 @@ export interface ScanStatusResponse {
   source: string | null
   candidate_source: string | null
   candidate_count: number | null
+  intraday_live_candidate_limit: number | null
+  intraday_live_candidate_count: number | null
+  intraday_live_phase: string | null
   cached_result_count: number
   universe_size: number | null
   last_started_at: string | null
