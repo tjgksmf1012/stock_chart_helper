@@ -99,10 +99,11 @@ def _formation_quality(pattern: PatternResult) -> float:
         min(
             1.0,
             0.24 * pattern.leg_balance_fit
-            + 0.24 * pattern.reversal_energy_fit
-            + 0.20 * pattern.breakout_quality_fit
-            + 0.20 * pattern.retest_quality_fit
-            + 0.12 * pattern.variant_fit,
+            + 0.21 * pattern.reversal_energy_fit
+            + 0.19 * pattern.breakout_quality_fit
+            + 0.17 * pattern.retest_quality_fit
+            + 0.11 * pattern.variant_fit
+            + 0.08 * pattern.candlestick_confirmation_fit,
         ),
     )
 

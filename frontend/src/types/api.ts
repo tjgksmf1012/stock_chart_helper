@@ -44,6 +44,9 @@ export interface PatternInfo {
   volatility_context_fit: number
   breakout_quality_fit: number
   retest_quality_fit: number
+  candlestick_confirmation_fit: number
+  candlestick_label?: string | null
+  candlestick_note?: string | null
   neckline: number | null
   invalidation_level: number | null
   target_level: number | null

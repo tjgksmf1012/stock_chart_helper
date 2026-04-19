@@ -62,6 +62,9 @@ class PatternResult:
     variant_fit: float = 0.5
     breakout_quality_fit: float = 0.0
     retest_quality_fit: float = 0.0
+    candlestick_confirmation_fit: float = 0.5
+    candlestick_label: str | None = None
+    candlestick_note: str | None = None
     textbook_similarity: float = 0.0
 
     key_points: list[dict] = field(default_factory=list)
@@ -70,7 +73,7 @@ class PatternResult:
 
 def _compute_textbook_similarity(r: PatternResult) -> float:
     return (
-        0.28 * r.geometry_fit
+        0.25 * r.geometry_fit
         + 0.14 * r.swing_structure_fit
         + 0.10 * r.volume_context_fit
         + 0.07 * r.volatility_context_fit
@@ -80,6 +83,7 @@ def _compute_textbook_similarity(r: PatternResult) -> float:
         + 0.03 * r.variant_fit
         + 0.10 * r.breakout_quality_fit
         + 0.06 * r.retest_quality_fit
+        + 0.03 * r.candlestick_confirmation_fit
     )
 
 
@@ -87,10 +91,11 @@ def _formation_quality_score(r: PatternResult) -> float:
     return float(
         np.clip(
             0.25 * r.leg_balance_fit
-            + 0.24 * r.reversal_energy_fit
-            + 0.21 * r.breakout_quality_fit
-            + 0.18 * r.retest_quality_fit
-            + 0.12 * r.variant_fit,
+            + 0.22 * r.reversal_energy_fit
+            + 0.19 * r.breakout_quality_fit
+            + 0.16 * r.retest_quality_fit
+            + 0.10 * r.variant_fit
+            + 0.08 * r.candlestick_confirmation_fit,
             0.0,
             1.0,
         )
@@ -447,6 +452,146 @@ def _normalize_state(state: str, breakout_quality: float, retest_quality: float)
     return state
 
 
+def _body_size(open_price: float, close_price: float) -> float:
+    return abs(close_price - open_price)
+
+
+def _candle_range(high_price: float, low_price: float) -> float:
+    return max(high_price - low_price, 1e-6)
+
+
+def _bullish_engulfing(prev_row: pd.Series, row: pd.Series) -> bool:
+    prev_open = float(prev_row["open"])
+    prev_close = float(prev_row["close"])
+    open_price = float(row["open"])
+    close_price = float(row["close"])
+    return (
+        prev_close < prev_open
+        and close_price > open_price
+        and open_price <= prev_close
+        and close_price >= prev_open
+    )
+
+
+def _bearish_engulfing(prev_row: pd.Series, row: pd.Series) -> bool:
+    prev_open = float(prev_row["open"])
+    prev_close = float(prev_row["close"])
+    open_price = float(row["open"])
+    close_price = float(row["close"])
+    return (
+        prev_close > prev_open
+        and close_price < open_price
+        and open_price >= prev_close
+        and close_price <= prev_open
+    )
+
+
+def _hammer_like(row: pd.Series, bullish: bool) -> bool:
+    open_price = float(row["open"])
+    high_price = float(row["high"])
+    low_price = float(row["low"])
+    close_price = float(row["close"])
+    candle_range = _candle_range(high_price, low_price)
+    body = _body_size(open_price, close_price)
+    lower_shadow = min(open_price, close_price) - low_price
+    upper_shadow = high_price - max(open_price, close_price)
+    if bullish:
+        return lower_shadow >= body * 1.8 and upper_shadow <= candle_range * 0.25 and close_price >= open_price
+    return upper_shadow >= body * 1.8 and lower_shadow <= candle_range * 0.25 and close_price <= open_price
+
+
+def _strong_directional_close(row: pd.Series, bullish: bool) -> bool:
+    open_price = float(row["open"])
+    high_price = float(row["high"])
+    low_price = float(row["low"])
+    close_price = float(row["close"])
+    candle_range = _candle_range(high_price, low_price)
+    body = _body_size(open_price, close_price)
+    close_location = (close_price - low_price) / candle_range
+    if bullish:
+        return close_price > open_price and body / candle_range >= 0.58 and close_location >= 0.72
+    return close_price < open_price and body / candle_range >= 0.58 and close_location <= 0.28
+
+
+def _candlestick_confirmation(df: pd.DataFrame, pattern: PatternResult) -> tuple[float, str, str]:
+    if len(df) < 3:
+        return 0.5, "neutral", "캔들 확인 정보가 아직 부족합니다."
+
+    bullish = pattern.pattern_type in {
+        "double_bottom",
+        "inverse_head_and_shoulders",
+        "ascending_triangle",
+        "rectangle",
+        "cup_and_handle",
+        "rounding_bottom",
+        "vcp",
+    }
+    bearish = pattern.pattern_type in {
+        "double_top",
+        "head_and_shoulders",
+        "descending_triangle",
+    }
+    if not bullish and not bearish:
+        return 0.5, "neutral", "캔들 확인 필터를 적용하지 않는 패턴입니다."
+
+    recent = df.tail(3).reset_index(drop=True)
+    prev_row = recent.iloc[-2]
+    row = recent.iloc[-1]
+
+    open_price = float(row["open"])
+    high_price = float(row["high"])
+    low_price = float(row["low"])
+    close_price = float(row["close"])
+    candle_range = _candle_range(high_price, low_price)
+    body = _body_size(open_price, close_price)
+    upper_shadow = high_price - max(open_price, close_price)
+    lower_shadow = min(open_price, close_price) - low_price
+    close_location = (close_price - low_price) / candle_range
+
+    if bullish:
+        positives = [
+            _bullish_engulfing(prev_row, row),
+            _hammer_like(row, bullish=True),
+            _strong_directional_close(row, bullish=True),
+            bool(float(recent.iloc[-1]["close"]) > float(recent.iloc[-2]["close"]) > float(recent.iloc[-3]["close"])),
+        ]
+        negatives = [
+            _bearish_engulfing(prev_row, row),
+            upper_shadow / candle_range >= 0.42 and close_location < 0.55,
+            close_price < open_price and body / candle_range >= 0.45,
+        ]
+        raw = 0.5 + 0.12 * sum(1 for flag in positives if flag) - 0.14 * sum(1 for flag in negatives if flag)
+        raw += 0.06 * np.clip(close_location - 0.55, -0.4, 0.4)
+        raw += 0.04 * np.clip((lower_shadow - upper_shadow) / candle_range, -0.5, 0.5)
+        score = float(np.clip(raw, 0.0, 1.0))
+        if score >= 0.74:
+            return round(score, 3), "bullish_confirmation", "최근 캔들이 돌파 확인형에 가깝고 종가 마감 강도도 양호합니다."
+        if score <= 0.34:
+            return round(score, 3), "bearish_rejection", "최근 캔들에서 윗꼬리 저항 또는 약한 종가 마감이 보여 추격 진입에 불리합니다."
+        return round(score, 3), "mixed", "최근 캔들 흐름은 중립에 가깝고, 추가 확인 캔들이 더 필요합니다."
+
+    positives = [
+        _bearish_engulfing(prev_row, row),
+        _hammer_like(row, bullish=False),
+        _strong_directional_close(row, bullish=False),
+        bool(float(recent.iloc[-1]["close"]) < float(recent.iloc[-2]["close"]) < float(recent.iloc[-3]["close"])),
+    ]
+    negatives = [
+        _bullish_engulfing(prev_row, row),
+        lower_shadow / candle_range >= 0.42 and close_location > 0.45,
+        close_price > open_price and body / candle_range >= 0.45,
+    ]
+    raw = 0.5 + 0.12 * sum(1 for flag in positives if flag) - 0.14 * sum(1 for flag in negatives if flag)
+    raw += 0.06 * np.clip(0.45 - close_location, -0.4, 0.4)
+    raw += 0.04 * np.clip((upper_shadow - lower_shadow) / candle_range, -0.5, 0.5)
+    score = float(np.clip(raw, 0.0, 1.0))
+    if score >= 0.74:
+        return round(score, 3), "bearish_confirmation", "최근 캔들이 하락 확인형에 가깝고 종가 마감 강도도 양호합니다."
+    if score <= 0.34:
+        return round(score, 3), "bullish_rejection", "최근 캔들에서 아래꼬리 방어 또는 강한 되받음이 보여 하락 추세 해석을 약하게 만듭니다."
+    return round(score, 3), "mixed", "최근 캔들 흐름은 중립에 가깝고, 추가 확인 캔들이 더 필요합니다."
+
+
 class PatternEngine:
     """
     Detects structural chart patterns from a price DataFrame.
@@ -472,6 +617,13 @@ class PatternEngine:
             found = detector(df, swings, regime_fit)
             if found:
                 results.extend(found)
+
+        for result in results:
+            candle_score, candle_label, candle_note = _candlestick_confirmation(df, result)
+            result.candlestick_confirmation_fit = candle_score
+            result.candlestick_label = candle_label
+            result.candlestick_note = candle_note
+            result.textbook_similarity = _finalize_textbook_similarity(result)
 
         return results
 

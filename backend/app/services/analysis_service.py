@@ -862,6 +862,10 @@ async def analyze_symbol_dataframe(
         risk_penalty += 0.10
     elif best_pattern.variant_fit < 0.70:
         risk_penalty += 0.05
+    if best_pattern.candlestick_confirmation_fit < 0.34:
+        risk_penalty += 0.12
+    elif best_pattern.candlestick_confirmation_fit < 0.48:
+        risk_penalty += 0.06
     if _is_bullish(best_pattern.pattern_type):
         if wyckoff_profile["wyckoff_phase"] == "markdown":
             risk_penalty += 0.16
@@ -939,6 +943,9 @@ async def analyze_symbol_dataframe(
                 volatility_context_fit=pattern.volatility_context_fit,
                 breakout_quality_fit=pattern.breakout_quality_fit,
                 retest_quality_fit=pattern.retest_quality_fit,
+                candlestick_confirmation_fit=pattern.candlestick_confirmation_fit,
+                candlestick_label=pattern.candlestick_label,
+                candlestick_note=pattern.candlestick_note,
                 neckline=pattern.neckline,
                 invalidation_level=pattern.invalidation_level,
                 target_level=pattern.target_level,

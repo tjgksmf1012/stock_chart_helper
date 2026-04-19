@@ -90,6 +90,15 @@ export const WYCKOFF_LABELS: Record<string, string> = {
   neutral: '중립',
 }
 
+export const CANDLE_CONFIRMATION_LABELS: Record<string, string> = {
+  bullish_confirmation: '상승 확인 캔들',
+  bearish_confirmation: '하락 확인 캔들',
+  bullish_rejection: '상승 반박 캔들',
+  bearish_rejection: '하락 반박 캔들',
+  mixed: '중립 캔들',
+  neutral: '중립 캔들',
+}
+
 export function getPatternBias(patternType: string | null | undefined): 'bullish' | 'bearish' | 'neutral' {
   if (!patternType) return 'neutral'
 

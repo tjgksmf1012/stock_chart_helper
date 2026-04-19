@@ -49,6 +49,9 @@ class PatternInfo(BaseModel):
     volatility_context_fit: float = 0.0
     breakout_quality_fit: float = 0.0
     retest_quality_fit: float = 0.0
+    candlestick_confirmation_fit: float = 0.5
+    candlestick_label: str | None = None
+    candlestick_note: str | None = None
     neckline: float | None
     invalidation_level: float | None
     target_level: float | None

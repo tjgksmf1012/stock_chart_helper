@@ -6,6 +6,7 @@ import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { ProbBar } from '@/components/ui/ProbBar'
 import { StatRow } from '@/components/ui/StatRow'
 import {
+  CANDLE_CONFIRMATION_LABELS,
   cn,
   fmtDateTime,
   fmtPct,
@@ -91,10 +92,18 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
               <span className={cn('rounded px-1.5 py-0.5 text-xs', STATE_COLORS[bestPattern.state])}>
                 {STATE_LABELS[bestPattern.state]}
               </span>
+              <Badge variant="muted">
+                {CANDLE_CONFIRMATION_LABELS[bestPattern.candlestick_label ?? 'neutral'] ??
+                  bestPattern.candlestick_label ??
+                  '중립 캔들'}
+              </Badge>
             </div>
             <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
               {patternActionText(bestPattern, analysis)}
             </p>
+            {bestPattern.candlestick_note && (
+              <p className="mt-2 text-xs leading-relaxed text-sky-200">{bestPattern.candlestick_note}</p>
+            )}
           </div>
           <div className="space-y-2">
             {bestPattern.target_level && (
@@ -129,7 +138,7 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
           <StatRow label="신뢰도" value={fmtPct(analysis.confidence)} />
           <StatRow label="진입 적합도" value={fmtPct(analysis.entry_score)} />
           <StatRow label="기대 손익비" value={analysis.reward_risk_ratio.toFixed(2)} />
-          <StatRow label="목표까지 여지" value={fmtPct(analysis.target_distance_pct)} />
+          <StatRow label="목표까지 여유" value={fmtPct(analysis.target_distance_pct)} />
           <StatRow label="손절까지 거리" value={fmtPct(analysis.stop_distance_pct)} />
           <StatRow label="헤드룸 점수" value={fmtPct(analysis.headroom_score)} />
           <StatRow label="평균 MFE" value={fmtPct(analysis.avg_mfe_pct)} />
@@ -143,6 +152,7 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
           {bestPattern && <StatRow label="반전 에너지" value={fmtPct(bestPattern.reversal_energy_fit)} />}
           {bestPattern && <StatRow label="돌파 품질" value={fmtPct(bestPattern.breakout_quality_fit)} />}
           {bestPattern && <StatRow label="Retest 품질" value={fmtPct(bestPattern.retest_quality_fit)} />}
+          {bestPattern && <StatRow label="캔들 확인 점수" value={fmtPct(bestPattern.candlestick_confirmation_fit)} />}
           {bestPattern && <StatRow label="거래량 맥락" value={fmtPct(bestPattern.volume_context_fit)} />}
           {bestPattern && <StatRow label="변동성 수축" value={fmtPct(bestPattern.volatility_context_fit)} />}
           <StatRow label="완성 임박도" value={fmtPct(analysis.completion_proximity)} />
@@ -216,7 +226,19 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                   <span>Retest 품질 {fmtPct(pattern.retest_quality_fit)}</span>
-                  <span className="text-right">거래량 맥락 {fmtPct(pattern.volume_context_fit)}</span>
+                  <span className="text-right">캔들 확인 {fmtPct(pattern.candlestick_confirmation_fit)}</span>
+                </div>
+                <div className="grid grid-cols-1 gap-2 text-xs text-muted-foreground">
+                  <span>
+                    {CANDLE_CONFIRMATION_LABELS[pattern.candlestick_label ?? 'neutral'] ??
+                      pattern.candlestick_label ??
+                      '중립 캔들'}
+                  </span>
+                  {pattern.candlestick_note && <span>{pattern.candlestick_note}</span>}
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                  <span>거래량 맥락 {fmtPct(pattern.volume_context_fit)}</span>
+                  <span className="text-right">변동성 수축 {fmtPct(pattern.volatility_context_fit)}</span>
                 </div>
                 {pattern.neckline && <StatRow label="목선" value={fmtPrice(pattern.neckline)} />}
                 {pattern.invalidation_level && (
@@ -239,9 +261,8 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
           해석 주의
         </div>
         <p className="text-xs leading-relaxed text-muted-foreground">
-          이 화면은 패턴 기반 해석 보조 도구입니다. 미래 경로 오버레이는 확정 예측이 아니라 현재 구조를 기준으로 만든
-          기본 시나리오입니다. 이미 목표가를 한 번 도달한 패턴은 새로운 매수 신호가 아니라, 기존 패턴 종료로 해석하는
-          것이 더 안전합니다.
+          이 화면은 패턴 기반 보조 해석 도구입니다. 미래 경로 오버레이는 확정 예측이 아니라 현재 구조를 기준으로 만든 기본
+          시나리오입니다. 이미 목표가를 한 번 도달한 패턴은 새로운 매수 신호가 아니라 기존 패턴 종료로 해석하는 것이 더 안전합니다.
         </p>
       </Card>
     </div>
@@ -260,31 +281,31 @@ function trendDirectionLabel(direction: string): string {
 
 function patternActionText(pattern: PatternInfo, analysis: AnalysisResult): string {
   const bias = getPatternBias(pattern.pattern_type)
-  const variantText = pattern.variant ? `${PATTERN_VARIANT_NAMES[pattern.variant] ?? pattern.variant} 타입으로, ` : ''
+  const variantText = pattern.variant ? `${PATTERN_VARIANT_NAMES[pattern.variant] ?? pattern.variant} 타입으로 ` : ''
 
   if (pattern.state === 'played_out') {
-    return `${variantText}기존 패턴 목표가가 이미 한 번 도달한 상태로 보는 편이 맞습니다. 지금은 같은 패턴을 다시 매수 근거로 보기보다, 재축적이나 새로운 추세 패턴이 생기는지 확인하는 편이 좋습니다.`
+    return `${variantText}기존 패턴 목표가가 이미 한 번 이상 도달된 상태로 보는 편이 맞습니다. 지금은 같은 패턴을 다시 추격하기보다 새로운 재축적 또는 이어지는 추세 패턴을 확인하는 쪽이 더 안전합니다.`
   }
 
   if (pattern.state === 'invalidated') {
-    return `${variantText}기존 패턴은 무효화된 쪽으로 해석하는 것이 안전합니다. 손절 이후 다시 구조가 복원되는지부터 보는 편이 좋습니다.`
+    return `${variantText}기존 패턴은 무효화된 쪽으로 해석하는 편이 맞습니다. 손절 기준 이후 구조가 복원되는지부터 다시 확인하는 것이 좋습니다.`
   }
 
   if (pattern.state === 'forming') {
     return bias === 'bullish'
-      ? `${variantText}아직 패턴이 만들어지는 중입니다. 특히 Adam/Eve 적합도와 반전 에너지가 충분히 붙는지, 목선 부근에서 거래량이 살아나는지 먼저 확인하는 편이 좋습니다.`
-      : `${variantText}아직 패턴이 만들어지는 중입니다. 지지 이탈 또는 반등 실패가 실제로 나오는지 조금 더 확인하는 편이 안전합니다.`
+      ? `${variantText}아직 패턴을 만드는 중입니다. 레그 균형, 반전 에너지, 최근 확인 캔들, 목선 부근 거래량 확장을 먼저 보고 판단하는 편이 좋습니다.`
+      : `${variantText}아직 패턴을 만드는 중입니다. 지지 이탈이나 반등 실패가 실제로 나오는지 조금 더 확인하는 편이 안전합니다.`
   }
 
   if (pattern.state === 'armed') {
     return bias === 'bullish'
-      ? `${variantText}완성 직전 구간입니다. 성급한 추격보다 목선 돌파와 Retest 유지 여부를 같이 보는 편이 더 좋습니다.`
-      : `${variantText}이탈 직전 구간입니다. 급한 진입보다 지지 붕괴가 실제로 확인되는지 살피는 편이 안전합니다.`
+      ? `${variantText}완성 직전 구간입니다. 급한 추격보다 목선 돌파와 Retest 유지, 확인 캔들 질을 함께 보는 편이 더 좋습니다.`
+      : `${variantText}이탈 직전 구간입니다. 지지 붕괴가 실제로 확인되는지와 반등 캔들의 질을 함께 보는 편이 좋습니다.`
   }
 
   if (analysis.p_up >= 0.6) {
-    return `${variantText}이미 확인된 패턴으로 해석됩니다. 다만 지금 자리에서는 목표까지 남은 여지와 손절 대비 기대수익이 여전히 충분한지를 같이 봐야 합니다.`
+    return `${variantText}이미 확인된 패턴으로 해석됩니다. 다만 현재 자리에서 목표까지 여유, 손절 대비 기대수익, 최근 확인 캔들 강도를 같이 봐야 합니다.`
   }
 
-  return `${variantText}패턴은 감지됐지만 확신 구간은 아닙니다. 교과서 유사도보다 현재 자리, 추세 정렬, 데이터 품질을 함께 보고 보수적으로 접근하는 편이 좋습니다.`
+  return `${variantText}패턴은 감지됐지만 확신 구간은 아닙니다. 교과서 유사도보다 현재 자리, 추세 정렬, 데이터 품질, 확인 캔들을 함께 보는 편이 더 안전합니다.`
 }
