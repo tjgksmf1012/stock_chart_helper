@@ -695,6 +695,137 @@ def _no_signal_text(timeframe: str, available_bars: int, source_note: str, fetch
     )
 
 
+def _no_signal_action_plan(timeframe: str, data_quality: float, available_bars: int) -> dict[str, Any]:
+    label = timeframe_label(timeframe)
+    if is_intraday_timeframe(timeframe):
+        return {
+            "action_plan": "recheck",
+            "action_plan_label": "재확인 필요",
+            "action_plan_summary": (
+                f"{label} 데이터가 아직 충분하지 않아 매매 후보로 올리기보다 장중 데이터가 더 쌓인 뒤 다시 확인하는 구간입니다. "
+                f"현재 사용 가능 봉 수는 {available_bars}개이고 데이터 신뢰도는 {round(data_quality * 100)}%입니다."
+            ),
+            "action_priority_score": round(max(0.0, min(1.0, data_quality * 0.35)), 3),
+        }
+    return {
+        "action_plan": "cooling",
+        "action_plan_label": "관망",
+        "action_plan_summary": (
+            f"{label} 기준으로 뚜렷한 패턴 신호가 없어 신규 판단을 보류하는 편이 안전합니다. "
+            "패턴이 새로 형성되거나 거래량/추세 정렬이 개선될 때 다시 후보로 올리는 흐름입니다."
+        ),
+        "action_priority_score": round(max(0.0, min(1.0, data_quality * 0.25)), 3),
+    }
+
+
+def _action_plan_profile(
+    timeframe: str,
+    pattern: PatternResult,
+    p_up: float,
+    p_down: float,
+    entry_score: float,
+    completion_proximity: float,
+    recency_score: float,
+    data_quality: float,
+    reward_risk_ratio: float,
+    headroom_score: float,
+    historical_edge_score: float,
+    trend_alignment_score: float,
+    intraday_session_score: float,
+    target_hit_at: str | None,
+    invalidated_at: str | None,
+    fetch_status: str,
+) -> dict[str, Any]:
+    rr_score = min(1.0, max(0.0, reward_risk_ratio / 2.4))
+    priority = (
+        0.20 * entry_score
+        + 0.14 * completion_proximity
+        + 0.12 * recency_score
+        + 0.12 * data_quality
+        + 0.12 * rr_score
+        + 0.10 * headroom_score
+        + 0.10 * historical_edge_score
+        + 0.10 * trend_alignment_score
+    )
+    if is_intraday_timeframe(timeframe):
+        priority = priority * 0.86 + intraday_session_score * 0.14
+
+    if pattern.state in {"played_out", "invalidated"} or target_hit_at or invalidated_at:
+        priority -= 0.22
+    if fetch_status in {"kis_cooldown", "intraday_rate_limited", "yahoo_rate_limited", "stored_fallback"}:
+        priority -= 0.08
+    if data_quality < 0.55:
+        priority -= 0.10
+    if reward_risk_ratio < 1.0 or headroom_score < 0.18:
+        priority -= 0.12
+    if recency_score < 0.28:
+        priority -= 0.08
+
+    priority = round(max(0.0, min(1.0, priority)), 3)
+    bullish = p_up >= p_down
+    direction = "상승" if bullish else "하락"
+    label = timeframe_label(timeframe)
+
+    if invalidated_at or pattern.state == "invalidated":
+        return {
+            "action_plan": "cooling",
+            "action_plan_label": "관망/무효",
+            "action_plan_summary": (
+                f"{label} 기준 기존 패턴이 무효화된 상태입니다. 같은 모양을 계속 추격하기보다 새 지지/저항 구조가 만들어지는지 다시 봐야 합니다."
+            ),
+            "action_priority_score": priority,
+        }
+
+    if target_hit_at or pattern.state == "played_out" or headroom_score < 0.16:
+        return {
+            "action_plan": "cooling",
+            "action_plan_label": "목표 도달 후 관망",
+            "action_plan_summary": (
+                f"{label} 기준 기존 패턴의 목표가 여지가 대부분 소진된 구간입니다. 확률보다 남은 기대수익과 재진입 구조를 우선 확인해야 합니다."
+            ),
+            "action_priority_score": priority,
+        }
+
+    if data_quality < 0.58 or fetch_status in {"kis_cooldown", "intraday_rate_limited", "yahoo_rate_limited"}:
+        return {
+            "action_plan": "recheck",
+            "action_plan_label": "데이터 재확인",
+            "action_plan_summary": (
+                f"{label} 데이터 품질이나 수집 상태가 약해 {direction} 시나리오를 바로 신뢰하기 어렵습니다. 최신 봉이 갱신된 뒤 다시 계산하는 후보입니다."
+            ),
+            "action_priority_score": priority,
+        }
+
+    if priority >= 0.68 and max(p_up, p_down) >= 0.57 and reward_risk_ratio >= 1.15 and pattern.state in {"confirmed", "armed"}:
+        return {
+            "action_plan": "ready_now",
+            "action_plan_label": "즉시 대응 후보",
+            "action_plan_summary": (
+                f"{label} 기준 패턴 완성도, 최근성, 손익비가 함께 맞는 편입니다. 다만 실제 진입은 기준선 이탈 여부와 거래량 확인을 같이 봐야 합니다."
+            ),
+            "action_priority_score": priority,
+        }
+
+    if pattern.state in {"forming", "armed"} or completion_proximity >= 0.45:
+        return {
+            "action_plan": "watch",
+            "action_plan_label": "형성 관찰",
+            "action_plan_summary": (
+                f"{label} 기준 패턴이 만들어지는 중입니다. 완성 신호 전에는 예측보다 목선/지지선 반응, 캔들 확인, 거래량 확장을 기다리는 쪽이 좋습니다."
+            ),
+            "action_priority_score": priority,
+        }
+
+    return {
+        "action_plan": "recheck",
+        "action_plan_label": "재평가 후보",
+        "action_plan_summary": (
+            f"{label} 기준 패턴은 감지됐지만 우선순위가 높지는 않습니다. 다른 타임프레임 정렬이나 새 확인봉이 붙으면 다시 후보군에 올리는 흐름입니다."
+        ),
+        "action_priority_score": priority,
+    }
+
+
 def _future_timestamp(last_ts: pd.Timestamp, timeframe: str, step: int) -> pd.Timestamp:
     base = pd.Timestamp(last_ts)
     if timeframe == "1mo":
@@ -886,6 +1017,7 @@ def build_no_signal_snapshot(
         profile["source_note"],
         profile["fetch_message"],
     )
+    action_plan = _no_signal_action_plan(timeframe, profile["data_quality"], profile["available_bars"])
     return AnalysisResult(
         symbol=symbol,
         timeframe=timeframe,
@@ -915,6 +1047,10 @@ def build_no_signal_snapshot(
         intraday_session_phase="neutral",
         intraday_session_score=0.5,
         intraday_session_note="",
+        action_plan=action_plan["action_plan"],
+        action_plan_label=action_plan["action_plan_label"],
+        action_plan_summary=action_plan["action_plan_summary"],
+        action_priority_score=action_plan["action_priority_score"],
         no_signal_flag=True,
         no_signal_reason=no_signal_reason,
         reason_summary=reason_summary,
@@ -1120,6 +1256,25 @@ async def analyze_symbol_dataframe(
     if probability.no_signal_flag and not probability.no_signal_reason:
         probability.no_signal_reason = "표본 신뢰도, 신호 최신성, 데이터 품질이 기준치에 미달했습니다."
 
+    action_plan = _action_plan_profile(
+        timeframe,
+        best_pattern,
+        probability.p_up,
+        probability.p_down,
+        probability.entry_score,
+        probability.completion_proximity,
+        probability.recency_score,
+        profile["data_quality"],
+        probability.reward_risk_ratio,
+        probability.headroom_score,
+        probability.historical_edge_score,
+        trend_profile["trend_alignment_score"],
+        intraday_profile["intraday_session_score"],
+        best_target_hit_at,
+        best_invalidated_at,
+        profile["fetch_status"],
+    )
+
     return AnalysisResult(
         symbol=symbol,
         timeframe=timeframe,
@@ -1149,6 +1304,10 @@ async def analyze_symbol_dataframe(
         intraday_session_phase=intraday_profile["intraday_session_phase"],
         intraday_session_score=intraday_profile["intraday_session_score"],
         intraday_session_note=intraday_profile["intraday_session_note"],
+        action_plan=action_plan["action_plan"],
+        action_plan_label=action_plan["action_plan_label"],
+        action_plan_summary=action_plan["action_plan_summary"],
+        action_priority_score=action_plan["action_priority_score"],
         no_signal_flag=probability.no_signal_flag,
         no_signal_reason=probability.no_signal_reason,
         reason_summary=probability.reason_summary,

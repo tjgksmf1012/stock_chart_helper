@@ -1,4 +1,4 @@
-import { AlertCircle, Database, ShieldAlert, Target, TrendingDown, TrendingUp } from 'lucide-react'
+import { Activity, AlertCircle, Database, ShieldAlert, Target, TrendingDown, TrendingUp } from 'lucide-react'
 
 import type { AnalysisResult, PatternInfo } from '@/types/api'
 import { Badge } from '@/components/ui/Badge'
@@ -40,6 +40,7 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
         </div>
         <p className="text-xs text-muted-foreground">{analysis.no_signal_reason}</p>
         <p className="text-xs text-muted-foreground">{analysis.reason_summary}</p>
+        <ActionPlanCard analysis={analysis} />
         <div className="rounded-lg border border-border bg-background/60 p-3 text-xs text-muted-foreground">
           <div>데이터 품질 {fmtPct(analysis.data_quality, 0)}</div>
           <div className="mt-1">데이터 상태 {analysis.fetch_status_label}</div>
@@ -73,6 +74,8 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
           <p className="text-xs leading-relaxed text-muted-foreground">{analysis.reason_summary}</p>
         </div>
       </Card>
+
+      <ActionPlanCard analysis={analysis} />
 
       {bestPattern && (
         <Card className="space-y-3">
@@ -276,8 +279,34 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
   )
 }
 
+function ActionPlanCard({ analysis }: { analysis: AnalysisResult }) {
+  return (
+    <Card className="space-y-3 border-primary/20 bg-primary/5">
+      <div className="flex items-center gap-2 text-sm font-semibold">
+        <Activity size={15} className="text-primary" />
+        실전 행동 가이드
+        <Badge variant={actionPlanVariant(analysis.action_plan)} className="ml-auto">
+          {analysis.action_plan_label}
+        </Badge>
+      </div>
+      <p className="text-xs leading-relaxed text-muted-foreground">{analysis.action_plan_summary}</p>
+      <div className="space-y-2">
+        <StatRow label="행동 우선순위" value={fmtPct(analysis.action_priority_score)} />
+        <StatRow label="기준 타임프레임" value={analysis.timeframe_label} />
+      </div>
+    </Card>
+  )
+}
+
 function badgeVariant(pattern: PatternInfo): 'bullish' | 'bearish' | 'neutral' {
   return getPatternBias(pattern.pattern_type)
+}
+
+function actionPlanVariant(plan: string): 'bullish' | 'warning' | 'muted' | 'neutral' {
+  if (plan === 'ready_now') return 'bullish'
+  if (plan === 'watch') return 'neutral'
+  if (plan === 'recheck') return 'warning'
+  return 'muted'
 }
 
 function trendDirectionLabel(direction: string): string {

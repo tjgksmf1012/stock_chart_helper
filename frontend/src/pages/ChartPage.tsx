@@ -139,6 +139,7 @@ export default function ChartPage() {
                 <span className="font-mono text-sm text-muted-foreground">{symbol}</span>
                 <span className="text-xs text-muted-foreground">{analysis.symbol.market}</span>
                 <Badge variant={qualityTone}>{analysis.timeframe_label}</Badge>
+                <Badge variant={actionPlanVariant(analysis.action_plan)}>{analysis.action_plan_label}</Badge>
                 <Badge variant={qualityTone}>품질 {Math.round(analysis.data_quality * 100)}%</Badge>
                 {analysis.is_provisional && <Badge variant="warning">잠정</Badge>}
                 <button
@@ -202,6 +203,11 @@ export default function ChartPage() {
           {analysis.fetch_message && (
             <div className="mt-3 rounded-lg border border-border bg-background/60 px-3 py-2 text-xs text-muted-foreground">
               {analysis.fetch_message}
+            </div>
+          )}
+          {analysis.action_plan_summary && (
+            <div className="mt-3 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+              <span className="font-semibold text-primary">실전 판단:</span> {analysis.action_plan_summary}
             </div>
           )}
         </div>
@@ -275,6 +281,13 @@ function MetricCell({ label, value, tone }: { label: string; value: string; tone
       <div className={`mt-1 text-sm font-semibold ${tone ?? 'text-foreground'}`}>{value}</div>
     </div>
   )
+}
+
+function actionPlanVariant(plan: string): 'bullish' | 'warning' | 'muted' | 'neutral' {
+  if (plan === 'ready_now') return 'bullish'
+  if (plan === 'watch') return 'neutral'
+  if (plan === 'recheck') return 'warning'
+  return 'muted'
 }
 
 function ContextCard({
