@@ -437,6 +437,53 @@ export interface IntradayWarmupJobStatus {
   results: IntradayWarmupResult[]
 }
 
+// ─── Watchlist ────────────────────────────────────────────────────────────────
+
+export interface WatchlistItem {
+  code: string
+  name: string
+  market: string
+  addedAt?: string | null
+}
+
+// ─── Outcome tracking ─────────────────────────────────────────────────────────
+
+export type OutcomeStatus = 'win' | 'loss' | 'stopped_out' | 'pending' | 'cancelled'
+
+export interface OutcomeRecord {
+  id?: number
+  symbol_code: string
+  symbol_name: string
+  pattern_type: string
+  timeframe: string
+  signal_date: string
+  entry_price: number
+  target_price?: number | null
+  stop_price?: number | null
+  outcome: OutcomeStatus
+  exit_price?: number | null
+  exit_date?: string | null
+  notes?: string | null
+  p_up_at_signal?: number | null
+  composite_score_at_signal?: number | null
+  textbook_similarity_at_signal?: number | null
+  trade_readiness_at_signal?: number | null
+  recorded_at?: string
+  updated_at?: string
+}
+
+export interface OutcomesSummary {
+  total_records: number
+  completed: number
+  wins: number
+  win_rate: number
+  pending: number
+  cancelled: number
+  by_pattern: Record<string, { wins: number; total: number; win_rate: number }>
+}
+
+// ─── Screener ─────────────────────────────────────────────────────────────────
+
 export interface ScreenerRequest {
   pattern_types?: string[]
   states?: string[]

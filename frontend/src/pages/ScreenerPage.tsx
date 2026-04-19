@@ -1,6 +1,6 @@
 ﻿import { useMemo, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Search, SlidersHorizontal } from 'lucide-react'
+import { Download, Search, SlidersHorizontal } from 'lucide-react'
 
 import { DashboardCard } from '@/components/dashboard/DashboardCard'
 import { Card } from '@/components/ui/Card'
@@ -71,6 +71,50 @@ const SORT_OPTIONS: Array<{ value: NonNullable<ScreenerRequest['sort_by']>; labe
   { value: 'textbook_similarity', label: '교과서 유사도' },
   { value: 'p_down', label: '하락 확률' },
 ]
+
+function exportToCsv(items: DashboardItem[]) {
+  const headers = [
+    '종목코드', '종목명', '시장', '타임프레임', '패턴', '상태',
+    '상승확률(%)', '하락확률(%)', '교과서유사도(%)', '신뢰도(%)',
+    '거래준비도(%)', '진입구간(%)', '패턴신선도(%)', '재진입구조(%)',
+    '활성셋업(%)', '종합점수(%)', '백테스트edge(%)', '행동계획', '재진입유형',
+  ]
+  const rows = items.map(item => [
+    item.symbol.code,
+    item.symbol.name,
+    item.symbol.market,
+    item.timeframe,
+    item.pattern_type ?? '',
+    item.state ?? '',
+    (item.p_up * 100).toFixed(1),
+    (item.p_down * 100).toFixed(1),
+    (item.textbook_similarity * 100).toFixed(1),
+    (item.confidence * 100).toFixed(1),
+    ((item.trade_readiness_score ?? 0) * 100).toFixed(1),
+    ((item.entry_window_score ?? 0) * 100).toFixed(1),
+    ((item.freshness_score ?? 0) * 100).toFixed(1),
+    ((item.reentry_score ?? 0) * 100).toFixed(1),
+    ((item.active_setup_score ?? 0) * 100).toFixed(1),
+    (((item as unknown as Record<string, number>)['composite_score'] ?? item.entry_score) * 100).toFixed(1),
+    ((item.historical_edge_score ?? 0) * 100).toFixed(1),
+    item.action_plan_label ?? '',
+    item.reentry_case_label ?? '',
+  ])
+
+  const csv = [headers, ...rows]
+    .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    .join('\n')
+
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `screener_${new Date().toISOString().slice(0, 10)}.csv`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
 
 export default function ScreenerPage() {
   const [req, setReq] = useState<ScreenerRequest>({
@@ -379,13 +423,25 @@ export default function ScreenerPage() {
         </FilterGroup>
       </div>
 
-      <button
-        onClick={run}
-        className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-      >
-        <Search size={14} />
-        스크리너 실행
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={run}
+          className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+        >
+          <Search size={14} />
+          스크리너 실행
+        </button>
+        {(filteredData ?? data) && (
+          <button
+            onClick={() => exportToCsv(filteredData ?? data ?? [])}
+            className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+            title="검색 결과를 CSV로 내보내기"
+          >
+            <Download size={14} />
+            CSV 내보내기
+          </button>
+        )}
+      </div>
 
       {isLoading && <p className="text-xs text-muted-foreground">분석 중...</p>}
 

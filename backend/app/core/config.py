@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     min_market_cap_billion: float = 500.0   # 5,000억 원
     min_avg_volume_billion: float = 3.0     # 30억 원 (20일 평균 거래대금)
 
+    # CORS — comma-separated list of allowed origins; "*" to allow all
+    allowed_origins: str = "http://localhost:5173,http://localhost:3000"
+
     class Config:
         env_file = ".env"
 

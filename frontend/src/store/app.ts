@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware'
 
 import type { Timeframe } from '@/types/api'
 import { DEFAULT_TIMEFRAME } from '@/lib/timeframes'
+import { watchlistApi } from '@/lib/api'
 
 interface WatchlistItem {
   code: string
@@ -20,6 +21,8 @@ interface AppStore {
   addToWatchlist: (item: Omit<WatchlistItem, 'addedAt'>) => void
   removeFromWatchlist: (code: string) => void
   isWatched: (code: string) => boolean
+  /** Pull the server-side watchlist and merge into local state. */
+  syncFromServer: () => Promise<void>
 }
 
 export const useAppStore = create<AppStore>()(
@@ -35,14 +38,38 @@ export const useAppStore = create<AppStore>()(
       addToWatchlist: item => {
         const { watchlist } = get()
         if (watchlist.some(w => w.code === item.code)) return
-        set({ watchlist: [...watchlist, { ...item, addedAt: new Date().toISOString() }] })
+        const updated = [...watchlist, { ...item, addedAt: new Date().toISOString() }]
+        set({ watchlist: updated })
+        // Persist to server (fire-and-forget; localStorage is the source-of-truth)
+        watchlistApi.sync(updated).catch(() => {})
       },
 
       removeFromWatchlist: code => {
-        set({ watchlist: get().watchlist.filter(w => w.code !== code) })
+        const updated = get().watchlist.filter(w => w.code !== code)
+        set({ watchlist: updated })
+        watchlistApi.sync(updated).catch(() => {})
       },
 
       isWatched: code => get().watchlist.some(w => w.code === code),
+
+      syncFromServer: async () => {
+        try {
+          const serverItems = await watchlistApi.get()
+          if (!serverItems?.length) return
+          const { watchlist } = get()
+          // Merge: keep local items and append any server-only items
+          const localCodes = new Set(watchlist.map(w => w.code))
+          const merged = [
+            ...watchlist,
+            ...serverItems.filter(s => !localCodes.has(s.code)),
+          ]
+          if (merged.length > watchlist.length) {
+            set({ watchlist: merged })
+          }
+        } catch {
+          // Server unavailable — local list is fine
+        }
+      },
     }),
     {
       name: 'sch-app-store',

@@ -4,7 +4,7 @@ import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api.routes import dashboard, patterns, screener, symbols, system
+from .api.routes import dashboard, outcomes, patterns, screener, symbols, system, watchlist
 from .core.config import get_settings
 
 logger = structlog.get_logger()
@@ -17,10 +17,14 @@ app = FastAPI(
     docs_url="/docs",
 )
 
+_origins_raw = settings.allowed_origins.strip()
+_allow_all = _origins_raw == "*"
+_origin_list = ["*"] if _allow_all else [o.strip() for o in _origins_raw.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
-    allow_credentials=True,
+    allow_origins=_origin_list,
+    allow_credentials=not _allow_all,  # credentials + wildcard is invalid per CORS spec
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -30,6 +34,8 @@ app.include_router(dashboard.router, prefix="/api/v1")
 app.include_router(patterns.router, prefix="/api/v1")
 app.include_router(screener.router, prefix="/api/v1")
 app.include_router(system.router, prefix="/api/v1")
+app.include_router(watchlist.router, prefix="/api/v1")
+app.include_router(outcomes.router, prefix="/api/v1")
 
 
 @app.get("/health")

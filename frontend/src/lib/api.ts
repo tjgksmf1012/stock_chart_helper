@@ -3,9 +3,17 @@ import type {
   SymbolInfo, OHLCVBar, AnalysisResult, PriceInfo,
   DashboardResponse, PatternLibraryEntry, ScreenerRequest, DashboardItem, ScanStatusResponse, Timeframe,
   IntradayCandidateWarmupRequest, IntradayWarmupJobStatus, IntradayWarmupRequest, IntradayWarmupResponse, PatternStatsResponse, RuntimeStatusResponse,
+  WatchlistItem, OutcomeRecord, OutcomesSummary, OutcomeStatus,
 } from '@/types/api'
 
-const api = axios.create({ baseURL: '/api/v1' })
+// In development the Vite proxy forwards /api → backend (see vite.config.ts).
+// In production set VITE_API_BASE_URL to your backend's public URL
+// (e.g. https://stock-chart-helper-api.onrender.com) and this will call it directly.
+const _base = import.meta.env.VITE_API_BASE_URL
+  ? `${String(import.meta.env.VITE_API_BASE_URL).replace(/\/$/, '')}/api/v1`
+  : '/api/v1'
+
+const api = axios.create({ baseURL: _base })
 
 export const symbolsApi = {
   search: (q: string) => api.get<SymbolInfo[]>('/symbols/search', { params: { q } }).then(r => r.data),
@@ -38,6 +46,36 @@ export const patternsApi = {
 
 export const screenerApi = {
   run: (req: ScreenerRequest) => api.post<DashboardItem[]>('/screeners/run', req).then(r => r.data),
+}
+
+export const watchlistApi = {
+  /** Return the server-side watchlist. */
+  get: () => api.get<WatchlistItem[]>('/watchlist').then(r => r.data),
+  /** Full replace — overwrite the server list with the current local list. */
+  sync: (items: WatchlistItem[]) => api.post<WatchlistItem[]>('/watchlist', items).then(r => r.data),
+  /** Add one symbol (idempotent). */
+  add: (item: Omit<WatchlistItem, 'addedAt'>) =>
+    api.post<WatchlistItem[]>('/watchlist/add', item).then(r => r.data),
+  /** Remove one symbol by code. */
+  remove: (code: string) => api.delete<WatchlistItem[]>(`/watchlist/${code}`).then(r => r.data),
+}
+
+export const outcomesApi = {
+  /** Return all outcome records (newest first). */
+  list: () => api.get<OutcomeRecord[]>('/outcomes').then(r => r.data),
+  /** Record a new signal outcome (outcome='pending' by default). */
+  record: (record: Omit<OutcomeRecord, 'id' | 'recorded_at' | 'updated_at'>) =>
+    api.post<{ status: string; id: number; total_records: number }>('/outcomes', record).then(r => r.data),
+  /** Update the outcome of a previously-recorded signal. */
+  update: (
+    id: number,
+    update: { outcome: OutcomeStatus; exit_price?: number; exit_date?: string; notes?: string },
+  ) => api.patch<{ status: string; id: number }>(`/outcomes/${id}`, update).then(r => r.data),
+  /** Delete a record. */
+  remove: (id: number) =>
+    api.delete<{ status: string; deleted_id: number }>(`/outcomes/${id}`).then(r => r.data),
+  /** Aggregate stats: overall win-rate + per-pattern breakdown. */
+  summary: () => api.get<OutcomesSummary>('/outcomes/summary').then(r => r.data),
 }
 
 export const systemApi = {
