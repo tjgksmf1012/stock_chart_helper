@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     intraday_recent_store_reuse_minutes: int = 2
     intraday_seed_limit: int = 40
     intraday_seed_multiplier: int = 4
+    intraday_live_candidate_limit: int = 12
     kis_failure_cooldown_seconds: int = 900
 
     # Universe filters

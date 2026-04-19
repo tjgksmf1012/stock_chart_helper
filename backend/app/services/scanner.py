@@ -56,8 +56,9 @@ def _full_scan_cache_key(timeframe: str) -> str:
     return f"scanner:v3:full_results:{timeframe}"
 
 
-def _single_scan_cache_key(timeframe: str, code: str) -> str:
-    return f"scan:v3:result:{timeframe}:{code}"
+def _single_scan_cache_key(timeframe: str, code: str, allow_live_intraday: bool = True) -> str:
+    mode = "live" if allow_live_intraday else "budget"
+    return f"scan:v3:result:{timeframe}:{code}:{mode}"
 
 
 def _utc_now_iso() -> str:
@@ -73,6 +74,7 @@ def _status_template(timeframe: str) -> dict[str, Any]:
         "source": None,
         "candidate_source": None,
         "candidate_count": None,
+        "intraday_live_candidate_limit": None,
         "cached_result_count": 0,
         "universe_size": None,
         "last_started_at": None,
@@ -264,6 +266,7 @@ async def _build_confluence(
     timeframe: str,
     primary_row: dict[str, Any],
     force_refresh: bool,
+    allow_live_intraday: bool,
 ) -> dict[str, Any]:
     weights = _confluence_anchor_weights(timeframe)
     if not weights:
@@ -299,6 +302,7 @@ async def _build_confluence(
             anchor_timeframe,
             force_refresh=force_refresh,
             include_confluence=False,
+            allow_live_intraday=allow_live_intraday,
         )
         weighted_total += weight
         if not anchor_row:
@@ -365,16 +369,21 @@ async def _analyze_one(
     timeframe: str,
     force_refresh: bool = False,
     include_confluence: bool = True,
+    allow_live_intraday: bool = True,
 ) -> dict[str, Any] | None:
     fetcher = get_data_fetcher()
-    cache_key = _single_scan_cache_key(timeframe, code)
+    cache_key = _single_scan_cache_key(timeframe, code, allow_live_intraday=allow_live_intraday)
     if not force_refresh:
         cached = await cache_get(cache_key)
         if cached:
             return cached
 
     try:
-        df = await fetcher.get_stock_ohlcv_by_timeframe(code, timeframe)
+        df = await fetcher.get_stock_ohlcv_by_timeframe(
+            code,
+            timeframe,
+            allow_live_intraday=allow_live_intraday,
+        )
         if df.empty:
             return None
 
@@ -448,7 +457,17 @@ async def _analyze_one(
         }
 
         if include_confluence:
-            result.update(await _build_confluence(code, name, market, timeframe, result, force_refresh))
+            result.update(
+                await _build_confluence(
+                    code,
+                    name,
+                    market,
+                    timeframe,
+                    result,
+                    force_refresh,
+                    allow_live_intraday,
+                )
+            )
         else:
             result.update(
                 {
@@ -550,14 +569,31 @@ async def run_scan(
                 universe_size=len(universe),
                 candidate_source=candidate_source,
                 candidate_count=len(universe),
+                intraday_live_candidate_limit=(
+                    min(len(universe), settings.intraday_live_candidate_limit)
+                    if timeframe in {"1m", "15m", "30m", "60m"}
+                    else None
+                ),
             )
 
+            live_candidate_limit = (
+                settings.intraday_live_candidate_limit
+                if timeframe in {"1m", "15m", "30m", "60m"}
+                else len(universe)
+            )
             results: list[dict[str, Any]] = []
             for index in range(0, len(universe), batch_size):
                 batch = universe[index:index + batch_size]
                 tasks = [
-                    _analyze_one(code, name, market, timeframe, force_refresh=force_refresh)
-                    for code, name, market in batch
+                    _analyze_one(
+                        code,
+                        name,
+                        market,
+                        timeframe,
+                        force_refresh=force_refresh,
+                        allow_live_intraday=(index + offset) < live_candidate_limit,
+                    )
+                    for offset, (code, name, market) in enumerate(batch)
                 ]
                 batch_results = await asyncio.gather(*tasks, return_exceptions=True)
                 for item in batch_results:

@@ -91,6 +91,14 @@ FETCH_STATUS_MESSAGES.update(
     }
 )
 
+FETCH_STATUS_MESSAGES.update(
+    {
+        "scanner_store_only": "스캐너 절약 모드로 저장 분봉을 우선 사용했습니다.",
+        "scanner_public_only": "스캐너 절약 모드로 KIS 대신 공개 분봉 소스를 사용했습니다.",
+        "scanner_public_augmented": "스캐너 절약 모드로 공개 분봉과 저장 분봉을 함께 사용했습니다.",
+    }
+)
+
 
 class KRXDataFetcher:
     """Fetches historical OHLCV and symbol metadata for the Korean market."""
@@ -135,12 +143,23 @@ class KRXDataFetcher:
             logger.warning("pykrx failed for %s: %s; trying FinanceDataReader fallback", code, exc)
             return await self._fdr_fallback(code, start, end)
 
-    async def get_stock_ohlcv_by_timeframe(self, code: str, timeframe: str, lookback_days: int | None = None) -> pd.DataFrame:
+    async def get_stock_ohlcv_by_timeframe(
+        self,
+        code: str,
+        timeframe: str,
+        lookback_days: int | None = None,
+        allow_live_intraday: bool = True,
+    ) -> pd.DataFrame:
         spec = get_timeframe_spec(timeframe)
         period_days = lookback_days or spec.analysis_lookback_days
 
         if is_intraday_timeframe(timeframe):
-            return await self.get_stock_intraday_ohlcv(code, timeframe, period_days)
+            return await self.get_stock_intraday_ohlcv(
+                code,
+                timeframe,
+                period_days,
+                allow_live_intraday=allow_live_intraday,
+            )
 
         end = date.today()
         base_daily = await self.get_stock_ohlcv(code, end - timedelta(days=period_days), end)
@@ -148,7 +167,13 @@ class KRXDataFetcher:
             return base_daily
         return self._with_attrs(self._resample_daily_frame(base_daily, timeframe), **base_daily.attrs)
 
-    async def get_stock_intraday_ohlcv(self, code: str, timeframe: str, days: int) -> pd.DataFrame:
+    async def get_stock_intraday_ohlcv(
+        self,
+        code: str,
+        timeframe: str,
+        days: int,
+        allow_live_intraday: bool = True,
+    ) -> pd.DataFrame:
         if timeframe not in INTRADAY_INTERVAL_MAP:
             raise ValueError(f"Unsupported intraday timeframe: {timeframe}")
 
@@ -165,6 +190,9 @@ class KRXDataFetcher:
             stored_recent.attrs["fetch_status"] = "stored_recent"
             stored_recent.attrs["fetch_message"] = FETCH_STATUS_MESSAGES["stored_recent"]
             return stored_recent
+        if not allow_live_intraday:
+            return await self._get_intraday_without_kis(code, timeframe, period_days, stored_df)
+
         yahoo_df, kis_df = await asyncio.gather(
             self._get_yahoo_intraday_ohlcv(code, timeframe, period_days),
             self._get_kis_intraday_ohlcv(code, timeframe),
@@ -196,6 +224,47 @@ class KRXDataFetcher:
         failure_status, failure_message = self._combine_intraday_failure(yahoo_df, kis_df)
         return self._empty_frame(
             data_source="intraday_unavailable",
+            fetch_status=failure_status,
+            fetch_message=failure_message,
+            available_bars=0,
+        )
+
+    async def _get_intraday_without_kis(
+        self,
+        code: str,
+        timeframe: str,
+        period_days: int,
+        stored_df: pd.DataFrame,
+    ) -> pd.DataFrame:
+        yahoo_df = await self._get_yahoo_intraday_ohlcv(code, timeframe, period_days)
+
+        if not yahoo_df.empty:
+            combined = self._combine_intraday_frames(stored_df, yahoo_df)
+            await self._intraday_store.upsert_bars(
+                symbol=code,
+                timeframe=timeframe,
+                df=combined,
+                source=str(yahoo_df.attrs.get("data_source") or "yahoo_fallback"),
+            )
+            fetch_status = "scanner_public_only"
+            if not stored_df.empty and len(combined) > len(yahoo_df):
+                fetch_status = "scanner_public_augmented"
+            combined.attrs["data_source"] = str(yahoo_df.attrs.get("data_source") or "yahoo_fallback")
+            combined.attrs["fetch_status"] = fetch_status
+            combined.attrs["fetch_message"] = FETCH_STATUS_MESSAGES[fetch_status]
+            return combined
+
+        if not stored_df.empty:
+            stored_only = stored_df.copy()
+            stored_only.attrs["data_source"] = str(stored_df.attrs.get("stored_source") or "intraday_store")
+            stored_only.attrs["fetch_status"] = "scanner_store_only"
+            stored_only.attrs["fetch_message"] = FETCH_STATUS_MESSAGES["scanner_store_only"]
+            return stored_only
+
+        failure_status = str(yahoo_df.attrs.get("fetch_status") or "intraday_unavailable")
+        failure_message = str(yahoo_df.attrs.get("fetch_message") or FETCH_STATUS_MESSAGES["intraday_unavailable"])
+        return self._empty_frame(
+            data_source=str(yahoo_df.attrs.get("data_source") or "yahoo_fallback"),
             fetch_status=failure_status,
             fetch_message=failure_message,
             available_bars=0,

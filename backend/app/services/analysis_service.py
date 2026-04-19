@@ -56,6 +56,9 @@ _FETCH_STATUS_LABELS.update(
     {
         "stored_recent": "최근 저장 분봉 재사용",
         "kis_cooldown": "KIS 쿨다운",
+        "scanner_store_only": "스캐너 저장 분봉 우선",
+        "scanner_public_only": "스캐너 공개 분봉 사용",
+        "scanner_public_augmented": "스캐너 공개 분봉+저장 결합",
     }
 )
 
@@ -617,6 +620,15 @@ def _data_profile(df: pd.DataFrame, timeframe: str) -> dict[str, Any]:
     if fetch_status == "stored_recent":
         quality -= 0.02
         note = "최근에 저장한 장중 분봉을 다시 불러와 재사용하는 상태라 불필요한 API 호출은 줄였지만 최신성은 약간 보수적으로 해석해야 합니다."
+    elif fetch_status == "scanner_store_only":
+        quality -= 0.05
+        note = "스캐너 절약 모드로 저장된 분봉만 사용했습니다. 실시간 장중 변화는 보수적으로 해석해야 합니다."
+    elif fetch_status == "scanner_public_only":
+        quality -= 0.07
+        note = "스캐너 절약 모드로 KIS 대신 공개 분봉 소스를 사용했습니다."
+    elif fetch_status == "scanner_public_augmented":
+        quality -= 0.05
+        note = "스캐너 절약 모드에서 공개 분봉과 저장 분봉을 함께 사용했습니다."
     elif fetch_status == "stored_fallback":
         quality -= 0.08
         note = "실시간 분봉 공급이 비어 저장된 분봉 캐시를 대신 사용했습니다."
