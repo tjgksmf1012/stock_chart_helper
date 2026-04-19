@@ -42,6 +42,7 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
         <p className="text-xs text-muted-foreground">{analysis.reason_summary}</p>
         <ActionPlanCard analysis={analysis} />
         <TradeReadinessCard analysis={analysis} />
+        <EntryWindowCard analysis={analysis} />
         <ActiveSetupCard analysis={analysis} />
         <DecisionSupportCard analysis={analysis} />
         <div className="rounded-lg border border-border bg-background/60 p-3 text-xs text-muted-foreground">
@@ -80,6 +81,7 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
 
       <ActionPlanCard analysis={analysis} />
       <TradeReadinessCard analysis={analysis} />
+      <EntryWindowCard analysis={analysis} />
       <ActiveSetupCard analysis={analysis} />
       <DecisionSupportCard analysis={analysis} />
 
@@ -353,6 +355,32 @@ function TradeReadinessCard({ analysis }: { analysis: AnalysisResult }) {
           ))}
         </div>
       )}
+    </Card>
+  )
+}
+
+function EntryWindowCard({ analysis }: { analysis: AnalysisResult }) {
+  const score = analysis.entry_window_score ?? 0
+
+  return (
+    <Card className="space-y-3 border-sky-400/20 bg-sky-400/5">
+      <div className="flex items-center gap-2 text-sm font-semibold">
+        <Target size={15} className="text-sky-300" />
+        진입 구간
+        <Badge variant={score >= 0.7 ? 'bullish' : score >= 0.5 ? 'neutral' : 'muted'} className="ml-auto">
+          {analysis.entry_window_label || '재확인 필요'}
+        </Badge>
+      </div>
+      <div>
+        <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
+          <span>현재 가격 자리 평가</span>
+          <span className="font-mono">{fmtPct(score, 0)}</span>
+        </div>
+        <div className="h-2 overflow-hidden rounded-full bg-background">
+          <div className="h-full rounded-full bg-sky-300 transition-all" style={{ width: `${Math.round(score * 100)}%` }} />
+        </div>
+      </div>
+      {analysis.entry_window_summary && <p className="text-xs leading-relaxed text-muted-foreground">{analysis.entry_window_summary}</p>}
     </Card>
   )
 }

@@ -118,6 +118,9 @@ class AnalysisResult(BaseModel):
     trade_readiness_score: float = 0.0
     trade_readiness_label: str = "보류"
     trade_readiness_summary: str = ""
+    entry_window_score: float = 0.0
+    entry_window_label: str = "재확인 필요"
+    entry_window_summary: str = ""
     score_factors: list[ScoreFactor] = Field(default_factory=list)
     active_setup_score: float = 0.0
     active_setup_label: str = "활성 셋업 없음"
@@ -194,6 +197,9 @@ class DashboardItem(BaseModel):
     trade_readiness_score: float = 0.0
     trade_readiness_label: str = "보류"
     trade_readiness_summary: str = ""
+    entry_window_score: float = 0.0
+    entry_window_label: str = "재확인 필요"
+    entry_window_summary: str = ""
     score_factors: list[ScoreFactor] = Field(default_factory=list)
     active_setup_score: float = 0.0
     active_setup_label: str = "활성 셋업 없음"
@@ -412,6 +418,7 @@ class ScreenerRequest(BaseModel):
     min_sample_reliability: float = 0.0
     min_data_quality: float = 0.0
     min_trade_readiness_score: float = 0.0
+    min_entry_window_score: float = 0.0
     min_active_setup_score: float = 0.0
     min_confluence_score: float = 0.0
     min_historical_edge_score: float = 0.0

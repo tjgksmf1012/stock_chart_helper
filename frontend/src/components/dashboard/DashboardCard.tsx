@@ -55,6 +55,17 @@ export function DashboardCard({ item, intradayPreset }: DashboardCardProps) {
             <Badge variant={readinessVariant(item.trade_readiness_score ?? 0)}>
               준비도 {fmtPct(item.trade_readiness_score ?? 0, 0)}
             </Badge>
+            <Badge
+              variant={
+                (item.entry_window_score ?? 0) >= 0.7
+                  ? 'bullish'
+                  : (item.entry_window_score ?? 0) >= 0.5
+                    ? 'neutral'
+                    : 'muted'
+              }
+            >
+              진입 {fmtPct(item.entry_window_score ?? 0, 0)}
+            </Badge>
             <Badge variant={(item.active_setup_score ?? 0) >= 0.56 ? 'neutral' : 'muted'}>
               활성 {fmtPct(item.active_setup_score ?? 0, 0)}
             </Badge>
@@ -160,6 +171,16 @@ export function DashboardCard({ item, intradayPreset }: DashboardCardProps) {
             <span>{fmtPct(item.trade_readiness_score ?? 0, 0)}</span>
           </div>
           {item.trade_readiness_summary}
+        </div>
+      )}
+
+      {item.entry_window_summary && (
+        <div className="rounded-lg border border-sky-400/20 bg-sky-400/5 p-2.5 text-xs leading-relaxed text-muted-foreground">
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <span className="font-medium text-sky-200">진입 구간 · {item.entry_window_label}</span>
+            <span>{fmtPct(item.entry_window_score ?? 0, 0)}</span>
+          </div>
+          {item.entry_window_summary}
         </div>
       )}
 

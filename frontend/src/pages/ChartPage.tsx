@@ -143,6 +143,17 @@ export default function ChartPage() {
                 <Badge variant={readinessVariant(analysis.trade_readiness_score ?? 0)}>
                   준비도 {Math.round((analysis.trade_readiness_score ?? 0) * 100)}%
                 </Badge>
+                <Badge
+                  variant={
+                    (analysis.entry_window_score ?? 0) >= 0.7
+                      ? 'bullish'
+                      : (analysis.entry_window_score ?? 0) >= 0.5
+                        ? 'neutral'
+                        : 'muted'
+                  }
+                >
+                  진입 {Math.round((analysis.entry_window_score ?? 0) * 100)}%
+                </Badge>
                 <Badge variant={(analysis.active_setup_score ?? 0) >= 0.56 ? 'neutral' : 'muted'}>
                   활성 {Math.round((analysis.active_setup_score ?? 0) * 100)}%
                 </Badge>
@@ -203,6 +214,7 @@ export default function ChartPage() {
               <MetricCell label="하락 확률" value={`${(analysis.p_down * 100).toFixed(0)}%`} tone="text-red-400" />
               <MetricCell label="신뢰도" value={`${(analysis.confidence * 100).toFixed(0)}%`} />
               <MetricCell label="준비도" value={`${Math.round((analysis.trade_readiness_score ?? 0) * 100)}%`} />
+              <MetricCell label="진입 구간" value={`${Math.round((analysis.entry_window_score ?? 0) * 100)}%`} />
               <MetricCell label="활성 셋업" value={`${Math.round((analysis.active_setup_score ?? 0) * 100)}%`} />
               <MetricCell label="시총" value={analysis.symbol.market_cap ? `${fmtNumber(analysis.symbol.market_cap)}억` : '-'} />
             </div>
@@ -216,6 +228,11 @@ export default function ChartPage() {
           {analysis.action_plan_summary && (
             <div className="mt-3 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
               <span className="font-semibold text-primary">실전 판단:</span> {analysis.action_plan_summary}
+            </div>
+          )}
+          {analysis.entry_window_summary && (
+            <div className="mt-3 rounded-lg border border-sky-400/20 bg-sky-400/5 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+              <span className="font-semibold text-sky-200">진입 구간:</span> {analysis.entry_window_summary}
             </div>
           )}
         </div>

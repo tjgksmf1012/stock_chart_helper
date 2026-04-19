@@ -43,6 +43,7 @@ const FETCH_STATUS_OPTIONS = [
 const SORT_OPTIONS: Array<{ value: NonNullable<ScreenerRequest['sort_by']>; label: string }> = [
   { value: 'composite_score', label: '종합 점수' },
   { value: 'trade_readiness_score', label: '거래 준비도' },
+  { value: 'entry_window_score', label: '진입 구간' },
   { value: 'active_setup_score', label: '활성 셋업' },
   { value: 'entry_score', label: '진입 적합도' },
   { value: 'sample_reliability', label: '표본 신뢰도' },
@@ -63,6 +64,7 @@ export default function ScreenerPage() {
     min_sample_reliability: 0.2,
     min_data_quality: 0.4,
     min_trade_readiness_score: 0.35,
+    min_entry_window_score: 0.3,
     min_active_setup_score: 0.25,
     min_confluence_score: 0.0,
     min_historical_edge_score: 0.25,
@@ -87,6 +89,7 @@ export default function ScreenerPage() {
   const filteredData = useMemo(() => {
     if (!data) return data
     if (!intradayMode) return data
+
     return data.filter(item => {
       const matchesView =
         intradayView === 'all'
@@ -117,26 +120,37 @@ export default function ScreenerPage() {
 
   const stats = useMemo(() => {
     if (!filteredData?.length) return null
+
     const kospi = filteredData.filter(item => item.symbol.market === 'KOSPI').length
     const kosdaq = filteredData.filter(item => item.symbol.market === 'KOSDAQ').length
     const avgReliability = filteredData.reduce((sum, item) => sum + item.sample_reliability, 0) / filteredData.length
     const avgReadiness = filteredData.reduce((sum, item) => sum + (item.trade_readiness_score ?? 0), 0) / filteredData.length
+    const avgEntryWindow = filteredData.reduce((sum, item) => sum + (item.entry_window_score ?? 0), 0) / filteredData.length
     const avgActiveSetup = filteredData.reduce((sum, item) => sum + (item.active_setup_score ?? 0), 0) / filteredData.length
     const avgEdge = filteredData.reduce((sum, item) => sum + item.historical_edge_score, 0) / filteredData.length
     const avgRewardRisk = filteredData.reduce((sum, item) => sum + item.reward_risk_ratio, 0) / filteredData.length
     const liveCount = filteredData.filter(item => item.live_intraday_candidate).length
     const confirmedCount = filteredData.filter(item => item.state === 'confirmed').length
     const noSignalCount = filteredData.filter(item => item.no_signal_flag).length
-    return { kospi, kosdaq, avgReliability, avgReadiness, avgActiveSetup, avgEdge, avgRewardRisk, liveCount, confirmedCount, noSignalCount }
+
+    return {
+      kospi,
+      kosdaq,
+      avgReliability,
+      avgReadiness,
+      avgEntryWindow,
+      avgActiveSetup,
+      avgEdge,
+      avgRewardRisk,
+      liveCount,
+      confirmedCount,
+      noSignalCount,
+    }
   }, [filteredData])
 
   const run = () => {
     setSubmitted(true)
     refetch()
-  }
-
-  const applyPreset = (preset: IntradayPreset) => {
-    setIntradayPreset(preset)
   }
 
   const toggleMultiValue = (field: 'pattern_types' | 'states' | 'markets' | 'fetch_statuses', value: string) => {
@@ -166,7 +180,7 @@ export default function ScreenerPage() {
         <div>
           <h1 className="text-xl font-bold">스크리너</h1>
           <p className="text-xs text-muted-foreground">
-            패턴, 상태, 시장, 타임프레임뿐 아니라 표본 신뢰도와 데이터 상태까지 함께 걸러서 현재 스캔 결과를 좁혀 봅니다.
+            패턴, 상태, 시장, 타임프레임뿐 아니라 준비도와 진입 구간까지 함께 걸러 현재 실전에 가까운 후보를 추립니다.
           </p>
         </div>
       </div>
@@ -304,13 +318,19 @@ export default function ScreenerPage() {
         />
 
         <SliderGroup
+          label="최소 진입 구간"
+          value={req.min_entry_window_score ?? 0}
+          onChange={value => setReq(current => ({ ...current, min_entry_window_score: value }))}
+        />
+
+        <SliderGroup
           label="최소 활성 셋업"
           value={req.min_active_setup_score ?? 0}
           onChange={value => setReq(current => ({ ...current, min_active_setup_score: value }))}
         />
 
         <SliderGroup
-          label="최소 합산 점수"
+          label="최소 정렬 점수"
           value={req.min_confluence_score ?? 0}
           onChange={value => setReq(current => ({ ...current, min_confluence_score: value }))}
         />
@@ -405,11 +425,11 @@ export default function ScreenerPage() {
                   ['ready-now', '바로 볼 종목'],
                   ['watch', '지켜볼 후보'],
                   ['recheck', '재확인 필요'],
-                  ['cooling', '냉각/관망'],
+                  ['cooling', '관망/휴식'],
                 ] as Array<[IntradayPreset, string]>).map(([value, label]) => (
                   <button
                     key={value}
-                    onClick={() => applyPreset(value)}
+                    onClick={() => setIntradayPreset(value)}
                     className={`rounded-md px-2.5 py-1.5 text-xs transition-colors ${
                       intradayPreset === value
                         ? 'bg-emerald-600 text-white'
@@ -441,12 +461,12 @@ export default function ScreenerPage() {
               <div className="mt-1 text-sm font-medium">{((stats?.avgReadiness ?? 0) * 100).toFixed(0)}%</div>
             </Card>
             <Card>
-              <div className="text-xs text-muted-foreground">평균 활성 셋업</div>
-              <div className="mt-1 text-sm font-medium">{((stats?.avgActiveSetup ?? 0) * 100).toFixed(0)}%</div>
+              <div className="text-xs text-muted-foreground">평균 진입 구간</div>
+              <div className="mt-1 text-sm font-medium">{((stats?.avgEntryWindow ?? 0) * 100).toFixed(0)}%</div>
             </Card>
             <Card>
-              <div className="text-xs text-muted-foreground">평균 백테스트 edge</div>
-              <div className="mt-1 text-sm font-medium">{((stats?.avgEdge ?? 0) * 100).toFixed(0)}%</div>
+              <div className="text-xs text-muted-foreground">평균 활성 셋업</div>
+              <div className="mt-1 text-sm font-medium">{((stats?.avgActiveSetup ?? 0) * 100).toFixed(0)}%</div>
             </Card>
           </div>
 
@@ -527,7 +547,7 @@ function SummaryButton({ label, value, onClick }: { label: string; value: string
 
 function buildScreenerGuidance(items: DashboardItem[]): string {
   if (items.length === 0) {
-    return '현재 조건에 맞는 결과가 적습니다. 조건을 조금 완화하거나 다른 타임프레임도 함께 보는 편이 좋습니다.'
+    return '현재 조건에 맞는 결과가 적습니다. 조건을 조금 완화하거나 다른 타임프레임을 같이 보는 편이 좋습니다.'
   }
 
   const liveCount = items.filter(item => item.live_intraday_candidate).length
@@ -536,14 +556,14 @@ function buildScreenerGuidance(items: DashboardItem[]): string {
   const avgRewardRisk = items.reduce((sum, item) => sum + item.reward_risk_ratio, 0) / items.length
 
   if (liveCount >= Math.max(2, Math.round(items.length * 0.35)) && confirmedCount >= Math.max(1, Math.round(items.length * 0.2))) {
-    return '지금 스크리너 결과는 즉시 대응 후보가 제법 섞여 있습니다. live 후보와 confirmed 후보부터 우선 깊게 보세요.'
+    return '지금 스크리너 결과는 즉시 볼 후보가 제법 모여 있습니다. live 후보와 confirmed 후보부터 우선 확인해 보세요.'
   }
 
   if (avgEdge >= 0.58 && avgRewardRisk >= 1.4) {
-    return '평균 edge와 손익비는 무난합니다. 상위 결과 몇 개를 차트 상세로 내려가 확인하는 흐름이 좋습니다.'
+    return '평균 edge와 손익비가 무난한 편입니다. 상위 결과 몇 개를 차트 상세로 열어 실제 자리와 리스크를 확인해보면 좋습니다.'
   }
 
-  return '확인 단계 후보가 더 많은 편입니다. 진입보다 재확인과 트리거 감시에 더 가까운 결과로 보는 편이 좋습니다.'
+  return '확인 단계 후보가 더 많은 편입니다. 당장 진입보다 재확인이나 트리거 감시에 가까운 결과로 보는 편이 좋습니다.'
 }
 
 function SliderGroup({

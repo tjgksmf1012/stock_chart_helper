@@ -55,12 +55,12 @@ _KST = ZoneInfo("Asia/Seoul")
 
 
 def _full_scan_cache_key(timeframe: str) -> str:
-    return f"scanner:v6:full_results:{timeframe}"
+    return f"scanner:v7:full_results:{timeframe}"
 
 
 def _single_scan_cache_key(timeframe: str, code: str, allow_live_intraday: bool = True) -> str:
     mode = "live" if allow_live_intraday else "budget"
-    return f"scan:v6:result:{timeframe}:{code}:{mode}"
+    return f"scan:v7:result:{timeframe}:{code}:{mode}"
 
 
 def _utc_now_iso() -> str:
@@ -197,10 +197,11 @@ def _live_intraday_priority(row: dict[str, Any], timeframe: str) -> float:
         "cooling": -0.14,
     }.get(action_plan, 0.0)
     return (
-        0.28 * float(row.get("entry_score", 0.0))
+        0.22 * float(row.get("entry_score", 0.0))
+        + 0.18 * float(row.get("entry_window_score", 0.0))
         + 0.18 * float(row.get("completion_proximity", 0.0))
         + 0.16 * float(row.get("liquidity_score", 0.0))
-        + 0.12 * float(row.get("confidence", 0.0))
+        + 0.10 * float(row.get("confidence", 0.0))
         + 0.10 * float(row.get("recency_score", 0.0))
         + 0.08 * float(row.get("historical_edge_score", 0.0))
         + 0.08 * float(row.get("trend_alignment_score", 0.0))
@@ -266,6 +267,8 @@ def _non_live_intraday_reason(
 
     if float(row.get("completion_proximity", 0.0)) < 0.62:
         reasons.append("completion proximity is below the live threshold")
+    if float(row.get("entry_window_score", 0.0)) < 0.55:
+        reasons.append("entry window is not attractive enough yet")
     if float(row.get("entry_score", 0.0)) < 0.68:
         reasons.append("entry quality is not strong enough for live priority")
     if float(row.get("liquidity_score", 0.0)) < 0.62:
@@ -359,6 +362,19 @@ def _apply_setup_metadata(row: dict[str, Any]) -> dict[str, Any]:
         row["composite_score"] = round(float(row.get("composite_score", 0.0)) + 0.03, 3)
     elif row["setup_stage"] == "base_building":
         row["composite_score"] = round(float(row.get("composite_score", 0.0)) - 0.03, 3)
+
+    entry_window_score = float(row.get("entry_window_score", 0.0))
+    entry_window_label = str(row.get("entry_window_label") or "")
+    if entry_window_label == "초기 돌파":
+        row["composite_score"] = round(float(row.get("composite_score", 0.0)) + 0.05, 3)
+    elif entry_window_label in {"트리거 대기", "기준선 접근"}:
+        row["composite_score"] = round(float(row.get("composite_score", 0.0)) + 0.03, 3)
+    elif entry_window_label == "확장 추격":
+        row["composite_score"] = round(float(row.get("composite_score", 0.0)) - 0.07, 3)
+    elif entry_window_label in {"목표 근접", "관망"}:
+        row["composite_score"] = round(float(row.get("composite_score", 0.0)) - 0.10, 3)
+    elif entry_window_score < 0.3:
+        row["composite_score"] = round(float(row.get("composite_score", 0.0)) - 0.04, 3)
 
     phase = str(row.get("wyckoff_phase") or "neutral")
     if phase == "accumulation":
@@ -643,6 +659,9 @@ async def _analyze_one(
             "trade_readiness_score": analysis.trade_readiness_score,
             "trade_readiness_label": analysis.trade_readiness_label,
             "trade_readiness_summary": analysis.trade_readiness_summary,
+            "entry_window_score": analysis.entry_window_score,
+            "entry_window_label": analysis.entry_window_label,
+            "entry_window_summary": analysis.entry_window_summary,
             "score_factors": [factor.model_dump() for factor in analysis.score_factors],
             "active_setup_score": analysis.active_setup_score,
             "active_setup_label": analysis.active_setup_label,
@@ -844,9 +863,10 @@ async def run_scan(
 
             results.sort(
                 key=lambda row: (
-                    0 if row["no_signal_flag"] else 1,
-                    row.get("trade_readiness_score", 0),
-                    row.get("active_setup_score", 0),
+                        0 if row["no_signal_flag"] else 1,
+                        row.get("trade_readiness_score", 0),
+                        row.get("entry_window_score", 0),
+                        row.get("active_setup_score", 0),
                     row.get("composite_score", 0),
                     row.get("historical_edge_score", 0),
                     row.get("sample_reliability", 0),
@@ -957,6 +977,7 @@ async def get_scan_results(timeframe: str = DEFAULT_TIMEFRAME) -> list[dict[str,
     results.sort(
         key=lambda row: (
             row.get("trade_readiness_score", 0),
+            row.get("entry_window_score", 0),
             row.get("active_setup_score", 0),
             row.get("composite_score", row.get("entry_score", 0)),
             row.get("historical_edge_score", 0),
