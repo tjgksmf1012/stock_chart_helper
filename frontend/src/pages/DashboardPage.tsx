@@ -11,6 +11,7 @@ import { useAppStore } from '@/store/app'
 import type { DashboardResponse } from '@/types/api'
 
 type IntradayView = 'all' | 'live' | 'stored' | 'public' | 'mixed' | 'cooldown'
+type IntradayPreset = 'all' | 'ready-now' | 'watch' | 'recheck' | 'cooling'
 
 export default function DashboardPage() {
   const { selectedTimeframe, setTimeframe } = useAppStore()
@@ -19,6 +20,7 @@ export default function DashboardPage() {
   const opts = { staleTime: 30_000, refetchInterval: 60_000 }
   const [isTriggeringScan, setIsTriggeringScan] = useState(false)
   const [intradayView, setIntradayView] = useState<IntradayView>('all')
+  const [intradayPreset, setIntradayPreset] = useState<IntradayPreset>('all')
   const lastFinishedAtRef = useRef<string | null>(null)
 
   const longQ = useQuery({ queryKey: ['dashboard', timeframe, 'long'], queryFn: () => dashboardApi.longHigh(timeframe), ...opts })
@@ -89,15 +91,38 @@ export default function DashboardPage() {
 
   useEffect(() => {
     setIntradayView('all')
+    setIntradayPreset('all')
   }, [timeframe])
 
   const filterDashboard = (data: DashboardResponse | undefined): DashboardResponse | undefined => {
-    if (!intradayMode || intradayView === 'all' || !data) return data
+    if (!intradayMode || !data) return data
     return {
       ...data,
       items: data.items.filter(item => {
-        if (intradayView === 'live') return item.live_intraday_candidate
-        return !item.live_intraday_candidate && item.intraday_collection_mode === intradayView
+        const matchesView =
+          intradayView === 'all'
+            ? true
+            : intradayView === 'live'
+              ? item.live_intraday_candidate
+              : !item.live_intraday_candidate && item.intraday_collection_mode === intradayView
+
+        const matchesPreset =
+          intradayPreset === 'all'
+            ? true
+            : intradayPreset === 'ready-now'
+              ? item.live_intraday_candidate &&
+                !item.no_signal_flag &&
+                ['confirmed', 'trigger_ready', 'breakout_watch'].includes(item.setup_stage)
+              : intradayPreset === 'watch'
+                ? !item.no_signal_flag &&
+                  ['late_base', 'early_trigger_watch', 'base_building'].includes(item.setup_stage) &&
+                  item.formation_quality >= 0.5
+                : intradayPreset === 'recheck'
+                  ? ['stored', 'public', 'mixed', 'budget'].includes(item.intraday_collection_mode) &&
+                    item.data_quality >= 0.45
+                  : item.intraday_collection_mode === 'cooldown' || item.no_signal_flag
+
+        return matchesView && matchesPreset
       }),
     }
   }
@@ -182,6 +207,30 @@ export default function DashboardPage() {
               className={`rounded-md px-2.5 py-1.5 text-xs transition-colors ${
                 intradayView === value
                   ? 'bg-primary text-primary-foreground'
+                  : 'border border-border bg-card text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {intradayMode && (
+        <div className="flex flex-wrap gap-2">
+          {([
+            ['all', '프리셋 전체'],
+            ['ready-now', '바로 볼 종목'],
+            ['watch', '지켜볼 후보'],
+            ['recheck', '재확인 필요'],
+            ['cooling', '냉각/관망'],
+          ] as Array<[IntradayPreset, string]>).map(([value, label]) => (
+            <button
+              key={value}
+              onClick={() => setIntradayPreset(value)}
+              className={`rounded-md px-2.5 py-1.5 text-xs transition-colors ${
+                intradayPreset === value
+                  ? 'bg-emerald-600 text-white'
                   : 'border border-border bg-card text-muted-foreground hover:text-foreground'
               }`}
             >
