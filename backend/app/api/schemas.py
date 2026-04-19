@@ -102,6 +102,9 @@ class AnalysisResult(BaseModel):
     action_plan_label: str = "관찰 후보"
     action_plan_summary: str = ""
     action_priority_score: float = 0.0
+    risk_flags: list[str] = Field(default_factory=list)
+    confirmation_checklist: list[str] = Field(default_factory=list)
+    next_trigger: str = ""
     no_signal_flag: bool
     no_signal_reason: str
     reason_summary: str
@@ -166,6 +169,9 @@ class DashboardItem(BaseModel):
     action_plan_label: str = "관찰 후보"
     action_plan_summary: str = ""
     action_priority_score: float = 0.0
+    risk_flags: list[str] = Field(default_factory=list)
+    confirmation_checklist: list[str] = Field(default_factory=list)
+    next_trigger: str = ""
     no_signal_flag: bool
     reason_summary: str
     completion_proximity: float = 0.0

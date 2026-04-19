@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { Activity, BarChart2, Clock3, ShieldCheck, Target } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Activity, BarChart2, Clock3, RefreshCw, ShieldCheck, Target } from 'lucide-react'
 
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
@@ -18,10 +18,19 @@ const TIMEFRAME_FILTERS: Array<{ value: ReportTimeframe; label: string }> = [
 
 export default function PatternPerformancePage() {
   const [timeframe, setTimeframe] = useState<ReportTimeframe>('1d')
+  const queryClient = useQueryClient()
   const { data, isLoading } = useQuery({
     queryKey: ['patterns', 'stats'],
     queryFn: patternsApi.stats,
     staleTime: 60_000,
+  })
+  const refreshMutation = useMutation({
+    mutationFn: patternsApi.refreshStats,
+    onSuccess: () => {
+      window.setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['patterns', 'stats'] })
+      }, 1500)
+    },
   })
 
   const filtered = useMemo(
@@ -57,21 +66,37 @@ export default function PatternPerformancePage() {
       </div>
 
       <Card className="space-y-4">
-        <div className="flex flex-wrap gap-2">
-          {TIMEFRAME_FILTERS.map(option => (
-            <button
-              key={option.value}
-              onClick={() => setTimeframe(option.value)}
-              className={`rounded-md px-3 py-1.5 text-xs transition-colors ${
-                timeframe === option.value
-                  ? 'bg-primary text-primary-foreground'
-                  : 'border border-border bg-card text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              {option.label}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap gap-2">
+            {TIMEFRAME_FILTERS.map(option => (
+              <button
+                key={option.value}
+                onClick={() => setTimeframe(option.value)}
+                className={`rounded-md px-3 py-1.5 text-xs transition-colors ${
+                  timeframe === option.value
+                    ? 'bg-primary text-primary-foreground'
+                    : 'border border-border bg-card text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={() => refreshMutation.mutate()}
+            disabled={refreshMutation.isPending}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background/60 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <RefreshCw size={13} className={refreshMutation.isPending ? 'animate-spin' : ''} />
+            {refreshMutation.isPending ? '재계산 요청 중' : '백테스트 재계산'}
+          </button>
         </div>
+
+        {refreshMutation.isSuccess && (
+          <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
+            백테스트 재계산을 백그라운드로 시작했습니다. 잠시 후 리포트가 새 통계로 갱신됩니다.
+          </div>
+        )}
 
         {summary && (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">

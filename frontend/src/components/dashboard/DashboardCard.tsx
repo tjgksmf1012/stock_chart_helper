@@ -147,6 +147,25 @@ export function DashboardCard({ item, intradayPreset }: DashboardCardProps) {
         </div>
       )}
 
+      {(item.next_trigger || item.risk_flags?.length > 0) && (
+        <div className="rounded-lg border border-orange-400/15 bg-orange-400/5 p-2.5 text-xs leading-relaxed text-muted-foreground">
+          {item.next_trigger && (
+            <div>
+              <span className="font-medium text-orange-200">다음 트리거:</span> {item.next_trigger}
+            </div>
+          )}
+          {item.risk_flags?.length > 0 && (
+            <div className="mt-1 flex flex-wrap gap-1">
+              {item.risk_flags.slice(0, 3).map((flag, index) => (
+                <Badge key={`${flag}-${index}`} variant="warning">
+                  {flag}
+                </Badge>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
         <span>신뢰도 {fmtPct(item.confidence)}</span>
         <span className="text-right">신선도 {fmtPct(item.recency_score)}</span>

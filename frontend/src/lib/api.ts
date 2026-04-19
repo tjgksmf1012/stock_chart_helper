@@ -33,6 +33,7 @@ export const patternsApi = {
   library: () => api.get<PatternLibraryEntry[]>('/patterns/library').then(r => r.data),
   get: (type: string) => api.get<PatternLibraryEntry>(`/patterns/library/${type}`).then(r => r.data),
   stats: () => api.get<PatternStatsResponse>('/patterns/stats').then(r => r.data),
+  refreshStats: () => api.post<{ accepted: boolean; message: string; requested_at: string }>('/patterns/stats/refresh').then(r => r.data),
 }
 
 export const screenerApi = {

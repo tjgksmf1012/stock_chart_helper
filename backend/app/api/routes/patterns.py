@@ -1,9 +1,9 @@
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 
 from ..schemas import PatternLibraryEntry, PatternStatsEntry, PatternStatsResponse
-from ...services.backtest_engine import get_pattern_stats_map
+from ...services.backtest_engine import get_pattern_stats_map, run_backtest
 from ...services.timeframe_service import timeframe_label
 
 router = APIRouter(prefix="/patterns", tags=["patterns"])
@@ -297,3 +297,13 @@ async def get_pattern_stats() -> PatternStatsResponse:
         reverse=True,
     )
     return PatternStatsResponse(generated_at=datetime.utcnow().isoformat(), items=items)
+
+
+@router.post("/stats/refresh")
+async def refresh_pattern_stats(background_tasks: BackgroundTasks) -> dict[str, str | bool]:
+    background_tasks.add_task(run_backtest)
+    return {
+        "accepted": True,
+        "message": "Pattern backtest refresh started in the background.",
+        "requested_at": datetime.utcnow().isoformat(),
+    }

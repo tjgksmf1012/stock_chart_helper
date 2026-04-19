@@ -41,6 +41,7 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
         <p className="text-xs text-muted-foreground">{analysis.no_signal_reason}</p>
         <p className="text-xs text-muted-foreground">{analysis.reason_summary}</p>
         <ActionPlanCard analysis={analysis} />
+        <DecisionSupportCard analysis={analysis} />
         <div className="rounded-lg border border-border bg-background/60 p-3 text-xs text-muted-foreground">
           <div>데이터 품질 {fmtPct(analysis.data_quality, 0)}</div>
           <div className="mt-1">데이터 상태 {analysis.fetch_status_label}</div>
@@ -76,6 +77,7 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
       </Card>
 
       <ActionPlanCard analysis={analysis} />
+      <DecisionSupportCard analysis={analysis} />
 
       {bestPattern && (
         <Card className="space-y-3">
@@ -294,6 +296,50 @@ function ActionPlanCard({ analysis }: { analysis: AnalysisResult }) {
         <StatRow label="행동 우선순위" value={fmtPct(analysis.action_priority_score)} />
         <StatRow label="기준 타임프레임" value={analysis.timeframe_label} />
       </div>
+    </Card>
+  )
+}
+
+function DecisionSupportCard({ analysis }: { analysis: AnalysisResult }) {
+  const flags = analysis.risk_flags ?? []
+  const checklist = analysis.confirmation_checklist ?? []
+  if (!flags.length && !checklist.length && !analysis.next_trigger) return null
+
+  return (
+    <Card className="space-y-3">
+      <div className="flex items-center gap-2 text-sm font-semibold">
+        <ShieldAlert size={15} className="text-orange-400" />
+        실전 검증 체크
+      </div>
+      {analysis.next_trigger && (
+        <div className="rounded-lg border border-primary/20 bg-primary/5 p-2.5 text-xs leading-relaxed text-muted-foreground">
+          <span className="font-medium text-primary">다음 트리거:</span> {analysis.next_trigger}
+        </div>
+      )}
+      {flags.length > 0 && (
+        <div>
+          <div className="mb-1.5 text-xs font-medium text-muted-foreground">리스크 플래그</div>
+          <div className="space-y-1.5">
+            {flags.map((flag, index) => (
+              <div key={`${flag}-${index}`} className="rounded-md border border-orange-400/15 bg-orange-400/5 px-2.5 py-1.5 text-xs text-orange-100">
+                {flag}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {checklist.length > 0 && (
+        <div>
+          <div className="mb-1.5 text-xs font-medium text-muted-foreground">확인 순서</div>
+          <ol className="space-y-1.5 text-xs text-muted-foreground">
+            {checklist.map((item, index) => (
+              <li key={`${item}-${index}`} className="rounded-md border border-border bg-background/60 px-2.5 py-1.5">
+                {index + 1}. {item}
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
     </Card>
   )
 }

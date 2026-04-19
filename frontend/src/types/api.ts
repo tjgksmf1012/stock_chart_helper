@@ -97,6 +97,9 @@ export interface AnalysisResult {
   action_plan_label: string
   action_plan_summary: string
   action_priority_score: number
+  risk_flags: string[]
+  confirmation_checklist: string[]
+  next_trigger: string
   no_signal_flag: boolean
   no_signal_reason: string
   reason_summary: string
@@ -161,6 +164,9 @@ export interface DashboardItem {
   action_plan_label: string
   action_plan_summary: string
   action_priority_score: number
+  risk_flags: string[]
+  confirmation_checklist: string[]
+  next_trigger: string
   no_signal_flag: boolean
   reason_summary: string
   completion_proximity: number

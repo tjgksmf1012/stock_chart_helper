@@ -826,6 +826,144 @@ def _action_plan_profile(
     }
 
 
+def _no_signal_decision_support(timeframe: str, data_quality: float, available_bars: int, fetch_status: str) -> dict[str, Any]:
+    flags: list[str] = []
+    checklist: list[str] = []
+    label = timeframe_label(timeframe)
+
+    if available_bars < get_timeframe_spec(timeframe).min_bars:
+        flags.append(f"{label} 분석에 필요한 봉 수가 부족합니다.")
+    if data_quality < 0.65:
+        flags.append("데이터 품질이 낮아 신호를 보수적으로 봐야 합니다.")
+    if fetch_status in {"kis_cooldown", "intraday_rate_limited", "yahoo_rate_limited"}:
+        flags.append("데이터 공급처 제한/쿨다운으로 최신성이 약할 수 있습니다.")
+    if not flags:
+        flags.append("교과서형 패턴이 아직 충분히 선명하지 않습니다.")
+
+    if is_intraday_timeframe(timeframe):
+        checklist.extend(
+            [
+                "장중 최신 봉이 추가된 뒤 다시 스캔하기",
+                "상위 타임프레임(60분/일봉) 방향과 같은지 확인하기",
+                "거래량이 평균보다 붙는 구간만 후보로 보기",
+            ]
+        )
+    else:
+        checklist.extend(
+            [
+                "새 지지/저항 구조가 생기는지 확인하기",
+                "거래량 감소 후 돌파 거래량이 붙는지 확인하기",
+                "일봉/주봉 방향이 서로 충돌하지 않는지 확인하기",
+            ]
+        )
+
+    return {
+        "risk_flags": flags[:5],
+        "confirmation_checklist": checklist[:5],
+        "next_trigger": "패턴 구조가 새로 감지되거나 데이터 품질이 회복되면 다시 후보로 올립니다.",
+    }
+
+
+def _decision_support_profile(
+    timeframe: str,
+    pattern: PatternResult,
+    action_plan: dict[str, Any],
+    p_up: float,
+    p_down: float,
+    confidence: float,
+    data_quality: float,
+    reward_risk_ratio: float,
+    headroom_score: float,
+    target_distance_pct: float,
+    stop_distance_pct: float,
+    recency_score: float,
+    sample_reliability: float,
+    trend_alignment_score: float,
+    wyckoff_phase: str,
+    intraday_session_score: float,
+    fetch_status: str,
+    target_hit_at: str | None,
+    invalidated_at: str | None,
+    bars_since_signal: int | None,
+) -> dict[str, Any]:
+    flags: list[str] = []
+    checklist: list[str] = []
+    bullish = _is_bullish(pattern.pattern_type)
+    bearish = _is_bearish(pattern.pattern_type)
+    direction = "상승" if bullish or (not bearish and p_up >= p_down) else "하락"
+    pattern_name = pattern.pattern_type.replace("_", " ")
+
+    if invalidated_at or pattern.state == "invalidated":
+        flags.append("기존 패턴이 무효화되어 같은 구조를 계속 추격하면 위험합니다.")
+    if target_hit_at or pattern.state == "played_out":
+        flags.append("기존 목표가를 이미 한 번 소화한 패턴입니다.")
+    if headroom_score < 0.25 or target_distance_pct < 0.025:
+        flags.append("현재가에서 목표가까지 남은 여지가 작습니다.")
+    if reward_risk_ratio < 1.2:
+        flags.append("손익비가 낮아 작은 흔들림에도 기대값이 훼손됩니다.")
+    if confidence < 0.42:
+        flags.append("종합 신뢰도가 아직 낮습니다.")
+    if data_quality < 0.65:
+        flags.append("데이터 품질이 낮아 최신 봉 반영을 재확인해야 합니다.")
+    if sample_reliability < 0.35:
+        flags.append("유사 패턴 표본 신뢰도가 낮습니다.")
+    if recency_score < 0.35:
+        flags.append("감지된 신호가 다소 오래되어 현재 구조와 어긋날 수 있습니다.")
+    if trend_alignment_score < 0.45:
+        flags.append("추세 정렬이 약해 패턴 단독 판단은 위험합니다.")
+    if bullish and wyckoff_phase in {"distribution", "markdown"}:
+        flags.append("와이코프 국면이 상승 패턴과 충돌합니다.")
+    if bearish and wyckoff_phase in {"accumulation", "markup"}:
+        flags.append("와이코프 국면이 하락 패턴과 충돌합니다.")
+    if is_intraday_timeframe(timeframe) and intraday_session_score < 0.48:
+        flags.append("분봉 시간대 품질이 낮아 단타 진입 타이밍이 애매합니다.")
+    if fetch_status in {"kis_cooldown", "stored_fallback", "scanner_store_only", "scanner_public_only"}:
+        flags.append("실시간 KIS 데이터가 아닌 저장/공개 데이터 비중이 큽니다.")
+
+    if pattern.state == "forming":
+        checklist.append("완성 전 예측 매수보다 목선/저항선 반응을 먼저 확인하기")
+    elif pattern.state == "armed":
+        checklist.append("돌파 직전 후보이므로 기준선 돌파와 거래량 확장을 함께 확인하기")
+    elif pattern.state == "confirmed":
+        checklist.append("돌파 후 지지/저항 재확인과 손절 기준 이탈 여부 확인하기")
+    else:
+        checklist.append("새 구조가 만들어질 때까지 같은 패턴 재활용을 피하기")
+
+    if pattern.neckline:
+        relation = "상향 돌파" if direction == "상승" else "하향 이탈"
+        checklist.append(f"목선 {pattern.neckline:,.0f}원 {relation} 후 종가 유지 확인하기")
+    if pattern.invalidation_level:
+        checklist.append(f"무효화 기준 {pattern.invalidation_level:,.0f}원 이탈 여부 확인하기")
+    if pattern.target_level and action_plan.get("action_plan") != "cooling":
+        checklist.append(f"1차 목표 {pattern.target_level:,.0f}원까지 남은 공간과 손익비 확인하기")
+    if stop_distance_pct > 0.0:
+        checklist.append(f"손절폭이 현재가 대비 {stop_distance_pct:.1%} 수준인지 감당 가능한지 확인하기")
+    if bars_since_signal is not None and bars_since_signal > 0:
+        checklist.append(f"신호 이후 {bars_since_signal}개 봉이 지나며 구조가 유지되는지 확인하기")
+    if is_intraday_timeframe(timeframe):
+        checklist.append("분봉은 KIS 최신 데이터 갱신 후 같은 판단이 유지되는지 재확인하기")
+    else:
+        checklist.append("상위/하위 타임프레임이 같은 방향인지 함께 확인하기")
+
+    if action_plan.get("action_plan") == "ready_now":
+        next_trigger = f"{pattern_name} 기준선 확인 후 {direction} 방향 추세가 유지되면 우선 후보입니다."
+    elif action_plan.get("action_plan") == "watch":
+        next_trigger = "완성 신호가 붙을 때까지 기다렸다가 돌파/재시험 품질을 확인합니다."
+    elif action_plan.get("action_plan") == "recheck":
+        next_trigger = "최신 데이터와 다음 확인봉이 들어온 뒤 같은 점수가 유지되는지 재계산합니다."
+    else:
+        next_trigger = "목표 소진/무효 가능성이 커서 새 패턴이 만들어질 때까지 관망합니다."
+
+    if not flags:
+        flags.append("치명적 리스크 플래그는 적지만, 기준선 이탈 여부는 계속 확인해야 합니다.")
+
+    return {
+        "risk_flags": flags[:6],
+        "confirmation_checklist": checklist[:6],
+        "next_trigger": next_trigger,
+    }
+
+
 def _future_timestamp(last_ts: pd.Timestamp, timeframe: str, step: int) -> pd.Timestamp:
     base = pd.Timestamp(last_ts)
     if timeframe == "1mo":
@@ -1018,6 +1156,12 @@ def build_no_signal_snapshot(
         profile["fetch_message"],
     )
     action_plan = _no_signal_action_plan(timeframe, profile["data_quality"], profile["available_bars"])
+    decision_support = _no_signal_decision_support(
+        timeframe,
+        profile["data_quality"],
+        profile["available_bars"],
+        profile["fetch_status"],
+    )
     return AnalysisResult(
         symbol=symbol,
         timeframe=timeframe,
@@ -1051,6 +1195,9 @@ def build_no_signal_snapshot(
         action_plan_label=action_plan["action_plan_label"],
         action_plan_summary=action_plan["action_plan_summary"],
         action_priority_score=action_plan["action_priority_score"],
+        risk_flags=decision_support["risk_flags"],
+        confirmation_checklist=decision_support["confirmation_checklist"],
+        next_trigger=decision_support["next_trigger"],
         no_signal_flag=True,
         no_signal_reason=no_signal_reason,
         reason_summary=reason_summary,
@@ -1274,6 +1421,28 @@ async def analyze_symbol_dataframe(
         best_invalidated_at,
         profile["fetch_status"],
     )
+    decision_support = _decision_support_profile(
+        timeframe,
+        best_pattern,
+        action_plan,
+        probability.p_up,
+        probability.p_down,
+        probability.confidence,
+        profile["data_quality"],
+        probability.reward_risk_ratio,
+        probability.headroom_score,
+        probability.target_distance_pct,
+        probability.stop_distance_pct,
+        probability.recency_score,
+        probability.sample_reliability,
+        trend_profile["trend_alignment_score"],
+        wyckoff_profile["wyckoff_phase"],
+        intraday_profile["intraday_session_score"],
+        profile["fetch_status"],
+        best_target_hit_at,
+        best_invalidated_at,
+        bars_since_signal,
+    )
 
     return AnalysisResult(
         symbol=symbol,
@@ -1308,6 +1477,9 @@ async def analyze_symbol_dataframe(
         action_plan_label=action_plan["action_plan_label"],
         action_plan_summary=action_plan["action_plan_summary"],
         action_priority_score=action_plan["action_priority_score"],
+        risk_flags=decision_support["risk_flags"],
+        confirmation_checklist=decision_support["confirmation_checklist"],
+        next_trigger=decision_support["next_trigger"],
         no_signal_flag=probability.no_signal_flag,
         no_signal_reason=probability.no_signal_reason,
         reason_summary=probability.reason_summary,

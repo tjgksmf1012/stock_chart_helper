@@ -408,7 +408,7 @@ export default function ScreenerPage() {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Card>
               <div className="text-xs text-muted-foreground">검색 결과</div>
-              <div className="mt-1 text-lg font-semibold">{data.length}개</div>
+              <div className="mt-1 text-lg font-semibold">{filteredData?.length ?? 0}개</div>
             </Card>
             <Card>
               <div className="text-xs text-muted-foreground">시장 분포</div>
