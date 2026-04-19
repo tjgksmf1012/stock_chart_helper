@@ -11,6 +11,7 @@ const PatternLibraryPage = lazy(() => import('./pages/PatternLibraryPage'))
 const PatternPerformancePage = lazy(() => import('./pages/PatternPerformancePage'))
 const ScreenerPage = lazy(() => import('./pages/ScreenerPage'))
 const WatchlistPage = lazy(() => import('./pages/WatchlistPage'))
+const SystemStatusPage = lazy(() => import('./pages/SystemStatusPage'))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -35,6 +36,7 @@ createRoot(document.getElementById('root')!).render(
               <Route path="library" element={<PatternLibraryPage />} />
               <Route path="reports/patterns" element={<PatternPerformancePage />} />
               <Route path="screener" element={<ScreenerPage />} />
+              <Route path="system" element={<SystemStatusPage />} />
             </Route>
           </Routes>
         </Suspense>

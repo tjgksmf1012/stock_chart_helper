@@ -2,7 +2,7 @@ import axios from 'axios'
 import type {
   SymbolInfo, OHLCVBar, AnalysisResult, PriceInfo,
   DashboardResponse, PatternLibraryEntry, ScreenerRequest, DashboardItem, ScanStatusResponse, Timeframe,
-  PatternStatsResponse,
+  PatternStatsResponse, RuntimeStatusResponse,
 } from '@/types/api'
 
 const api = axios.create({ baseURL: '/api/v1' })
@@ -38,4 +38,8 @@ export const patternsApi = {
 
 export const screenerApi = {
   run: (req: ScreenerRequest) => api.post<DashboardItem[]>('/screeners/run', req).then(r => r.data),
+}
+
+export const systemApi = {
+  status: () => api.get<RuntimeStatusResponse>('/system/status').then(r => r.data),
 }

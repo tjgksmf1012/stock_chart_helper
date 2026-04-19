@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { BarChart2, BookOpen, LayoutDashboard, SlidersHorizontal, Star, TrendingUp } from 'lucide-react'
+import { BarChart2, BookOpen, LayoutDashboard, ServerCog, SlidersHorizontal, Star, TrendingUp } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
@@ -7,10 +7,11 @@ import { useAppStore } from '@/store/app'
 const NAV_ITEMS = [
   { to: '/', label: '대시보드', icon: LayoutDashboard, end: true },
   { to: '/chart', label: '차트 분석', icon: BarChart2, end: false },
-  { to: '/watchlist', label: '관심 종목', icon: Star, end: true },
+  { to: '/watchlist', label: '관심종목', icon: Star, end: true },
   { to: '/library', label: '패턴 라이브러리', icon: BookOpen, end: true },
   { to: '/reports/patterns', label: '패턴 성과', icon: TrendingUp, end: true },
   { to: '/screener', label: '스크리너', icon: SlidersHorizontal, end: true },
+  { to: '/system', label: '운영 상태', icon: ServerCog, end: true },
 ]
 
 export function Layout() {
@@ -57,7 +58,7 @@ export function Layout() {
       </main>
 
       <footer className="border-t border-border px-4 py-3 text-center text-xs text-muted-foreground">
-        Stock Chart Helper는 차트 분석 보조 도구이며 투자 권유를 위한 서비스가 아닙니다.
+        Stock Chart Helper는 차트 분석 보조 도구이며 투자 권유 서비스가 아닙니다.
       </footer>
     </div>
   )

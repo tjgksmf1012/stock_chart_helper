@@ -227,6 +227,35 @@ class ScanStatusResponse(BaseModel):
     trigger_accepted: bool | None = None
 
 
+class KisRuntimeStatus(BaseModel):
+    configured: bool
+    environment: str
+    token_cached: bool
+    token_expires_at: str | None = None
+    token_expires_in_seconds: int | None = None
+    resolved_base_url: str | None = None
+    token_cache_path: str
+    max_concurrent_requests: int
+    request_spacing_ms: int
+    guidance: list[str] = Field(default_factory=list)
+
+
+class CacheRuntimeStatus(BaseModel):
+    backend: str
+    redis_available: bool
+    memory_fallback_entries: int
+
+
+class RuntimeStatusResponse(BaseModel):
+    generated_at: str
+    app_name: str
+    debug: bool
+    kis: KisRuntimeStatus
+    cache: CacheRuntimeStatus
+    scheduler_enabled: bool
+    data_notes: list[str] = Field(default_factory=list)
+
+
 class PatternLibraryEntry(BaseModel):
     pattern_type: str
     name_kr: str

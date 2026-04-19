@@ -66,3 +66,20 @@ async def cache_delete(key: str) -> None:
         except Exception:
             pass
     _mem_cache.pop(key, None)
+
+
+async def cache_backend_status() -> dict[str, Any]:
+    r = await _try_get_redis()
+    now = time.time()
+    live_mem_entries = sum(1 for _, expires_at in _mem_cache.values() if expires_at > now)
+    if r:
+        return {
+            "backend": "redis",
+            "redis_available": True,
+            "memory_fallback_entries": live_mem_entries,
+        }
+    return {
+        "backend": "memory",
+        "redis_available": False,
+        "memory_fallback_entries": live_mem_entries,
+    }

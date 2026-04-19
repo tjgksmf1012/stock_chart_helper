@@ -255,6 +255,35 @@ export interface PatternStatsResponse {
   items: PatternStatsEntry[]
 }
 
+export interface KisRuntimeStatus {
+  configured: boolean
+  environment: string
+  token_cached: boolean
+  token_expires_at: string | null
+  token_expires_in_seconds: number | null
+  resolved_base_url: string | null
+  token_cache_path: string
+  max_concurrent_requests: number
+  request_spacing_ms: number
+  guidance: string[]
+}
+
+export interface CacheRuntimeStatus {
+  backend: string
+  redis_available: boolean
+  memory_fallback_entries: number
+}
+
+export interface RuntimeStatusResponse {
+  generated_at: string
+  app_name: string
+  debug: boolean
+  kis: KisRuntimeStatus
+  cache: CacheRuntimeStatus
+  scheduler_enabled: boolean
+  data_notes: string[]
+}
+
 export interface ScreenerRequest {
   pattern_types?: string[]
   states?: string[]
