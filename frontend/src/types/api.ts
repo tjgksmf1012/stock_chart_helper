@@ -122,6 +122,9 @@ export interface AnalysisResult {
   reentry_score: number
   reentry_label: string
   reentry_summary: string
+  reentry_case: string
+  reentry_case_label: string
+  reentry_trigger: string
   score_factors: ScoreFactor[]
   active_setup_score: number
   active_setup_label: string
@@ -207,6 +210,9 @@ export interface DashboardItem {
   reentry_score: number
   reentry_label: string
   reentry_summary: string
+  reentry_case: string
+  reentry_case_label: string
+  reentry_trigger: string
   score_factors: ScoreFactor[]
   active_setup_score: number
   active_setup_label: string

@@ -400,17 +400,21 @@ def _apply_setup_metadata(row: dict[str, Any]) -> dict[str, Any]:
 
     reentry_score = float(row.get("reentry_score", 0.0))
     reentry_label = str(row.get("reentry_label") or "")
+    reentry_case_label = str(row.get("reentry_case_label") or "")
     if reentry_label == "재돌파 대기":
         row["composite_score"] = round(float(row.get("composite_score", 0.0)) + 0.05, 3)
         row["scenario_text"] = (
-            f"{row.get('scenario_text', '')} The structure looks like a possible re-breakout candidate after cooling near the trigger."
+            f"{row.get('scenario_text', '')} {reentry_case_label or '재돌파 구조'}로 읽히며, 기준선 부근 재정비 후 다시 확장될 수 있습니다."
         ).strip()
     elif reentry_label == "재축적 관찰":
         row["composite_score"] = round(float(row.get("composite_score", 0.0)) + 0.02, 3)
+        row["scenario_text"] = (
+            f"{row.get('scenario_text', '')} {reentry_case_label or '재축적 구조'}가 진행 중이라 박스 유지 여부가 중요합니다."
+        ).strip()
     elif reentry_label == "실패 후 복구 관찰":
         row["composite_score"] = round(float(row.get("composite_score", 0.0)) - 0.03, 3)
         row["scenario_text"] = (
-            f"{row.get('scenario_text', '')} Prior failure means this setup still needs a cleaner recovery before it deserves full trust."
+            f"{row.get('scenario_text', '')} {reentry_case_label or '복구 구조'}지만 이전 실패 이력이 있어 더 깔끔한 회복 확인이 필요합니다."
         ).strip()
     elif reentry_label == "재진입 비선호":
         row["composite_score"] = round(float(row.get("composite_score", 0.0)) - 0.12, 3)
@@ -709,6 +713,9 @@ async def _analyze_one(
             "reentry_score": analysis.reentry_score,
             "reentry_label": analysis.reentry_label,
             "reentry_summary": analysis.reentry_summary,
+            "reentry_case": analysis.reentry_case,
+            "reentry_case_label": analysis.reentry_case_label,
+            "reentry_trigger": analysis.reentry_trigger,
             "score_factors": [factor.model_dump() for factor in analysis.score_factors],
             "active_setup_score": analysis.active_setup_score,
             "active_setup_label": analysis.active_setup_label,

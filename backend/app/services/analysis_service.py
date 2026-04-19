@@ -811,6 +811,9 @@ def _reentry_profile(
             "reentry_score": 0.0,
             "reentry_label": "재확인 필요",
             "reentry_summary": f"{label} 기준 아직 재진입 구조를 평가할 만한 패턴 정보가 부족합니다.",
+            "reentry_case": "none",
+            "reentry_case_label": "구조 없음",
+            "reentry_trigger": "활성 패턴이 충분히 쌓이면 재진입 구조를 계산합니다.",
         }
 
     neckline = pattern.neckline
@@ -822,6 +825,11 @@ def _reentry_profile(
     distance_to_trigger = 0.0
     if neckline is not None:
         distance_to_trigger = max(0.0, 1.0 - min(1.0, abs(current_close - neckline) / span))
+
+    above_neckline = neckline is None or current_close >= neckline
+    inside_reset_box = neckline is not None and abs(current_close - neckline) <= span * 0.22
+    shallow_pullback = neckline is not None and current_close > neckline and (current_close - neckline) <= span * 0.38
+    trigger_price = neckline if neckline is not None else current_close
 
     recovery_from_invalidation = 0.0
     if invalidation is not None:
@@ -859,11 +867,17 @@ def _reentry_profile(
                 "reentry_score": score,
                 "reentry_label": "실패 후 복구 관찰",
                 "reentry_summary": f"{label} 기준 한 차례 무효화된 뒤 구조를 다시 회복하는 중입니다. 즉시 진입보다 복구 지속 여부를 먼저 확인하는 편이 좋습니다.",
+                "reentry_case": "failed_breakout_recovery",
+                "reentry_case_label": "실패 돌파 복구형",
+                "reentry_trigger": f"무효화 구간 회복 유지와 {trigger_price:,.0f} 재돌파가 함께 확인되는지 보세요.",
             }
         return {
             "reentry_score": 0.06,
             "reentry_label": "재진입 비선호",
             "reentry_summary": f"{label} 기준 무효화 이후 구조 복구가 충분하지 않아 재진입 후보로 보기 어렵습니다.",
+            "reentry_case": "avoid",
+            "reentry_case_label": "재진입 비선호",
+            "reentry_trigger": "추가 복구 없이 재진입을 서두르지 않는 편이 좋습니다.",
         }
 
     if target_hit_at or pattern.state == "played_out":
@@ -873,12 +887,25 @@ def _reentry_profile(
             and target_distance_pct >= 0.04
             and stop_distance_pct >= 0.01
         )
-        if reset_ready and entry_window_score >= 0.46:
+        if reset_ready and inside_reset_box:
             score = round(max(0.46, min(0.72, rebuild_score * 0.94)), 3)
             return {
                 "reentry_score": score,
                 "reentry_label": "재돌파 대기",
                 "reentry_summary": f"{label} 기준 과거 목표 소화 후 다시 기준선 근처에서 구조를 재정비하고 있습니다. 재돌파가 붙는지 보는 단계입니다.",
+                "reentry_case": "box_reaccumulation",
+                "reentry_case_label": "박스 재축적형",
+                "reentry_trigger": f"목선 {trigger_price:,.0f} 부근 박스 유지 후 거래대금 동반 재돌파를 기다리세요.",
+            }
+        if reset_ready and shallow_pullback and above_neckline and entry_window_score >= 0.46:
+            score = round(max(0.44, min(0.70, rebuild_score * 0.9 + entry_window_score * 0.1)), 3)
+            return {
+                "reentry_score": score,
+                "reentry_label": "재돌파 대기",
+                "reentry_summary": f"{label} 기준 목표 소화 후 깊지 않은 눌림만 거치며 다시 위쪽으로 힘을 모으는 중입니다. 눌림 후 재가속 여부가 중요합니다.",
+                "reentry_case": "pullback_relaunch",
+                "reentry_case_label": "눌림 후 재상승형",
+                "reentry_trigger": f"목선 위 안착 유지와 최근 고점 재돌파가 함께 나오는지 보세요.",
             }
         if reset_ready:
             score = round(max(0.28, min(0.52, rebuild_score * 0.78)), 3)
@@ -886,11 +913,17 @@ def _reentry_profile(
                 "reentry_score": score,
                 "reentry_label": "재축적 관찰",
                 "reentry_summary": f"{label} 기준 이전 목표 달성 이후 숨 고르기와 재축적이 진행 중입니다. 아직은 추격보다 재형성 확인이 우선입니다.",
+                "reentry_case": "range_reset",
+                "reentry_case_label": "재축적 준비형",
+                "reentry_trigger": f"박스 하단 이탈 없이 {trigger_price:,.0f} 재접근이 이어지는지 확인하세요.",
             }
         return {
             "reentry_score": 0.12,
             "reentry_label": "재진입 비선호",
             "reentry_summary": f"{label} 기준 이미 목표가를 소화했고 재축적도 아직 약해 당장 재진입할 자리는 아닙니다.",
+            "reentry_case": "avoid",
+            "reentry_case_label": "재진입 비선호",
+            "reentry_trigger": "목표 소화 직후라 구조가 다시 쌓일 때까지 기다리는 편이 좋습니다.",
         }
 
     if pattern.state == "confirmed" and entry_window_score >= 0.64 and headroom_score >= 0.32:
@@ -899,6 +932,9 @@ def _reentry_profile(
             "reentry_score": score,
             "reentry_label": "신규 셋업 우선",
             "reentry_summary": f"{label} 기준 아직 1차 셋업이 살아 있어 재진입보다 현재 신규 셋업 해석이 더 적절합니다.",
+            "reentry_case": "primary_setup",
+            "reentry_case_label": "신규 셋업 우선형",
+            "reentry_trigger": "재진입보다 현재 1차 셋업의 추세 유지와 손익비를 먼저 보세요.",
         }
 
     if pattern.state in {"armed", "forming"} and distance_to_trigger >= 0.52 and headroom_score >= 0.24:
@@ -907,6 +943,9 @@ def _reentry_profile(
             "reentry_score": score,
             "reentry_label": "재돌파 대기",
             "reentry_summary": f"{label} 기준 기준선 재접근 이후 재돌파를 시도할 수 있는 구조입니다. 확인 전까지는 관찰 우선 구간입니다.",
+            "reentry_case": "pullback_relaunch",
+            "reentry_case_label": "눌림 후 재상승형",
+            "reentry_trigger": f"기준선 {trigger_price:,.0f} 재확인 뒤 돌파 캔들과 거래량 회복을 같이 확인하세요.",
         }
 
     score = round(max(0.22, min(0.52, 0.72 * rebuild_score + 0.28 * entry_window_score)), 3)
@@ -914,6 +953,9 @@ def _reentry_profile(
         "reentry_score": score,
         "reentry_label": "신규 셋업 우선",
         "reentry_summary": f"{label} 기준 현재는 재진입보다는 기존 셋업의 완성도와 타이밍을 우선 해석하는 편이 좋습니다.",
+        "reentry_case": "primary_setup",
+        "reentry_case_label": "신규 셋업 우선형",
+        "reentry_trigger": "현재 셋업 완성도가 먼저이며 재진입 시나리오는 보조적으로만 보세요.",
     }
 
 def _stats_timeframe(timeframe: str) -> str:
@@ -1781,6 +1823,7 @@ def _build_projection(
     timeframe: str,
     pattern: PatternResult,
     current_close: float,
+    reentry: dict[str, Any] | None,
     target_hit_at: str | None,
     invalidated_at: str | None,
 ) -> tuple[str, str, list[ProjectionPoint]]:
@@ -1792,8 +1835,36 @@ def _build_projection(
     bullish = _is_bullish(pattern.pattern_type)
     pattern_name = pattern.pattern_type.replace("_", " ")
     steps = _projection_horizon(timeframe)
+    reentry_case = str((reentry or {}).get("reentry_case") or "")
+    reentry_case_label = str((reentry or {}).get("reentry_case_label") or "")
 
     if pattern.state == "played_out":
+        if reentry_case == "box_reaccumulation":
+            prices = [
+                (steps[0], max(neckline * 0.99, current_close - span * 0.06), "range"),
+                (steps[1], neckline, "coil"),
+                (steps[2], neckline * 1.03 if bullish else neckline * 0.97, "rebreak"),
+                (steps[3], current_close + span * 0.32 if bullish else current_close - span * 0.32, "followthrough"),
+            ]
+            summary = (
+                f"{pattern_name} 패턴은 {reentry_case_label}으로 해석됩니다. "
+                "목선 근처 박스 재축적 뒤 재돌파가 나오는 시나리오를 우선 반영했습니다."
+            )
+            return "박스 재축적 후 재돌파", summary, _projected_points(last_ts, timeframe, prices)
+
+        if reentry_case == "pullback_relaunch":
+            prices = [
+                (steps[0], max(neckline * 1.01, current_close - span * 0.08) if bullish else min(neckline * 0.99, current_close + span * 0.08), "pullback"),
+                (steps[1], current_close, "hold"),
+                (steps[2], current_close + span * 0.22 if bullish else current_close - span * 0.22, "relaunch"),
+                (steps[3], current_close + span * 0.42 if bullish else current_close - span * 0.42, "extension"),
+            ]
+            summary = (
+                f"{pattern_name} 패턴은 {reentry_case_label}으로 해석됩니다. "
+                "깊지 않은 눌림 뒤 재가속이 나오는 보수적 재상승 시나리오입니다."
+            )
+            return "눌림 후 재가속", summary, _projected_points(last_ts, timeframe, prices)
+
         base = max(neckline, current_close - span * 0.35) if bullish else min(neckline, current_close + span * 0.35)
         drift = current_close + span * 0.12 if bullish else current_close - span * 0.12
         prices = [
@@ -1809,6 +1880,19 @@ def _build_projection(
         return "목표 달성 이후 재정비", summary, _projected_points(last_ts, timeframe, prices)
 
     if pattern.state == "invalidated":
+        if reentry_case == "failed_breakout_recovery":
+            prices = [
+                (steps[0], current_close, "reclaim"),
+                (steps[1], max(current_close, neckline * 0.995) if bullish else min(current_close, neckline * 1.005), "retest"),
+                (steps[2], neckline * 1.02 if bullish else neckline * 0.98, "rebreak"),
+                (steps[3], current_close + span * 0.28 if bullish else current_close - span * 0.28, "followthrough"),
+            ]
+            summary = (
+                f"{pattern_name} 패턴은 {reentry_case_label}으로 해석됩니다. "
+                "실패했던 돌파를 복구한 뒤 다시 기준선을 회복하는 시나리오를 우선 반영했습니다."
+            )
+            return "실패 돌파 복구", summary, _projected_points(last_ts, timeframe, prices)
+
         drift = invalidation - span * 0.15 if bullish else invalidation + span * 0.15
         prices = [
             (steps[0], invalidation, "broken"),
@@ -1977,6 +2061,9 @@ def build_no_signal_snapshot(
         reentry_score=0.0,
         reentry_label="재확인 필요",
         reentry_summary="활성 패턴이 없어 재진입 구조 평가는 아직 보류했습니다.",
+        reentry_case="none",
+        reentry_case_label="구조 없음",
+        reentry_trigger="활성 패턴이 충분히 쌓이면 재진입 유형을 계산합니다.",
         score_factors=readiness["score_factors"],
         active_setup_score=0.0,
         active_setup_label="활성 셋업 없음",
@@ -2188,6 +2275,7 @@ async def analyze_symbol_dataframe(
         timeframe,
         best_pattern,
         current_close,
+        reentry,
         best_target_hit_at,
         best_invalidated_at,
     )
@@ -2357,6 +2445,9 @@ async def analyze_symbol_dataframe(
         reentry_score=reentry["reentry_score"],
         reentry_label=reentry["reentry_label"],
         reentry_summary=reentry["reentry_summary"],
+        reentry_case=reentry["reentry_case"],
+        reentry_case_label=reentry["reentry_case_label"],
+        reentry_trigger=reentry["reentry_trigger"],
         score_factors=readiness["score_factors"],
         active_setup_score=active_setup["active_setup_score"],
         active_setup_label=active_setup["active_setup_label"],

@@ -102,7 +102,14 @@ export function DashboardCard({ item, intradayPreset }: DashboardCardProps) {
       {item.trade_readiness_summary && <SummaryBlock tone="emerald" title={item.trade_readiness_label} score={item.trade_readiness_score}>{item.trade_readiness_summary}</SummaryBlock>}
       {item.entry_window_summary && <SummaryBlock tone="sky" title={item.entry_window_label} score={item.entry_window_score}>{item.entry_window_summary}</SummaryBlock>}
       {item.freshness_summary && <SummaryBlock tone="violet" title={item.freshness_label} score={item.freshness_score}>{item.freshness_summary}</SummaryBlock>}
-      {item.reentry_summary && <SummaryBlock tone="amber" title={item.reentry_label} score={item.reentry_score}>{item.reentry_summary}</SummaryBlock>}
+      {item.reentry_summary && (
+        <SummaryBlock tone="amber" title={item.reentry_case_label || item.reentry_label} score={item.reentry_score}>
+          <div className="space-y-1">
+            <div>{item.reentry_summary}</div>
+            {item.reentry_trigger && <div className="text-[11px] text-amber-100/90">확인 포인트: {item.reentry_trigger}</div>}
+          </div>
+        </SummaryBlock>
+      )}
       {item.active_setup_summary && <SummaryBlock tone="cyan" title={item.active_setup_label}>{item.active_setup_summary}</SummaryBlock>}
 
       {(item.next_trigger || item.risk_flags?.length > 0) && (

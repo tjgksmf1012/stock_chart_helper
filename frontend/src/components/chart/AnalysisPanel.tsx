@@ -308,6 +308,16 @@ function ReentryCard({ analysis }: { analysis: AnalysisResult }) {
       </div>
       <ProgressBar score={score} color="bg-amber-300" />
       <p className="text-xs leading-relaxed text-muted-foreground">{analysis.reentry_summary}</p>
+      {analysis.reentry_case_label && analysis.reentry_case !== 'none' && (
+        <div className="rounded-lg border border-amber-400/15 bg-background/60 p-2 text-xs text-amber-100">
+          <span className="font-medium">유형:</span> {analysis.reentry_case_label}
+        </div>
+      )}
+      {analysis.reentry_trigger && (
+        <div className="rounded-lg border border-border bg-background/60 p-2 text-xs text-muted-foreground">
+          <span className="font-medium text-amber-200">확인 포인트:</span> {analysis.reentry_trigger}
+        </div>
+      )}
     </Card>
   )
 }

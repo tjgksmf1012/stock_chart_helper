@@ -230,6 +230,10 @@ export default function ChartPage() {
           {analysis.reentry_summary && (
             <div className="mt-3 rounded-lg border border-amber-400/20 bg-amber-400/5 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
               <span className="font-semibold text-amber-200">재진입 구조:</span> {analysis.reentry_summary}
+              {analysis.reentry_case_label && analysis.reentry_case !== 'none' && (
+                <div className="mt-1 text-amber-100">유형: {analysis.reentry_case_label}</div>
+              )}
+              {analysis.reentry_trigger && <div className="mt-1 text-amber-100/90">확인 포인트: {analysis.reentry_trigger}</div>}
             </div>
           )}
         </div>
@@ -331,6 +335,12 @@ function ContextCard({
           <span>재진입 구조</span>
           <span>{fmtPct(analysis.reentry_score ?? 0, 0)}</span>
         </div>
+        {analysis.reentry_case_label && analysis.reentry_case !== 'none' && (
+          <div className="flex items-center justify-between">
+            <span>재진입 유형</span>
+            <span>{analysis.reentry_case_label}</span>
+          </div>
+        )}
         <div className="flex items-center justify-between">
           <span>상태</span>
           <span>{analysis.action_plan_label}</span>
@@ -357,7 +367,7 @@ function summarizeContext(primary: AnalysisResult | undefined, contexts: Analysi
     (left, right) => (right.trade_readiness_score ?? 0) + right.p_up - ((left.trade_readiness_score ?? 0) + left.p_up),
   )[0]
 
-  return `${primary.timeframe_label} 기준 현재 판단은 ${primary.action_plan_label}입니다. 보조 타임프레임 중에서는 ${strongest.timeframe_label}가 가장 강하며, 준비도 ${fmtPct(strongest.trade_readiness_score ?? 0, 0)} / 신선도 ${fmtPct(strongest.freshness_score ?? 0, 0)} / 재진입 ${fmtPct(strongest.reentry_score ?? 0, 0)} 수준입니다.`
+  return `${primary.timeframe_label} 기준 현재 판단은 ${primary.action_plan_label}입니다. 보조 타임프레임 중에서는 ${strongest.timeframe_label}가 가장 강하며, 준비도 ${fmtPct(strongest.trade_readiness_score ?? 0, 0)} / 신선도 ${fmtPct(strongest.freshness_score ?? 0, 0)} / 재진입 ${fmtPct(strongest.reentry_score ?? 0, 0)} (${strongest.reentry_case_label || strongest.reentry_label}) 수준입니다.`
 }
 
 function actionPlanVariant(plan: string): 'bullish' | 'warning' | 'muted' | 'neutral' {

@@ -524,14 +524,23 @@ function buildScreenerGuidance(items: DashboardItem[]): string {
   const liveCount = items.filter(item => item.live_intraday_candidate).length
   const readyCount = items.filter(item => (item.trade_readiness_score ?? 0) >= 0.6).length
   const avgFreshness = items.reduce((sum, item) => sum + (item.freshness_score ?? 0), 0) / items.length
+  const reentryCases = items
+    .map(item => item.reentry_case_label)
+    .filter(label => !!label && label !== '구조 없음')
+  const dominantReentryCase =
+    reentryCases.length > 0
+      ? [...new Set(reentryCases)].sort(
+          (left, right) => reentryCases.filter(value => value === right).length - reentryCases.filter(value => value === left).length,
+        )[0]
+      : ''
 
   if (liveCount >= Math.max(2, Math.round(items.length * 0.3))) {
-    return '실시간 추적 후보가 충분합니다. live 후보부터 확인하고, 신선도와 진입 구간이 동시에 높으면서 재진입 구조까지 받쳐주는 종목을 우선 보세요.'
+    return `실시간 추적 후보가 충분합니다. live 후보부터 확인하고, 신선도와 진입 구간이 동시에 높으면서 재진입 구조까지 받쳐주는 종목을 우선 보세요${dominantReentryCase ? `. 현재는 ${dominantReentryCase} 비중이 높습니다.` : '.'}`
   }
 
   if (readyCount >= Math.max(2, Math.round(items.length * 0.25)) && avgFreshness >= 0.5) {
-    return '거래 준비도와 패턴 신선도가 함께 받쳐주는 후보가 모여 있습니다. 상위 카드에서 리스크 기준, 재진입 구조, 다음 트리거를 먼저 확인해 보세요.'
+    return `거래 준비도와 패턴 신선도가 함께 받쳐주는 후보가 모여 있습니다. 상위 카드에서 리스크 기준, 재진입 구조, 다음 트리거를 먼저 확인해 보세요${dominantReentryCase ? `. 특히 ${dominantReentryCase}이 많이 보입니다.` : '.'}`
   }
 
-  return '아직은 형성 중이거나 재확인이 필요한 후보가 많습니다. 무리한 진입보다 목표가 소진 여부, 신선도, 재축적 여부를 먼저 체크하는 편이 좋습니다.'
+  return `아직은 형성 중이거나 재확인이 필요한 후보가 많습니다. 무리한 진입보다 목표가 소진 여부, 신선도, 재축적 여부를 먼저 체크하는 편이 좋습니다${dominantReentryCase ? `. 현재 주된 유형은 ${dominantReentryCase}입니다.` : '.'}`
 }
