@@ -161,6 +161,41 @@ class IntradayStore:
         result.attrs["storage_age_minutes"] = age_minutes
         return result
 
+    async def get_status(self) -> dict[str, object]:
+        await self.ensure_ready()
+        return await asyncio.to_thread(self._get_status_sync)
+
+    def _get_status_sync(self) -> dict[str, object]:
+        with self._connect() as conn:
+            total_rows = int(conn.execute("SELECT COUNT(*) FROM intraday_bars").fetchone()[0])
+            symbol_count = int(conn.execute("SELECT COUNT(DISTINCT symbol) FROM intraday_bars").fetchone()[0])
+            timeframe_rows = conn.execute(
+                """
+                SELECT timeframe, COUNT(*) AS rows, COUNT(DISTINCT symbol) AS symbols, MAX(fetched_at) AS latest_fetched_at
+                FROM intraday_bars
+                GROUP BY timeframe
+                ORDER BY timeframe
+                """
+            ).fetchall()
+            latest = conn.execute("SELECT MAX(fetched_at) FROM intraday_bars").fetchone()[0]
+
+        return {
+            "path": str(self._db_path),
+            "retention_days": self._retention_days,
+            "total_rows": total_rows,
+            "symbol_count": symbol_count,
+            "latest_fetched_at": latest,
+            "timeframes": [
+                {
+                    "timeframe": row["timeframe"],
+                    "rows": int(row["rows"]),
+                    "symbols": int(row["symbols"]),
+                    "latest_fetched_at": row["latest_fetched_at"],
+                }
+                for row in timeframe_rows
+            ],
+        }
+
 
 _intraday_store: IntradayStore | None = None
 

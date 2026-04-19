@@ -274,14 +274,59 @@ export interface CacheRuntimeStatus {
   memory_fallback_entries: number
 }
 
+export interface IntradayStoreTimeframeStatus {
+  timeframe: string
+  rows: number
+  symbols: number
+  latest_fetched_at: string | null
+}
+
+export interface IntradayStoreStatus {
+  path: string
+  retention_days: number
+  total_rows: number
+  symbol_count: number
+  latest_fetched_at: string | null
+  timeframes: IntradayStoreTimeframeStatus[]
+}
+
 export interface RuntimeStatusResponse {
   generated_at: string
   app_name: string
   debug: boolean
   kis: KisRuntimeStatus
   cache: CacheRuntimeStatus
+  intraday_store: IntradayStoreStatus
   scheduler_enabled: boolean
   data_notes: string[]
+}
+
+export interface IntradayWarmupRequest {
+  symbols: string[]
+  timeframes: string[]
+  allow_live: boolean
+  lookback_days?: number | null
+}
+
+export interface IntradayWarmupResult {
+  symbol: string
+  timeframe: string
+  ok: boolean
+  bars: number
+  data_source: string
+  fetch_status: string
+  message: string
+}
+
+export interface IntradayWarmupResponse {
+  requested_at: string
+  allow_live: boolean
+  symbols: string[]
+  timeframes: string[]
+  total_requests: number
+  success_count: number
+  failure_count: number
+  results: IntradayWarmupResult[]
 }
 
 export interface ScreenerRequest {

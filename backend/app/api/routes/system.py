@@ -5,12 +5,25 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter
+import asyncio
 
-from ..schemas import CacheRuntimeStatus, KisRuntimeStatus, RuntimeStatusResponse
+from fastapi import APIRouter, HTTPException
+
+from ..schemas import (
+    CacheRuntimeStatus,
+    IntradayStoreStatus,
+    IntradayWarmupRequest,
+    IntradayWarmupResponse,
+    IntradayWarmupResult,
+    KisRuntimeStatus,
+    RuntimeStatusResponse,
+)
 from ...core.config import get_settings
 from ...core.redis import cache_backend_status
+from ...services.data_fetcher import get_data_fetcher
+from ...services.intraday_store import get_intraday_store
 from ...services.kis_client import get_kis_client
+from ...services.timeframe_service import get_timeframe_spec, is_intraday_timeframe
 
 router = APIRouter(prefix="/system", tags=["system"])
 settings = get_settings()
@@ -74,6 +87,7 @@ async def get_runtime_status() -> RuntimeStatusResponse:
     kis = get_kis_client()
     token_status = _read_token_cache_status(settings.kis_token_cache_path)
     cache_status = await cache_backend_status()
+    intraday_store_status = await get_intraday_store().get_status()
     configured = kis.configured
     token_cached = bool(token_status["token_cached"])
     token_remaining = token_status["token_expires_in_seconds"]
@@ -95,10 +109,99 @@ async def get_runtime_status() -> RuntimeStatusResponse:
             guidance=_kis_guidance(configured, token_cached, token_remaining),
         ),
         cache=CacheRuntimeStatus(**cache_status),
+        intraday_store=IntradayStoreStatus(**intraday_store_status),
         scheduler_enabled=True,
         data_notes=[
             "일봉/주봉/월봉은 KRX 일봉을 기준으로 재샘플링합니다.",
             "분봉은 KIS 당일 분봉, Yahoo 공개 분봉, 로컬 저장 캐시를 조합합니다.",
             "스캐너는 KIS 호출을 아끼기 위해 모든 분봉 후보에 live 요청을 하지 않고 우선순위가 높은 후보부터 사용합니다.",
         ],
+    )
+
+
+def _normalize_symbol_codes(symbols: list[str]) -> list[str]:
+    seen: set[str] = set()
+    normalized: list[str] = []
+    for symbol in symbols:
+        code = str(symbol).strip()
+        if not code:
+            continue
+        if code.isdigit():
+            code = code.zfill(6)
+        if code not in seen:
+            seen.add(code)
+            normalized.append(code)
+    return normalized[:30]
+
+
+def _normalize_intraday_timeframes(timeframes: list[str]) -> list[str]:
+    seen: set[str] = set()
+    normalized: list[str] = []
+    for timeframe in timeframes:
+        value = str(timeframe).strip()
+        if not value or value in seen:
+            continue
+        if not is_intraday_timeframe(value):
+            raise HTTPException(status_code=422, detail=f"Unsupported intraday timeframe: {value}")
+        get_timeframe_spec(value)
+        seen.add(value)
+        normalized.append(value)
+    return normalized or ["15m", "30m", "60m"]
+
+
+@router.post("/intraday/warmup", response_model=IntradayWarmupResponse)
+async def warmup_intraday_cache(request: IntradayWarmupRequest) -> IntradayWarmupResponse:
+    symbols = _normalize_symbol_codes(request.symbols)
+    if not symbols:
+        raise HTTPException(status_code=422, detail="At least one symbol is required.")
+
+    timeframes = _normalize_intraday_timeframes(request.timeframes)
+    fetcher = get_data_fetcher()
+    semaphore = asyncio.Semaphore(3 if request.allow_live else 6)
+    results: list[IntradayWarmupResult] = []
+
+    async def collect(symbol: str, timeframe: str) -> IntradayWarmupResult:
+        async with semaphore:
+            try:
+                spec = get_timeframe_spec(timeframe)
+                lookback_days = request.lookback_days or spec.chart_lookback_days
+                df = await fetcher.get_stock_ohlcv_by_timeframe(
+                    symbol,
+                    timeframe,
+                    lookback_days=lookback_days,
+                    allow_live_intraday=request.allow_live,
+                )
+                return IntradayWarmupResult(
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    ok=not df.empty,
+                    bars=int(len(df)),
+                    data_source=str(df.attrs.get("data_source") or "unknown"),
+                    fetch_status=str(df.attrs.get("fetch_status") or "unknown"),
+                    message=str(df.attrs.get("fetch_message") or ""),
+                )
+            except Exception as exc:
+                return IntradayWarmupResult(
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    ok=False,
+                    bars=0,
+                    data_source="error",
+                    fetch_status="error",
+                    message=str(exc),
+                )
+
+    tasks = [collect(symbol, timeframe) for symbol in symbols for timeframe in timeframes]
+    results = list(await asyncio.gather(*tasks))
+    success_count = sum(1 for result in results if result.ok)
+
+    return IntradayWarmupResponse(
+        requested_at=datetime.utcnow().isoformat(),
+        allow_live=request.allow_live,
+        symbols=symbols,
+        timeframes=timeframes,
+        total_requests=len(results),
+        success_count=success_count,
+        failure_count=len(results) - success_count,
+        results=results,
     )

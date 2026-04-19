@@ -103,7 +103,23 @@ export default function SystemStatusPage() {
                 <StatRow label="캐시 방식" value={data.cache.backend} />
                 <StatRow label="Redis 연결" value={data.cache.redis_available ? '정상' : '메모리 fallback'} />
                 <StatRow label="메모리 fallback 항목" value={`${data.cache.memory_fallback_entries}개`} />
+                <StatRow label="분봉 저장 종목" value={`${data.intraday_store.symbol_count}개`} />
+                <StatRow label="분봉 저장 봉 수" value={`${data.intraday_store.total_rows.toLocaleString('ko-KR')}개`} />
+                <StatRow label="분봉 최신 수집" value={data.intraday_store.latest_fetched_at ? fmtDateTime(data.intraday_store.latest_fetched_at) : '-'} />
                 <StatRow label="생성 시각" value={fmtDateTime(data.generated_at)} />
+                {data.intraday_store.timeframes.length > 0 && (
+                  <div className="rounded-lg border border-border bg-background/60 p-3">
+                    <div className="mb-2 text-xs font-medium text-muted-foreground">타임프레임별 저장 현황</div>
+                    <div className="space-y-1.5">
+                      {data.intraday_store.timeframes.map(item => (
+                        <div key={item.timeframe} className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                          <span>{item.timeframe}</span>
+                          <span>{item.symbols}종목 / {item.rows.toLocaleString('ko-KR')}봉</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div className="rounded-lg border border-border bg-background/60 p-3">
                   <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                     <Clock3 size={12} />

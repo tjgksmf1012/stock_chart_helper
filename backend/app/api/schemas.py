@@ -246,14 +246,59 @@ class CacheRuntimeStatus(BaseModel):
     memory_fallback_entries: int
 
 
+class IntradayStoreTimeframeStatus(BaseModel):
+    timeframe: str
+    rows: int
+    symbols: int
+    latest_fetched_at: str | None = None
+
+
+class IntradayStoreStatus(BaseModel):
+    path: str
+    retention_days: int
+    total_rows: int
+    symbol_count: int
+    latest_fetched_at: str | None = None
+    timeframes: list[IntradayStoreTimeframeStatus] = Field(default_factory=list)
+
+
 class RuntimeStatusResponse(BaseModel):
     generated_at: str
     app_name: str
     debug: bool
     kis: KisRuntimeStatus
     cache: CacheRuntimeStatus
+    intraday_store: IntradayStoreStatus
     scheduler_enabled: bool
     data_notes: list[str] = Field(default_factory=list)
+
+
+class IntradayWarmupRequest(BaseModel):
+    symbols: list[str]
+    timeframes: list[str] = Field(default_factory=lambda: ["15m", "30m", "60m"])
+    allow_live: bool = False
+    lookback_days: int | None = None
+
+
+class IntradayWarmupResult(BaseModel):
+    symbol: str
+    timeframe: str
+    ok: bool
+    bars: int = 0
+    data_source: str = "unknown"
+    fetch_status: str = "unknown"
+    message: str = ""
+
+
+class IntradayWarmupResponse(BaseModel):
+    requested_at: str
+    allow_live: bool
+    symbols: list[str]
+    timeframes: list[str]
+    total_requests: int
+    success_count: int
+    failure_count: int
+    results: list[IntradayWarmupResult]
 
 
 class PatternLibraryEntry(BaseModel):

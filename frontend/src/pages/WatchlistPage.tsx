@@ -1,11 +1,12 @@
 import { useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { Star, Trash2, TrendingDown, TrendingUp, Loader2 } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { DatabaseZap, Loader2, Star, Trash2, TrendingDown, TrendingUp } from 'lucide-react'
 
-import { useAppStore } from '@/store/app'
-import { symbolsApi } from '@/lib/api'
+import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
-import { fmtPrice, fmtPct, PATTERN_NAMES, STATE_COLORS, STATE_LABELS, cn } from '@/lib/utils'
+import { symbolsApi, systemApi } from '@/lib/api'
+import { cn, fmtPct, fmtPrice, PATTERN_NAMES, STATE_COLORS, STATE_LABELS } from '@/lib/utils'
+import { useAppStore } from '@/store/app'
 
 function WatchlistRow({ code, name, market }: { code: string; name: string; market: string }) {
   const nav = useNavigate()
@@ -39,9 +40,10 @@ function WatchlistRow({ code, name, market }: { code: string; name: string; mark
           <span className="truncate text-sm font-semibold">{name}</span>
           <span className="shrink-0 font-mono text-xs text-muted-foreground">{code}</span>
           <span className="shrink-0 text-xs text-muted-foreground">{market}</span>
+          {analysis?.action_plan_label && <Badge variant={actionVariant(analysis.action_plan)}>{analysis.action_plan_label}</Badge>}
         </div>
         {best ? (
-          <div className="mt-0.5 flex items-center gap-1.5">
+          <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
             <span className="text-xs text-muted-foreground">{PATTERN_NAMES[best.pattern_type] ?? best.pattern_type}</span>
             <span className={cn('rounded px-1 py-0.5 text-xs', STATE_COLORS[best.state])}>
               {STATE_LABELS[best.state]}
@@ -56,6 +58,7 @@ function WatchlistRow({ code, name, market }: { code: string; name: string; mark
         ) : (
           <span className="mt-0.5 block text-xs text-muted-foreground">뚜렷한 패턴 없음</span>
         )}
+        {analysis?.next_trigger && <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">{analysis.next_trigger}</p>}
       </div>
 
       {analysis && !analysis.no_signal_flag && (
@@ -78,7 +81,9 @@ function WatchlistRow({ code, name, market }: { code: string; name: string; mark
           <>
             <div className="font-mono text-sm font-semibold">{fmtPrice(price.close)}</div>
             <div className={cn('font-mono text-xs', changeColor)}>
-              {price.change >= 0 ? '+' : ''}{fmtPrice(price.change)} ({price.change >= 0 ? '+' : ''}{fmtPct(price.change_pct)})
+              {price.change >= 0 ? '+' : ''}
+              {fmtPrice(price.change)} ({price.change >= 0 ? '+' : ''}
+              {fmtPct(price.change_pct)})
             </div>
           </>
         ) : (
@@ -87,9 +92,12 @@ function WatchlistRow({ code, name, market }: { code: string; name: string; mark
       </div>
 
       <button
-        onClick={e => { e.stopPropagation(); removeFromWatchlist(code) }}
+        onClick={event => {
+          event.stopPropagation()
+          removeFromWatchlist(code)
+        }}
         className="shrink-0 rounded p-1.5 text-muted-foreground transition-colors hover:bg-red-400/10 hover:text-red-400"
-        title="관심 종목 제거"
+        title="관심종목 제거"
       >
         <Trash2 size={14} />
       </button>
@@ -100,13 +108,25 @@ function WatchlistRow({ code, name, market }: { code: string; name: string; mark
 export default function WatchlistPage() {
   const { watchlist } = useAppStore()
   const nav = useNavigate()
+  const queryClient = useQueryClient()
+  const warmupMutation = useMutation({
+    mutationFn: (allowLive: boolean) =>
+      systemApi.warmupIntraday({
+        symbols: watchlist.map(item => item.code),
+        timeframes: ['15m', '30m', '60m'],
+        allow_live: allowLive,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['system', 'status'] })
+    },
+  })
 
   if (watchlist.length === 0) {
     return (
       <div className="flex h-80 flex-col items-center justify-center gap-4 text-muted-foreground">
         <Star size={40} className="opacity-20" />
         <div className="text-center">
-          <p className="font-medium">관심 종목이 없습니다</p>
+          <p className="font-medium">관심종목이 없습니다</p>
           <p className="mt-1 text-xs">대시보드나 차트에서 별 버튼을 눌러 추가해 주세요.</p>
         </div>
         <button onClick={() => nav('/')} className="mt-2 text-xs text-primary hover:underline">
@@ -118,15 +138,62 @@ export default function WatchlistPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="flex items-center gap-2 text-xl font-bold">
             <Star size={18} className="fill-yellow-400 text-yellow-400" />
-            관심 종목
+            관심종목
           </h1>
           <p className="mt-0.5 text-xs text-muted-foreground">{watchlist.length}개 종목 모니터링 중</p>
         </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => warmupMutation.mutate(false)}
+            disabled={warmupMutation.isPending}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <DatabaseZap size={13} className={warmupMutation.isPending ? 'animate-pulse' : ''} />
+            저장/공개 분봉 갱신
+          </button>
+          <button
+            onClick={() => warmupMutation.mutate(true)}
+            disabled={warmupMutation.isPending}
+            className="inline-flex items-center gap-1.5 rounded-md border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs text-primary transition-colors hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <DatabaseZap size={13} className={warmupMutation.isPending ? 'animate-pulse' : ''} />
+            KIS 포함 갱신
+          </button>
+        </div>
       </div>
+
+      <Card className="space-y-2 border-primary/20 bg-primary/5">
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          <DatabaseZap size={15} className="text-primary" />
+          관심종목 분봉 캐시
+        </div>
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          관심종목의 15분, 30분, 60분 데이터를 미리 저장해두면 차트 분석과 분봉 스캐너가 더 안정적으로 동작합니다.
+          기본 갱신은 KIS 호출을 아끼고, 장중 최신성이 중요할 때만 KIS 포함 갱신을 사용하세요.
+        </p>
+        {warmupMutation.data && (
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <Badge variant={warmupMutation.data.failure_count > 0 ? 'warning' : 'bullish'}>
+              성공 {warmupMutation.data.success_count}/{warmupMutation.data.total_requests}
+            </Badge>
+            <Badge variant={warmupMutation.data.allow_live ? 'bullish' : 'muted'}>
+              {warmupMutation.data.allow_live ? 'KIS 포함' : '저장/공개 우선'}
+            </Badge>
+            {warmupMutation.data.results.slice(0, 4).map(result => (
+              <span key={`${result.symbol}-${result.timeframe}`} className="text-muted-foreground">
+                {result.symbol} {result.timeframe} {result.bars}봉
+              </span>
+            ))}
+          </div>
+        )}
+        {warmupMutation.isError && (
+          <div className="text-xs text-red-300">분봉 캐시 갱신 중 오류가 발생했습니다. 운영 상태 페이지와 백엔드 로그를 확인해 주세요.</div>
+        )}
+      </Card>
 
       <div className="space-y-2">
         {[...watchlist].reverse().map(item => (
@@ -135,4 +202,11 @@ export default function WatchlistPage() {
       </div>
     </div>
   )
+}
+
+function actionVariant(plan: string): 'bullish' | 'warning' | 'muted' | 'neutral' {
+  if (plan === 'ready_now') return 'bullish'
+  if (plan === 'watch') return 'neutral'
+  if (plan === 'recheck') return 'warning'
+  return 'muted'
 }
