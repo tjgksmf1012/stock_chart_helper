@@ -272,6 +272,28 @@ export default function DashboardPage() {
         </Card>
       )}
 
+      {intradayMode && intradaySummary && (
+        <Card className="space-y-4">
+          <div>
+            <div className="text-sm font-semibold">프리셋 컨텍스트</div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              현재 프리셋 기준으로 우세한 운용 모드와 세팅 단계를 같이 읽어주는 보조 요약입니다.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+            <StatusCell label="평균 edge" value={`${Math.round(intradaySummary.avgEdge * 100)}%`} />
+            <StatusCell label="평균 손익비" value={intradaySummary.avgRewardRisk.toFixed(2)} />
+            <StatusCell label="우세 운용 모드" value={intradaySummary.dominantMode} />
+            <StatusCell label="우세 세팅 단계" value={intradaySummary.dominantStage} />
+          </div>
+
+          <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 p-3 text-xs text-cyan-100">
+            {intradaySummary.guidance}
+          </div>
+        </Card>
+      )}
+
       <Card className="space-y-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="space-y-1">
@@ -430,6 +452,11 @@ function buildIntradaySummary(sections: Array<DashboardResponse | undefined>) {
       noSignalCount: 0,
       avgQuality: 0,
       avgEntry: 0,
+      avgEdge: 0,
+      avgRewardRisk: 0,
+      dominantMode: '-',
+      dominantStage: '-',
+      guidance: '현재 프리셋에 맞는 후보가 많지 않습니다. 조건을 조금 완화하거나 다른 타임프레임도 함께 보는 편이 좋습니다.',
     }
   }
 
@@ -440,6 +467,10 @@ function buildIntradaySummary(sections: Array<DashboardResponse | undefined>) {
       acc.noSignalCount += item.no_signal_flag ? 1 : 0
       acc.qualitySum += item.data_quality
       acc.entrySum += item.entry_score
+      acc.edgeSum += item.historical_edge_score
+      acc.rewardRiskSum += item.reward_risk_ratio
+      acc.modeCounts[item.intraday_collection_mode] = (acc.modeCounts[item.intraday_collection_mode] ?? 0) + 1
+      acc.stageCounts[item.setup_stage] = (acc.stageCounts[item.setup_stage] ?? 0) + 1
       return acc
     },
     {
@@ -448,6 +479,10 @@ function buildIntradaySummary(sections: Array<DashboardResponse | undefined>) {
       noSignalCount: 0,
       qualitySum: 0,
       entrySum: 0,
+      edgeSum: 0,
+      rewardRiskSum: 0,
+      modeCounts: {} as Record<string, number>,
+      stageCounts: {} as Record<string, number>,
     },
   )
 
@@ -458,7 +493,35 @@ function buildIntradaySummary(sections: Array<DashboardResponse | undefined>) {
     noSignalCount: totals.noSignalCount,
     avgQuality: totals.qualitySum / items.length,
     avgEntry: totals.entrySum / items.length,
+    avgEdge: totals.edgeSum / items.length,
+    avgRewardRisk: totals.rewardRiskSum / items.length,
+    dominantMode: dominantLabel(totals.modeCounts),
+    dominantStage: dominantLabel(totals.stageCounts),
+    guidance: buildSummaryGuidance(items),
   }
+}
+
+function dominantLabel(counts: Record<string, number>): string {
+  const entries = Object.entries(counts)
+  if (entries.length === 0) return '-'
+  return entries.sort((a, b) => b[1] - a[1])[0][0]
+}
+
+function buildSummaryGuidance(items: DashboardItem[]): string {
+  const liveCount = items.filter(item => item.live_intraday_candidate).length
+  const confirmedCount = items.filter(item => item.state === 'confirmed').length
+  const avgEdge = items.reduce((sum, item) => sum + item.historical_edge_score, 0) / items.length
+  const avgRewardRisk = items.reduce((sum, item) => sum + item.reward_risk_ratio, 0) / items.length
+
+  if (liveCount >= Math.max(2, Math.round(items.length * 0.4)) && confirmedCount >= Math.max(1, Math.round(items.length * 0.25))) {
+    return 'live 추적 비중과 confirmed 비중이 모두 괜찮습니다. 무효화 기준만 빠르게 점검하고 상단 후보부터 보면 됩니다.'
+  }
+
+  if (avgEdge >= 0.58 && avgRewardRisk >= 1.4) {
+    return '평균 edge와 손익비는 무난한 편입니다. 넓게 보기보다 상위 몇 개를 깊게 검토하는 흐름이 좋습니다.'
+  }
+
+  return '확인 단계의 후보가 더 많은 상태입니다. 진입보다 트리거 재확인과 품질 회복 여부를 우선 보는 편이 좋습니다.'
 }
 
 function statusLabel(status: string | undefined): string {
