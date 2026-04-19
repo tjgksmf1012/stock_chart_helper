@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import json
 from datetime import datetime, timedelta
@@ -27,6 +28,7 @@ class KISClient:
         self.environment = (settings.kis_env or "auto").strip().lower()
         self._resolved_base_url: str | None = None
         self._token_cache_file = Path(settings.kis_token_cache_path)
+        self._token_lock = asyncio.Lock()
         self.timeout = httpx.Timeout(10.0, connect=5.0)
 
     @property
@@ -136,6 +138,52 @@ class KISClient:
         return await self._request_json("GET", path, headers=headers, params=params)
 
     async def _get_access_token(self) -> str:
+        cached_token = await self._read_cached_token()
+        if cached_token:
+            return cached_token
+
+        async with self._token_lock:
+            cached_token = await self._read_cached_token()
+            if cached_token:
+                return cached_token
+
+            logger.info("Issuing a new KIS access token. This should be rare because the token is reused until expiry.")
+            last_error: Exception | None = None
+            for base_url in self._candidate_base_urls():
+                try:
+                    payload = await self._request_json(
+                        "POST",
+                        "/oauth2/tokenP",
+                        json_body={
+                            "grant_type": "client_credentials",
+                            "appkey": settings.kis_app_key,
+                            "appsecret": settings.kis_app_secret,
+                        },
+                        base_url=base_url,
+                    )
+                    token = payload.get("access_token")
+                    if not token:
+                        raise RuntimeError("KIS access token was not returned.")
+
+                    ttl = self._get_token_ttl(payload)
+                    self._resolved_base_url = base_url
+                    await cache_set(self._token_cache_key, {"access_token": token, "base_url": base_url}, ttl)
+                    self._write_file_cached_token(str(token), base_url, ttl)
+                    return str(token)
+                except Exception as exc:
+                    last_error = exc
+                    logger.warning("KIS token issuance failed via %s: %s", base_url, exc)
+
+            if last_error is not None:
+                if isinstance(last_error, httpx.HTTPStatusError) and last_error.response.status_code == 403:
+                    raise RuntimeError(
+                        "KIS token issuance returned 403 Forbidden. Check whether Open API service enrollment is completed, "
+                        "the app key/secret is activated, and whether the key is for prod or mock(vps)."
+                    ) from last_error
+                raise last_error
+            raise RuntimeError("KIS access token could not be issued.")
+
+    async def _read_cached_token(self) -> str | None:
         cached = await cache_get(self._token_cache_key)
         if isinstance(cached, dict) and cached.get("access_token"):
             cached_base_url = cached.get("base_url")
@@ -146,42 +194,14 @@ class KISClient:
         file_cached = self._read_file_cached_token()
         if file_cached:
             self._resolved_base_url = str(file_cached["base_url"])
+            ttl_remaining = max(60, int(float(file_cached["expires_at"]) - datetime.now().timestamp()))
+            await cache_set(
+                self._token_cache_key,
+                {"access_token": file_cached["access_token"], "base_url": file_cached["base_url"]},
+                ttl_remaining,
+            )
             return str(file_cached["access_token"])
-
-        last_error: Exception | None = None
-        for base_url in self._candidate_base_urls():
-            try:
-                payload = await self._request_json(
-                    "POST",
-                    "/oauth2/tokenP",
-                    json_body={
-                        "grant_type": "client_credentials",
-                        "appkey": settings.kis_app_key,
-                        "appsecret": settings.kis_app_secret,
-                    },
-                    base_url=base_url,
-                )
-                token = payload.get("access_token")
-                if not token:
-                    raise RuntimeError("KIS access token was not returned.")
-
-                ttl = self._get_token_ttl(payload)
-                self._resolved_base_url = base_url
-                await cache_set(self._token_cache_key, {"access_token": token, "base_url": base_url}, ttl)
-                self._write_file_cached_token(str(token), base_url, ttl)
-                return str(token)
-            except Exception as exc:
-                last_error = exc
-                logger.warning("KIS token issuance failed via %s: %s", base_url, exc)
-
-        if last_error is not None:
-            if isinstance(last_error, httpx.HTTPStatusError) and last_error.response.status_code == 403:
-                raise RuntimeError(
-                    "KIS token issuance returned 403 Forbidden. Check whether Open API service enrollment is completed, "
-                    "the app key/secret is activated, and whether the key is for prod or mock(vps)."
-                ) from last_error
-            raise last_error
-        raise RuntimeError("KIS access token could not be issued.")
+        return None
 
     async def _request_json(
         self,
@@ -231,7 +251,7 @@ class KISClient:
             return [self.mock_base_url]
         return [self.prod_base_url, self.mock_base_url]
 
-    def _read_file_cached_token(self) -> dict[str, str] | None:
+    def _read_file_cached_token(self) -> dict[str, str | float] | None:
         try:
             if not self._token_cache_file.exists():
                 return None
@@ -241,7 +261,7 @@ class KISClient:
             expires_at = float(payload.get("expires_at", 0))
             if not access_token or not base_url or expires_at <= datetime.now().timestamp():
                 return None
-            return {"access_token": str(access_token), "base_url": str(base_url)}
+            return {"access_token": str(access_token), "base_url": str(base_url), "expires_at": expires_at}
         except Exception:
             return None
 
