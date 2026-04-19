@@ -26,8 +26,10 @@ class Settings(BaseSettings):
     dashboard_cache_ttl: int = 30
     intraday_storage_path: str = "data/intraday_cache.sqlite3"
     intraday_store_retention_days: int = 45
+    intraday_recent_store_reuse_minutes: int = 2
     intraday_seed_limit: int = 40
     intraday_seed_multiplier: int = 4
+    kis_failure_cooldown_seconds: int = 900
 
     # Universe filters
     min_market_cap_billion: float = 500.0   # 5,000억 원

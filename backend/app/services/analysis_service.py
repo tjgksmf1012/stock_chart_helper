@@ -52,6 +52,14 @@ _FETCH_STATUS_LABELS = {
 }
 
 
+_FETCH_STATUS_LABELS.update(
+    {
+        "stored_recent": "최근 저장 분봉 재사용",
+        "kis_cooldown": "KIS 쿨다운",
+    }
+)
+
+
 def _is_bullish(pattern_type: str) -> bool:
     return pattern_type in _BULLISH_PATTERNS
 
@@ -606,9 +614,15 @@ def _data_profile(df: pd.DataFrame, timeframe: str) -> dict[str, Any]:
             quality = 0.52
             note = "분봉 데이터 품질이 제한적이라 No Signal로 떨어질 가능성이 높습니다."
 
-    if fetch_status == "stored_fallback":
+    if fetch_status == "stored_recent":
+        quality -= 0.02
+        note = "최근에 저장한 장중 분봉을 다시 불러와 재사용하는 상태라 불필요한 API 호출은 줄였지만 최신성은 약간 보수적으로 해석해야 합니다."
+    elif fetch_status == "stored_fallback":
         quality -= 0.08
         note = "실시간 분봉 공급이 비어 저장된 분봉 캐시를 대신 사용했습니다."
+    elif fetch_status == "kis_cooldown":
+        quality -= 0.10
+        note = "KIS 오류 직후 쿨다운 상태라 저장 분봉이나 공개 소스 위주로 해석하고 있습니다."
     elif fetch_status in {"intraday_rate_limited", "yahoo_rate_limited"}:
         quality -= 0.12
         note = "분봉 제공처 요청 제한이 걸려 저장 데이터 또는 일부 응답만 반영됐습니다."

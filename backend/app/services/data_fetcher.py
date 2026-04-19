@@ -84,6 +84,14 @@ FETCH_STATUS_MESSAGES = {
 }
 
 
+FETCH_STATUS_MESSAGES.update(
+    {
+        "stored_recent": "최근 저장한 분봉을 우선 재사용했습니다.",
+        "kis_cooldown": "KIS 오류 직후라 잠시 저장 분봉을 우선 사용하며 재시도를 늦추고 있습니다.",
+    }
+)
+
+
 class KRXDataFetcher:
     """Fetches historical OHLCV and symbol metadata for the Korean market."""
 
@@ -91,6 +99,19 @@ class KRXDataFetcher:
         self._kis_client = kis_client or get_kis_client()
         self._intraday_store = get_intraday_store()
         self._universe_lock = asyncio.Lock()
+
+    def _kis_cooldown_key(self, code: str, timeframe: str) -> str:
+        return f"kis:cooldown:{code}:{timeframe}"
+
+    async def _kis_is_in_cooldown(self, code: str, timeframe: str) -> bool:
+        return bool(await cache_get(self._kis_cooldown_key(code, timeframe)))
+
+    async def _mark_kis_cooldown(self, code: str, timeframe: str, reason: str) -> None:
+        await cache_set(
+            self._kis_cooldown_key(code, timeframe),
+            {"reason": reason, "at": datetime.utcnow().isoformat()},
+            ttl=max(60, int(settings.kis_failure_cooldown_seconds)),
+        )
 
     async def get_stock_ohlcv(self, code: str, start: date, end: date, adjusted: bool = True) -> pd.DataFrame:
         try:
@@ -133,6 +154,17 @@ class KRXDataFetcher:
 
         period_days = max(5, min(days, INTRADAY_MAX_DAYS[timeframe]))
         stored_df = await self._intraday_store.load_bars(symbol=code, timeframe=timeframe, lookback_days=period_days)
+        storage_age_minutes = stored_df.attrs.get("storage_age_minutes")
+        if (
+            not stored_df.empty
+            and isinstance(storage_age_minutes, int)
+            and storage_age_minutes <= max(0, int(settings.intraday_recent_store_reuse_minutes))
+        ):
+            stored_recent = stored_df.copy()
+            stored_recent.attrs["data_source"] = str(stored_df.attrs.get("stored_source") or "intraday_store")
+            stored_recent.attrs["fetch_status"] = "stored_recent"
+            stored_recent.attrs["fetch_message"] = FETCH_STATUS_MESSAGES["stored_recent"]
+            return stored_recent
         yahoo_df, kis_df = await asyncio.gather(
             self._get_yahoo_intraday_ohlcv(code, timeframe, period_days),
             self._get_kis_intraday_ohlcv(code, timeframe),
@@ -225,11 +257,18 @@ class KRXDataFetcher:
                 fetch_status="kis_not_configured",
                 fetch_message=FETCH_STATUS_MESSAGES["kis_not_configured"],
             )
+        if await self._kis_is_in_cooldown(code, timeframe):
+            return self._empty_frame(
+                data_source="kis_intraday",
+                fetch_status="kis_cooldown",
+                fetch_message=FETCH_STATUS_MESSAGES["kis_cooldown"],
+            )
 
         try:
             minute_bars = await self._kis_client.fetch_today_minute_bars(code)
         except Exception as exc:
             logger.warning("KIS intraday failed for %s (%s): %s", code, timeframe, exc)
+            await self._mark_kis_cooldown(code, timeframe, str(exc))
             return self._empty_frame(
                 data_source="kis_intraday",
                 fetch_status="kis_error",
@@ -335,10 +374,14 @@ class KRXDataFetcher:
             return "yahoo_symbol_missing", FETCH_STATUS_MESSAGES["yahoo_symbol_missing"]
         if "yahoo_rate_limited" in statuses:
             return "intraday_rate_limited", FETCH_STATUS_MESSAGES["intraday_rate_limited"]
+        if "kis_cooldown" in statuses and "yahoo_empty" in statuses:
+            return "stored_fallback", FETCH_STATUS_MESSAGES["kis_cooldown"]
         if "yahoo_empty" in statuses and "kis_not_configured" in statuses:
             return "intraday_empty", f"{FETCH_STATUS_MESSAGES['yahoo_empty']} {FETCH_STATUS_MESSAGES['kis_not_configured']}"
         if "yahoo_empty" in statuses and "kis_empty" in statuses:
             return "intraday_empty", f"{FETCH_STATUS_MESSAGES['yahoo_empty']} {FETCH_STATUS_MESSAGES['kis_empty']}"
+        if "kis_cooldown" in statuses:
+            return "intraday_unavailable", FETCH_STATUS_MESSAGES["kis_cooldown"]
         if "kis_error" in statuses and "yahoo_empty" in statuses:
             return "intraday_unavailable", f"{FETCH_STATUS_MESSAGES['yahoo_empty']} {FETCH_STATUS_MESSAGES['kis_error']}"
         if "yahoo_empty" in statuses:
