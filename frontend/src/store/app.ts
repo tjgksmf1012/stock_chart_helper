@@ -1,16 +1,9 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-import type { Timeframe } from '@/types/api'
+import type { Timeframe, WatchlistItem } from '@/types/api'
 import { DEFAULT_TIMEFRAME } from '@/lib/timeframes'
 import { watchlistApi } from '@/lib/api'
-
-interface WatchlistItem {
-  code: string
-  name: string
-  market: string
-  addedAt: string
-}
 
 interface AppStore {
   selectedSymbol: string | null
@@ -18,7 +11,7 @@ interface AppStore {
   watchlist: WatchlistItem[]
   setSymbol: (code: string) => void
   setTimeframe: (tf: Timeframe) => void
-  addToWatchlist: (item: Omit<WatchlistItem, 'addedAt'>) => void
+  addToWatchlist: (item: { code: string; name: string; market: string }) => void
   removeFromWatchlist: (code: string) => void
   isWatched: (code: string) => boolean
   /** Pull the server-side watchlist and merge into local state. */
