@@ -8,6 +8,7 @@ import asyncio
 import logging
 from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from ..api.schemas import SymbolInfo
 from ..core.config import get_settings
@@ -50,6 +51,7 @@ ANCHOR_TIMEFRAMES: dict[str, list[str]] = {
 _scan_lock = asyncio.Lock()
 _scan_tasks: dict[str, asyncio.Task] = {}
 _scan_status: dict[str, dict[str, Any]] = {}
+_KST = ZoneInfo("Asia/Seoul")
 
 
 def _full_scan_cache_key(timeframe: str) -> str:
@@ -65,6 +67,10 @@ def _utc_now_iso() -> str:
     return datetime.utcnow().isoformat()
 
 
+def _kst_now() -> datetime:
+    return datetime.now(_KST)
+
+
 def _status_template(timeframe: str) -> dict[str, Any]:
     return {
         "timeframe": timeframe,
@@ -75,6 +81,8 @@ def _status_template(timeframe: str) -> dict[str, Any]:
         "candidate_source": None,
         "candidate_count": None,
         "intraday_live_candidate_limit": None,
+        "intraday_live_candidate_count": None,
+        "intraday_live_phase": None,
         "cached_result_count": 0,
         "universe_size": None,
         "last_started_at": None,
@@ -122,6 +130,77 @@ def _intraday_session_label(phase: str) -> str:
         "neutral": "neutral",
     }
     return labels.get(phase, phase or "neutral")
+
+
+def _live_intraday_phase(now: datetime | None = None) -> str:
+    current = now or _kst_now()
+    if current.weekday() >= 5:
+        return "off_hours"
+    minutes = current.hour * 60 + current.minute
+    if minutes < 9 * 60 or minutes >= 15 * 60 + 30:
+        return "off_hours"
+    if minutes < 9 * 60 + 30:
+        return "open_drive"
+    if minutes < 11 * 60 + 20:
+        return "regular_session"
+    if minutes < 13 * 60 + 20:
+        return "midday"
+    if minutes < 15 * 60:
+        return "closing_drive"
+    return "off_hours"
+
+
+def _effective_live_intraday_limit(timeframe: str, candidate_count: int, now: datetime | None = None) -> tuple[int, str]:
+    phase = _live_intraday_phase(now)
+    base_limit = settings.intraday_live_candidate_limit
+    phase_multiplier = {
+        "open_drive": 1.0,
+        "regular_session": 0.85,
+        "midday": 0.45,
+        "closing_drive": 0.9,
+        "off_hours": 0.0,
+    }
+    timeframe_multiplier = {
+        "1m": 0.45,
+        "15m": 1.0,
+        "30m": 0.75,
+        "60m": 0.65,
+    }
+    limit = int(round(base_limit * phase_multiplier.get(phase, 0.6) * timeframe_multiplier.get(timeframe, 1.0)))
+    if phase != "off_hours":
+        limit = max(2, limit)
+    limit = min(candidate_count, max(0, limit))
+    return limit, phase
+
+
+def _live_intraday_priority(row: dict[str, Any], timeframe: str) -> float:
+    setup_stage = str(row.get("setup_stage") or "")
+    stage_bonus = {
+        "confirmed": 0.12,
+        "trigger_ready": 0.11,
+        "breakout_watch": 0.08,
+        "late_base": 0.07,
+        "early_trigger_watch": 0.04,
+        "base_building": -0.02,
+    }.get(setup_stage, 0.0)
+    timeframe_bias = {
+        "1m": 0.06,
+        "15m": 0.05,
+        "30m": 0.03,
+        "60m": 0.02,
+    }.get(timeframe, 0.0)
+    return (
+        0.28 * float(row.get("entry_score", 0.0))
+        + 0.18 * float(row.get("completion_proximity", 0.0))
+        + 0.16 * float(row.get("liquidity_score", 0.0))
+        + 0.12 * float(row.get("confidence", 0.0))
+        + 0.10 * float(row.get("recency_score", 0.0))
+        + 0.08 * float(row.get("historical_edge_score", 0.0))
+        + 0.08 * float(row.get("trend_alignment_score", 0.0))
+        + 0.05 * float(row.get("data_quality", 0.0))
+        + stage_bonus
+        + timeframe_bias
+    )
 
 
 def _formation_quality_from_row(row: dict[str, Any]) -> float:
@@ -496,9 +575,9 @@ async def _analyze_one(
         return None
 
 
-async def _select_candidates(limit: int, timeframe: str) -> tuple[list[tuple[str, str, str]], str]:
+async def _select_candidates(limit: int, timeframe: str) -> tuple[list[tuple[str, str, str]], str, set[str], str]:
     if timeframe in {"1d", "1wk", "1mo"}:
-        return await _fetch_universe_codes(limit), "krx_universe"
+        return await _fetch_universe_codes(limit), "krx_universe", set(), "neutral"
 
     seed_limit = max(settings.intraday_seed_limit, limit * settings.intraday_seed_multiplier)
     daily_candidates = await get_scan_results("1d")
@@ -520,10 +599,25 @@ async def _select_candidates(limit: int, timeframe: str) -> tuple[list[tuple[str
     )
 
     if daily_candidates:
-        selected = [(row["code"], row["name"], row.get("market", "KRX")) for row in daily_candidates[:seed_limit]]
-        return selected, "daily_seed"
+        selected_rows = daily_candidates[:seed_limit]
+        selected = [(row["code"], row["name"], row.get("market", "KRX")) for row in selected_rows]
+        live_limit, live_phase = _effective_live_intraday_limit(timeframe, len(selected_rows))
+        live_priority_rows = sorted(
+            selected_rows,
+            key=lambda row: (
+                _live_intraday_priority(row, timeframe),
+                row.get("composite_score", 0.0),
+                row.get("historical_edge_score", 0.0),
+            ),
+            reverse=True,
+        )
+        live_codes = {str(row["code"]) for row in live_priority_rows[:live_limit]}
+        return selected, "daily_seed", live_codes, live_phase
 
-    return await _fetch_universe_codes(seed_limit), "krx_universe_fallback"
+    fallback = await _fetch_universe_codes(seed_limit)
+    live_limit, live_phase = _effective_live_intraday_limit(timeframe, len(fallback))
+    live_codes = {code for code, _, _ in fallback[:live_limit]}
+    return fallback, "krx_universe_fallback", live_codes, live_phase
 
 
 async def run_scan(
@@ -563,24 +657,17 @@ async def run_scan(
             return cached
 
         try:
-            universe, candidate_source = await _select_candidates(limit, timeframe)
+            universe, candidate_source, live_codes, live_phase = await _select_candidates(limit, timeframe)
             _update_scan_status(
                 timeframe,
                 universe_size=len(universe),
                 candidate_source=candidate_source,
                 candidate_count=len(universe),
-                intraday_live_candidate_limit=(
-                    min(len(universe), settings.intraday_live_candidate_limit)
-                    if timeframe in {"1m", "15m", "30m", "60m"}
-                    else None
-                ),
+                intraday_live_candidate_limit=(len(live_codes) if timeframe in {"1m", "15m", "30m", "60m"} else None),
+                intraday_live_candidate_count=(len(live_codes) if timeframe in {"1m", "15m", "30m", "60m"} else None),
+                intraday_live_phase=(live_phase if timeframe in {"1m", "15m", "30m", "60m"} else None),
             )
 
-            live_candidate_limit = (
-                settings.intraday_live_candidate_limit
-                if timeframe in {"1m", "15m", "30m", "60m"}
-                else len(universe)
-            )
             results: list[dict[str, Any]] = []
             for index in range(0, len(universe), batch_size):
                 batch = universe[index:index + batch_size]
@@ -591,9 +678,9 @@ async def run_scan(
                         market,
                         timeframe,
                         force_refresh=force_refresh,
-                        allow_live_intraday=(index + offset) < live_candidate_limit,
+                        allow_live_intraday=(code in live_codes) if timeframe in {"1m", "15m", "30m", "60m"} else True,
                     )
-                    for offset, (code, name, market) in enumerate(batch)
+                    for code, name, market in batch
                 ]
                 batch_results = await asyncio.gather(*tasks, return_exceptions=True)
                 for item in batch_results:
@@ -673,8 +760,27 @@ async def get_scan_results(timeframe: str = DEFAULT_TIMEFRAME) -> list[dict[str,
 
     _update_scan_status(timeframe, status="warming", is_running=False, source="fallback")
     fallback = FALLBACK_CODES if timeframe == "1d" else FALLBACK_CODES[: min(len(FALLBACK_CODES), settings.intraday_seed_limit)]
+    intraday_live_limit, intraday_live_phase = (
+        _effective_live_intraday_limit(timeframe, len(fallback))
+        if timeframe in {"1m", "15m", "30m", "60m"}
+        else (0, "neutral")
+    )
+    fallback_live_codes = (
+        {code for code, _, _ in fallback[:intraday_live_limit]}
+        if timeframe in {"1m", "15m", "30m", "60m"}
+        else set()
+    )
     quick = await asyncio.gather(
-        *[_analyze_one(code, name, market, timeframe) for code, name, market in fallback],
+        *[
+            _analyze_one(
+                code,
+                name,
+                market,
+                timeframe,
+                allow_live_intraday=(code in fallback_live_codes) if timeframe in {"1m", "15m", "30m", "60m"} else True,
+            )
+            for code, name, market in fallback
+        ],
         return_exceptions=True,
     )
     results = [item for item in quick if isinstance(item, dict)]
@@ -694,6 +800,9 @@ async def get_scan_results(timeframe: str = DEFAULT_TIMEFRAME) -> list[dict[str,
         universe_size=len(fallback),
         candidate_source="fallback",
         candidate_count=len(fallback),
+        intraday_live_candidate_limit=(intraday_live_limit if timeframe in {"1m", "15m", "30m", "60m"} else None),
+        intraday_live_candidate_count=(intraday_live_limit if timeframe in {"1m", "15m", "30m", "60m"} else None),
+        intraday_live_phase=(intraday_live_phase if timeframe in {"1m", "15m", "30m", "60m"} else None),
         last_finished_at=_utc_now_iso(),
         source="fallback",
     )
