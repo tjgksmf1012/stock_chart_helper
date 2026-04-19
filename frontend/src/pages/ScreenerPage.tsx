@@ -6,7 +6,10 @@ import { DashboardCard } from '@/components/dashboard/DashboardCard'
 import { Card } from '@/components/ui/Card'
 import { screenerApi } from '@/lib/api'
 import { TIMEFRAME_OPTIONS } from '@/lib/timeframes'
-import type { ScreenerRequest, Timeframe } from '@/types/api'
+import type { DashboardItem, ScreenerRequest, Timeframe } from '@/types/api'
+
+type IntradayView = 'all' | 'live' | 'stored' | 'public' | 'mixed' | 'cooldown'
+type IntradayPreset = 'all' | 'ready-now' | 'watch' | 'recheck' | 'cooling'
 
 const PATTERN_OPTIONS = [
   { value: 'double_bottom', label: '이중 바닥 (W)' },
@@ -65,6 +68,8 @@ export default function ScreenerPage() {
     timeframes: ['1d'],
   })
   const [submitted, setSubmitted] = useState(false)
+  const [intradayView, setIntradayView] = useState<IntradayView>('all')
+  const [intradayPreset, setIntradayPreset] = useState<IntradayPreset>('all')
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['screener', req],
@@ -73,18 +78,59 @@ export default function ScreenerPage() {
     staleTime: 30_000,
   })
 
+  const intradayMode = (req.timeframes ?? []).some(value => ['60m', '30m', '15m', '1m'].includes(value))
+
+  const filteredData = useMemo(() => {
+    if (!data) return data
+    if (!intradayMode) return data
+    return data.filter(item => {
+      const matchesView =
+        intradayView === 'all'
+          ? true
+          : intradayView === 'live'
+            ? item.live_intraday_candidate
+            : !item.live_intraday_candidate && item.intraday_collection_mode === intradayView
+
+      const matchesPreset =
+        intradayPreset === 'all'
+          ? true
+          : intradayPreset === 'ready-now'
+            ? item.live_intraday_candidate &&
+              !item.no_signal_flag &&
+              ['confirmed', 'trigger_ready', 'breakout_watch'].includes(item.setup_stage)
+            : intradayPreset === 'watch'
+              ? !item.no_signal_flag &&
+                ['late_base', 'early_trigger_watch', 'base_building'].includes(item.setup_stage) &&
+                item.formation_quality >= 0.5
+              : intradayPreset === 'recheck'
+                ? ['stored', 'public', 'mixed', 'budget'].includes(item.intraday_collection_mode) &&
+                  item.data_quality >= 0.45
+                : item.intraday_collection_mode === 'cooldown' || item.no_signal_flag
+
+      return matchesView && matchesPreset
+    })
+  }, [data, intradayMode, intradayPreset, intradayView])
+
   const stats = useMemo(() => {
-    if (!data?.length) return null
-    const kospi = data.filter(item => item.symbol.market === 'KOSPI').length
-    const kosdaq = data.filter(item => item.symbol.market === 'KOSDAQ').length
-    const avgReliability = data.reduce((sum, item) => sum + item.sample_reliability, 0) / data.length
-    const avgEdge = data.reduce((sum, item) => sum + item.historical_edge_score, 0) / data.length
-    return { kospi, kosdaq, avgReliability, avgEdge }
-  }, [data])
+    if (!filteredData?.length) return null
+    const kospi = filteredData.filter(item => item.symbol.market === 'KOSPI').length
+    const kosdaq = filteredData.filter(item => item.symbol.market === 'KOSDAQ').length
+    const avgReliability = filteredData.reduce((sum, item) => sum + item.sample_reliability, 0) / filteredData.length
+    const avgEdge = filteredData.reduce((sum, item) => sum + item.historical_edge_score, 0) / filteredData.length
+    const avgRewardRisk = filteredData.reduce((sum, item) => sum + item.reward_risk_ratio, 0) / filteredData.length
+    const liveCount = filteredData.filter(item => item.live_intraday_candidate).length
+    const confirmedCount = filteredData.filter(item => item.state === 'confirmed').length
+    const noSignalCount = filteredData.filter(item => item.no_signal_flag).length
+    return { kospi, kosdaq, avgReliability, avgEdge, avgRewardRisk, liveCount, confirmedCount, noSignalCount }
+  }, [filteredData])
 
   const run = () => {
     setSubmitted(true)
     refetch()
+  }
+
+  const applyPreset = (preset: IntradayPreset) => {
+    setIntradayPreset(preset)
   }
 
   const toggleMultiValue = (field: 'pattern_types' | 'states' | 'markets' | 'fetch_statuses', value: string) => {
@@ -310,6 +356,55 @@ export default function ScreenerPage() {
 
       {data && (
         <div className="space-y-4">
+          {intradayMode && (
+            <>
+              <div className="flex flex-wrap gap-2">
+                {([
+                  ['all', '전체'],
+                  ['live', 'live'],
+                  ['stored', 'stored'],
+                  ['public', 'public'],
+                  ['mixed', 'mixed'],
+                  ['cooldown', 'cooldown'],
+                ] as Array<[IntradayView, string]>).map(([value, label]) => (
+                  <button
+                    key={value}
+                    onClick={() => setIntradayView(value)}
+                    className={`rounded-md px-2.5 py-1.5 text-xs transition-colors ${
+                      intradayView === value
+                        ? 'bg-primary text-primary-foreground'
+                        : 'border border-border bg-card text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {([
+                  ['all', '프리셋 전체'],
+                  ['ready-now', '바로 볼 종목'],
+                  ['watch', '지켜볼 후보'],
+                  ['recheck', '재확인 필요'],
+                  ['cooling', '냉각/관망'],
+                ] as Array<[IntradayPreset, string]>).map(([value, label]) => (
+                  <button
+                    key={value}
+                    onClick={() => applyPreset(value)}
+                    className={`rounded-md px-2.5 py-1.5 text-xs transition-colors ${
+                      intradayPreset === value
+                        ? 'bg-emerald-600 text-white'
+                        : 'border border-border bg-card text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Card>
               <div className="text-xs text-muted-foreground">검색 결과</div>
@@ -329,9 +424,52 @@ export default function ScreenerPage() {
             </Card>
           </div>
 
+          {intradayMode && stats && (
+            <>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <SummaryButton label="live 추적" value={`${stats.liveCount}개`} onClick={() => setIntradayView('live')} />
+                <SummaryButton label="confirmed" value={`${stats.confirmedCount}개`} onClick={() => setIntradayPreset('ready-now')} />
+                <SummaryButton label="No Signal" value={`${stats.noSignalCount}개`} onClick={() => setIntradayPreset('cooling')} />
+                <SummaryButton label="평균 손익비" value={stats.avgRewardRisk.toFixed(2)} onClick={() => setIntradayPreset('ready-now')} />
+              </div>
+
+              <Card className="space-y-3">
+                <div className="text-sm font-semibold">스크리너 컨텍스트</div>
+                <p className="text-xs text-muted-foreground">{buildScreenerGuidance(filteredData ?? [])}</p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => {
+                      setIntradayView('all')
+                      setIntradayPreset('all')
+                    }}
+                    className="rounded-md border border-border bg-card px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    전체 보기
+                  </button>
+                  <button
+                    onClick={() => setIntradayPreset('watch')}
+                    className="rounded-md border border-violet-500/30 bg-violet-500/10 px-2.5 py-1.5 text-xs text-violet-100 transition-colors hover:bg-violet-500/15"
+                  >
+                    forming/watch
+                  </button>
+                  <button
+                    onClick={() => setIntradayPreset('recheck')}
+                    className="rounded-md border border-sky-500/30 bg-sky-500/10 px-2.5 py-1.5 text-xs text-sky-100 transition-colors hover:bg-sky-500/15"
+                  >
+                    재확인 필요
+                  </button>
+                </div>
+              </Card>
+            </>
+          )}
+
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {data.map(item => (
-              <DashboardCard key={`${item.timeframe}-${item.symbol.code}`} item={item} />
+            {(filteredData ?? data).map(item => (
+              <DashboardCard
+                key={`${item.timeframe}-${item.symbol.code}`}
+                item={item}
+                intradayPreset={intradayMode ? intradayPreset : undefined}
+              />
             ))}
           </div>
         </div>
@@ -347,6 +485,39 @@ function FilterGroup({ label, children }: { label: string; children: ReactNode }
       {children}
     </div>
   )
+}
+
+function SummaryButton({ label, value, onClick }: { label: string; value: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="rounded-lg border border-border bg-card p-3 text-left transition-colors hover:border-primary/40 hover:bg-card/80"
+    >
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="mt-1 text-sm font-medium">{value}</div>
+    </button>
+  )
+}
+
+function buildScreenerGuidance(items: DashboardItem[]): string {
+  if (items.length === 0) {
+    return '현재 조건에 맞는 결과가 적습니다. 조건을 조금 완화하거나 다른 타임프레임도 함께 보는 편이 좋습니다.'
+  }
+
+  const liveCount = items.filter(item => item.live_intraday_candidate).length
+  const confirmedCount = items.filter(item => item.state === 'confirmed').length
+  const avgEdge = items.reduce((sum, item) => sum + item.historical_edge_score, 0) / items.length
+  const avgRewardRisk = items.reduce((sum, item) => sum + item.reward_risk_ratio, 0) / items.length
+
+  if (liveCount >= Math.max(2, Math.round(items.length * 0.35)) && confirmedCount >= Math.max(1, Math.round(items.length * 0.2))) {
+    return '지금 스크리너 결과는 즉시 대응 후보가 제법 섞여 있습니다. live 후보와 confirmed 후보부터 우선 깊게 보세요.'
+  }
+
+  if (avgEdge >= 0.58 && avgRewardRisk >= 1.4) {
+    return '평균 edge와 손익비는 무난합니다. 상위 결과 몇 개를 차트 상세로 내려가 확인하는 흐름이 좋습니다.'
+  }
+
+  return '확인 단계 후보가 더 많은 편입니다. 진입보다 재확인과 트리거 감시에 더 가까운 결과로 보는 편이 좋습니다.'
 }
 
 function SliderGroup({
