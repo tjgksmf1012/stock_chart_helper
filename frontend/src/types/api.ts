@@ -116,6 +116,9 @@ export interface AnalysisResult {
   entry_window_score: number
   entry_window_label: string
   entry_window_summary: string
+  freshness_score: number
+  freshness_label: string
+  freshness_summary: string
   score_factors: ScoreFactor[]
   active_setup_score: number
   active_setup_label: string
@@ -195,6 +198,9 @@ export interface DashboardItem {
   entry_window_score: number
   entry_window_label: string
   entry_window_summary: string
+  freshness_score: number
+  freshness_label: string
+  freshness_summary: string
   score_factors: ScoreFactor[]
   active_setup_score: number
   active_setup_label: string
@@ -414,6 +420,7 @@ export interface ScreenerRequest {
   min_data_quality?: number
   min_trade_readiness_score?: number
   min_entry_window_score?: number
+  min_freshness_score?: number
   min_active_setup_score?: number
   min_confluence_score?: number
   min_historical_edge_score?: number
@@ -428,9 +435,10 @@ export interface ScreenerRequest {
     | 'confidence'
     | 'p_down'
     | 'sample_reliability'
-    | 'trade_readiness_score'
-    | 'entry_window_score'
-    | 'active_setup_score'
+  | 'trade_readiness_score'
+  | 'entry_window_score'
+  | 'freshness_score'
+  | 'active_setup_score'
     | 'confluence_score'
     | 'data_quality'
     | 'historical_edge_score'

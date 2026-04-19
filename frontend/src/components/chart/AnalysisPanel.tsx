@@ -1,4 +1,4 @@
-import { Activity, AlertCircle, Database, ShieldAlert, Target, TrendingDown, TrendingUp } from 'lucide-react'
+﻿import { Activity, AlertCircle, Database, Layers3, ShieldAlert, Target, TrendingDown, TrendingUp } from 'lucide-react'
 
 import type { AnalysisResult, PatternInfo } from '@/types/api'
 import { Badge } from '@/components/ui/Badge'
@@ -12,8 +12,8 @@ import {
   fmtPct,
   fmtPrice,
   fmtTurnoverBillion,
-  INTRADAY_SESSION_LABELS,
   getPatternBias,
+  INTRADAY_SESSION_LABELS,
   PATTERN_NAMES,
   PATTERN_VARIANT_NAMES,
   STATE_COLORS,
@@ -28,33 +28,6 @@ interface AnalysisPanelProps {
 export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
   const bestPattern = analysis.patterns[0]
 
-  if (analysis.no_signal_flag) {
-    return (
-      <Card className="space-y-3">
-        <div className="flex items-center gap-2 text-yellow-400">
-          <AlertCircle size={16} />
-          <span className="text-sm font-semibold">No Signal</span>
-          <Badge variant="muted" className="ml-auto">
-            {analysis.timeframe_label}
-          </Badge>
-        </div>
-        <p className="text-xs text-muted-foreground">{analysis.no_signal_reason}</p>
-        <p className="text-xs text-muted-foreground">{analysis.reason_summary}</p>
-        <ActionPlanCard analysis={analysis} />
-        <TradeReadinessCard analysis={analysis} />
-        <EntryWindowCard analysis={analysis} />
-        <ActiveSetupCard analysis={analysis} />
-        <DecisionSupportCard analysis={analysis} />
-        <div className="rounded-lg border border-border bg-background/60 p-3 text-xs text-muted-foreground">
-          <div>데이터 품질 {fmtPct(analysis.data_quality, 0)}</div>
-          <div className="mt-1">데이터 상태 {analysis.fetch_status_label}</div>
-          <div className="mt-1">{analysis.source_note}</div>
-          {analysis.fetch_message && <div className="mt-1">{analysis.fetch_message}</div>}
-        </div>
-      </Card>
-    )
-  }
-
   return (
     <div className="space-y-3">
       <Card>
@@ -64,79 +37,48 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
               <TrendingUp size={14} className="text-green-400" />
             ) : analysis.p_down >= 0.55 ? (
               <TrendingDown size={14} className="text-red-400" />
-            ) : null}
-            확률 분석
-            {analysis.is_provisional && (
-              <Badge variant="warning" className="ml-auto">
-                잠정
-              </Badge>
+            ) : (
+              <Activity size={14} className="text-primary" />
             )}
+            확률 분석
+            <Badge variant="muted" className="ml-auto">
+              {analysis.timeframe_label}
+            </Badge>
           </CardTitle>
         </CardHeader>
-        <div className="space-y-3">
-          <ProbBar p_up={analysis.p_up} p_down={analysis.p_down} size="md" />
-          <p className="text-xs leading-relaxed text-muted-foreground">{analysis.reason_summary}</p>
-        </div>
+        {analysis.no_signal_flag ? (
+          <div className="space-y-2 text-xs text-muted-foreground">
+            <div className="flex items-center gap-2 text-yellow-300">
+              <AlertCircle size={14} />
+              <span className="font-medium">No Signal</span>
+            </div>
+            <p>{analysis.no_signal_reason}</p>
+            <p>{analysis.reason_summary}</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <ProbBar p_up={analysis.p_up} p_down={analysis.p_down} size="md" />
+            <p className="text-xs leading-relaxed text-muted-foreground">{analysis.reason_summary}</p>
+          </div>
+        )}
       </Card>
 
       <ActionPlanCard analysis={analysis} />
       <TradeReadinessCard analysis={analysis} />
       <EntryWindowCard analysis={analysis} />
+      <FreshnessCard analysis={analysis} />
       <ActiveSetupCard analysis={analysis} />
       <DecisionSupportCard analysis={analysis} />
 
-      {bestPattern && (
-        <Card className="space-y-3">
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <Target size={15} className="text-primary" />
-            전략 힌트
-          </div>
-          <div className="rounded-lg border border-border bg-background/60 p-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant={badgeVariant(bestPattern)}>
-                {PATTERN_NAMES[bestPattern.pattern_type] ?? bestPattern.pattern_type}
-              </Badge>
-              {bestPattern.variant && (
-                <Badge variant="muted">
-                  {PATTERN_VARIANT_NAMES[bestPattern.variant] ?? bestPattern.variant}
-                </Badge>
-              )}
-              <span className={cn('rounded px-1.5 py-0.5 text-xs', STATE_COLORS[bestPattern.state])}>
-                {STATE_LABELS[bestPattern.state]}
-              </span>
-              <Badge variant="muted">
-                {CANDLE_CONFIRMATION_LABELS[bestPattern.candlestick_label ?? 'neutral'] ??
-                  bestPattern.candlestick_label ??
-                  '중립 캔들'}
-              </Badge>
-            </div>
-            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-              {patternActionText(bestPattern, analysis)}
-            </p>
-            {bestPattern.candlestick_note && (
-              <p className="mt-2 text-xs leading-relaxed text-sky-200">{bestPattern.candlestick_note}</p>
-            )}
-          </div>
-          <div className="space-y-2">
-            {bestPattern.target_level && (
-              <StatRow label="우선 목표가" value={<span className="text-green-400">{fmtPrice(bestPattern.target_level)}</span>} />
-            )}
-            {bestPattern.invalidation_level && (
-              <StatRow label="리스크 기준" value={<span className="text-red-400">{fmtPrice(bestPattern.invalidation_level)}</span>} />
-            )}
-            {bestPattern.target_hit_at && <StatRow label="목표가 첫 도달" value={fmtDateTime(bestPattern.target_hit_at)} />}
-            {bestPattern.invalidated_at && <StatRow label="무효화 시점" value={fmtDateTime(bestPattern.invalidated_at)} />}
-          </div>
-        </Card>
-      )}
+      {bestPattern && <BestPatternCard pattern={bestPattern} analysis={analysis} />}
 
       <Card>
         <CardHeader>
           <CardTitle>예상 시나리오</CardTitle>
         </CardHeader>
-        <div className="rounded-lg border border-border bg-background/60 p-3">
-          <div className="text-sm font-semibold">{analysis.projection_label}</div>
-          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{analysis.projection_summary}</p>
+        <div className="space-y-2 text-xs text-muted-foreground">
+          <div className="font-medium text-foreground">{analysis.projection_label || '중립 시나리오'}</div>
+          <p>{analysis.projection_summary}</p>
         </div>
       </Card>
 
@@ -149,29 +91,16 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
           <StatRow label="패턴 확인 점수" value={fmtPct(analysis.pattern_confirmation_score)} />
           <StatRow label="신뢰도" value={fmtPct(analysis.confidence)} />
           <StatRow label="진입 적합도" value={fmtPct(analysis.entry_score)} />
-          <StatRow label="기대 손익비" value={analysis.reward_risk_ratio.toFixed(2)} />
-          <StatRow label="목표까지 여유" value={fmtPct(analysis.target_distance_pct)} />
-          <StatRow label="손절까지 거리" value={fmtPct(analysis.stop_distance_pct)} />
-          <StatRow label="헤드룸 점수" value={fmtPct(analysis.headroom_score)} />
+          <StatRow label="거래 준비도" value={fmtPct(analysis.trade_readiness_score ?? 0)} />
+          <StatRow label="진입 구간" value={fmtPct(analysis.entry_window_score ?? 0)} />
+          <StatRow label="패턴 신선도" value={fmtPct(analysis.freshness_score ?? 0)} />
+          <StatRow label="활성 셋업" value={fmtPct(analysis.active_setup_score ?? 0)} />
+          <StatRow label="손익비" value={analysis.reward_risk_ratio.toFixed(2)} />
+          <StatRow label="백테스트 edge" value={fmtPct(analysis.historical_edge_score)} />
+          <StatRow label="표본 신뢰도" value={fmtPct(analysis.sample_reliability)} />
+          <StatRow label="유사 패턴 표본" value={`${analysis.sample_size.toLocaleString('ko-KR')}건`} />
           <StatRow label="평균 MFE" value={fmtPct(analysis.avg_mfe_pct)} />
           <StatRow label="평균 MAE" value={fmtPct(analysis.avg_mae_pct)} />
-          <StatRow label="평균 결과 바 수" value={analysis.avg_bars_to_outcome.toFixed(1)} />
-          <StatRow label="백테스트 edge" value={fmtPct(analysis.historical_edge_score)} />
-          <StatRow label="추세 정렬 점수" value={fmtPct(analysis.trend_alignment_score)} />
-          <StatRow label="와이코프 점수" value={fmtPct(analysis.wyckoff_score)} />
-          {bestPattern && <StatRow label="Adam/Eve 적합도" value={fmtPct(bestPattern.variant_fit)} />}
-          {bestPattern && <StatRow label="레그 균형" value={fmtPct(bestPattern.leg_balance_fit)} />}
-          {bestPattern && <StatRow label="반전 에너지" value={fmtPct(bestPattern.reversal_energy_fit)} />}
-          {bestPattern && <StatRow label="돌파 품질" value={fmtPct(bestPattern.breakout_quality_fit)} />}
-          {bestPattern && <StatRow label="Retest 품질" value={fmtPct(bestPattern.retest_quality_fit)} />}
-          {bestPattern && <StatRow label="캔들 확인 점수" value={fmtPct(bestPattern.candlestick_confirmation_fit)} />}
-          {bestPattern && <StatRow label="거래량 맥락" value={fmtPct(bestPattern.volume_context_fit)} />}
-          {bestPattern && <StatRow label="변동성 수축" value={fmtPct(bestPattern.volatility_context_fit)} />}
-          <StatRow label="완성 임박도" value={fmtPct(analysis.completion_proximity)} />
-          <StatRow label="신호 신선도" value={fmtPct(analysis.recency_score)} />
-          <StatRow label="유사 패턴 표본 수" value={`${analysis.sample_size.toLocaleString('ko-KR')}건`} />
-          <StatRow label="보정 승률" value={fmtPct(analysis.empirical_win_rate)} />
-          <StatRow label="표본 신뢰도" value={fmtPct(analysis.sample_reliability)} />
         </div>
       </Card>
 
@@ -183,29 +112,20 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
           </CardTitle>
         </CardHeader>
         <div className="space-y-2">
-          <StatRow label="타임프레임" value={analysis.timeframe_label} />
           <StatRow label="데이터 출처" value={analysis.data_source} />
           <StatRow label="데이터 상태" value={analysis.fetch_status_label} />
-          <StatRow label="데이터 품질" value={fmtPct(analysis.data_quality, 0)} />
+          <StatRow label="데이터 품질" value={fmtPct(analysis.data_quality)} />
           <StatRow label="평균 거래대금" value={fmtTurnoverBillion(analysis.avg_turnover_billion)} />
           <StatRow label="유동성 점수" value={fmtPct(analysis.liquidity_score)} />
-          <StatRow label="추세 방향" value={trendDirectionLabel(analysis.trend_direction)} />
-          <StatRow label="와이코프 국면" value={WYCKOFF_LABELS[analysis.wyckoff_phase] ?? analysis.wyckoff_phase} />
-          <StatRow
-            label="장중 시간대"
-            value={INTRADAY_SESSION_LABELS[analysis.intraday_session_phase] ?? analysis.intraday_session_phase}
-          />
-          <StatRow label="장중 문맥 점수" value={fmtPct(analysis.intraday_session_score)} />
           <StatRow label="통계 기준" value={analysis.stats_timeframe} />
-          <StatRow label="사용 가능 바 수" value={`${analysis.available_bars.toLocaleString('ko-KR')}개`} />
-          {analysis.bars_since_signal !== null && (
-            <StatRow label="신호 이후 경과 바 수" value={`${analysis.bars_since_signal.toLocaleString('ko-KR')}개`} />
-          )}
+          <StatRow label="사용 바 수" value={`${analysis.available_bars.toLocaleString('ko-KR')}개`} />
+          <StatRow label="와이코프" value={WYCKOFF_LABELS[analysis.wyckoff_phase] ?? analysis.wyckoff_phase} />
+          <StatRow label="장중 세션" value={INTRADAY_SESSION_LABELS[analysis.intraday_session_phase] ?? analysis.intraday_session_phase} />
           <p className="pt-1 text-xs leading-relaxed text-muted-foreground">{analysis.source_note}</p>
+          {analysis.fetch_message && <p className="text-xs text-muted-foreground">{analysis.fetch_message}</p>}
           {analysis.wyckoff_note && <p className="text-xs text-sky-200">{analysis.wyckoff_note}</p>}
           {analysis.intraday_session_note && <p className="text-xs text-violet-200">{analysis.intraday_session_note}</p>}
           {analysis.trend_warning && <p className="text-xs text-amber-300">{analysis.trend_warning}</p>}
-          {analysis.fetch_message && <p className="text-xs text-muted-foreground">{analysis.fetch_message}</p>}
         </div>
       </Card>
 
@@ -216,79 +136,76 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
           </CardHeader>
           <div className="space-y-3">
             {analysis.patterns.map((pattern, index) => (
-              <div key={`${pattern.pattern_type}-${index}`} className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium">
-                    {PATTERN_NAMES[pattern.pattern_type] ?? pattern.pattern_type}
-                  </span>
-                  <Badge variant="muted">{pattern.grade}급</Badge>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <span className={cn('rounded px-1.5 py-0.5 text-xs', STATE_COLORS[pattern.state])}>
-                    {STATE_LABELS[pattern.state]}
-                  </span>
-                  {pattern.variant && (
-                    <Badge variant="muted">
-                      {PATTERN_VARIANT_NAMES[pattern.variant] ?? pattern.variant}
-                    </Badge>
-                  )}
-                  <span className="text-xs text-muted-foreground">유사도 {fmtPct(pattern.textbook_similarity)}</span>
-                  {pattern.lifecycle_label && (
-                    <Badge variant={pattern.lifecycle_score >= 0.56 ? 'neutral' : 'muted'}>
-                      {pattern.lifecycle_label} {fmtPct(pattern.lifecycle_score, 0)}
-                    </Badge>
-                  )}
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                  <span>Adam/Eve 적합도 {fmtPct(pattern.variant_fit)}</span>
-                  <span className="text-right">레그 균형 {fmtPct(pattern.leg_balance_fit)}</span>
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                  <span>반전 에너지 {fmtPct(pattern.reversal_energy_fit)}</span>
-                  <span className="text-right">돌파 품질 {fmtPct(pattern.breakout_quality_fit)}</span>
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                  <span>Retest 품질 {fmtPct(pattern.retest_quality_fit)}</span>
-                  <span className="text-right">캔들 확인 {fmtPct(pattern.candlestick_confirmation_fit)}</span>
-                </div>
-                <div className="grid grid-cols-1 gap-2 text-xs text-muted-foreground">
-                  <span>
-                    {CANDLE_CONFIRMATION_LABELS[pattern.candlestick_label ?? 'neutral'] ??
-                      pattern.candlestick_label ??
-                      '중립 캔들'}
-                  </span>
-                  {pattern.candlestick_note && <span>{pattern.candlestick_note}</span>}
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                  <span>거래량 맥락 {fmtPct(pattern.volume_context_fit)}</span>
-                  <span className="text-right">변동성 수축 {fmtPct(pattern.volatility_context_fit)}</span>
-                </div>
-                {pattern.neckline && <StatRow label="목선" value={fmtPrice(pattern.neckline)} />}
-                {pattern.invalidation_level && (
-                  <StatRow label="무효화 기준" value={<span className="text-red-400">{fmtPrice(pattern.invalidation_level)}</span>} />
-                )}
-                {pattern.target_level && (
-                  <StatRow label="목표가" value={<span className="text-green-400">{fmtPrice(pattern.target_level)}</span>} />
-                )}
-                {pattern.target_hit_at && <StatRow label="목표가 도달" value={fmtDateTime(pattern.target_hit_at)} />}
-                {pattern.invalidated_at && <StatRow label="무효화" value={fmtDateTime(pattern.invalidated_at)} />}
-                {pattern.lifecycle_note && <p className="text-xs leading-relaxed text-muted-foreground">{pattern.lifecycle_note}</p>}
-              </div>
+              <PatternCard key={`${pattern.pattern_type}-${index}`} pattern={pattern} />
             ))}
           </div>
         </Card>
       )}
 
-      <Card className="space-y-3">
+      <Card className="space-y-2">
         <div className="flex items-center gap-2 text-sm font-semibold">
           <ShieldAlert size={15} className="text-orange-400" />
           해석 주의
         </div>
         <p className="text-xs leading-relaxed text-muted-foreground">
-          이 화면은 패턴 기반 보조 해석 도구입니다. 미래 경로 오버레이는 확정 예측이 아니라 현재 구조를 기준으로 만든 기본
-          시나리오입니다. 이미 목표가를 한 번 도달한 패턴은 새로운 매수 신호가 아니라 기존 패턴 종료로 해석하는 것이 더 안전합니다.
+          이 화면은 패턴 기반 보조 분석 도구입니다. 이미 목표가에 도달했거나 무효화된 패턴은 신선도와 거래 준비도에서 강하게 감점되며,
+          실전 매수·매도 판단 전에는 추세, 거래대금, 리스크 기준을 함께 확인하는 것이 좋습니다.
         </p>
       </Card>
+    </div>
+  )
+}
+
+function BestPatternCard({ pattern, analysis }: { pattern: PatternInfo; analysis: AnalysisResult }) {
+  return (
+    <Card className="space-y-3">
+      <div className="flex items-center gap-2 text-sm font-semibold">
+        <Target size={15} className="text-primary" />
+        전략 힌트
+      </div>
+      <div className="rounded-lg border border-border bg-background/60 p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant={badgeVariant(pattern)}>{PATTERN_NAMES[pattern.pattern_type] ?? pattern.pattern_type}</Badge>
+          {pattern.variant && <Badge variant="muted">{PATTERN_VARIANT_NAMES[pattern.variant] ?? pattern.variant}</Badge>}
+          <span className={cn('rounded px-1.5 py-0.5 text-xs', STATE_COLORS[pattern.state])}>{STATE_LABELS[pattern.state]}</span>
+          <Badge variant={scoreVariant(pattern.lifecycle_score)}>{pattern.lifecycle_label}</Badge>
+        </div>
+        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{analysis.action_plan_summary}</p>
+        {pattern.lifecycle_note && <p className="mt-2 text-xs text-violet-200">{pattern.lifecycle_note}</p>}
+        {pattern.candlestick_note && <p className="mt-2 text-xs text-sky-200">{pattern.candlestick_note}</p>}
+      </div>
+      <div className="space-y-2">
+        {pattern.neckline !== null && <StatRow label="목선" value={fmtPrice(pattern.neckline)} />}
+        {pattern.target_level !== null && <StatRow label="목표가" value={<span className="text-green-400">{fmtPrice(pattern.target_level)}</span>} />}
+        {pattern.invalidation_level !== null && <StatRow label="무효화 기준" value={<span className="text-red-400">{fmtPrice(pattern.invalidation_level)}</span>} />}
+        {pattern.target_hit_at && <StatRow label="목표가 도달" value={fmtDateTime(pattern.target_hit_at)} />}
+        {pattern.invalidated_at && <StatRow label="무효화 시점" value={fmtDateTime(pattern.invalidated_at)} />}
+      </div>
+    </Card>
+  )
+}
+
+function PatternCard({ pattern }: { pattern: PatternInfo }) {
+  return (
+    <div className="space-y-2 rounded-lg border border-border bg-background/50 p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant={badgeVariant(pattern)}>{PATTERN_NAMES[pattern.pattern_type] ?? pattern.pattern_type}</Badge>
+        <Badge variant="muted">등급 {pattern.grade}</Badge>
+        <span className={cn('rounded px-1.5 py-0.5 text-xs', STATE_COLORS[pattern.state])}>{STATE_LABELS[pattern.state]}</span>
+        <Badge variant={scoreVariant(pattern.lifecycle_score)}>{pattern.lifecycle_label}</Badge>
+      </div>
+      <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+        <span>교과서 유사도 {fmtPct(pattern.textbook_similarity)}</span>
+        <span className="text-right">변형 적합도 {fmtPct(pattern.variant_fit)}</span>
+        <span>다리 균형 {fmtPct(pattern.leg_balance_fit)}</span>
+        <span className="text-right">반전 에너지 {fmtPct(pattern.reversal_energy_fit)}</span>
+        <span>돌파 품질 {fmtPct(pattern.breakout_quality_fit)}</span>
+        <span className="text-right">리테스트 {fmtPct(pattern.retest_quality_fit)}</span>
+      </div>
+      <div className="text-xs text-muted-foreground">
+        {CANDLE_CONFIRMATION_LABELS[pattern.candlestick_label ?? 'neutral'] ?? pattern.candlestick_label ?? '중립 캔들'}
+      </div>
+      {pattern.lifecycle_note && <p className="text-xs leading-relaxed text-muted-foreground">{pattern.lifecycle_note}</p>}
     </div>
   )
 }
@@ -304,48 +221,31 @@ function ActionPlanCard({ analysis }: { analysis: AnalysisResult }) {
         </Badge>
       </div>
       <p className="text-xs leading-relaxed text-muted-foreground">{analysis.action_plan_summary}</p>
-      <div className="space-y-2">
-        <StatRow label="행동 우선순위" value={fmtPct(analysis.action_priority_score)} />
-        <StatRow label="기준 타임프레임" value={analysis.timeframe_label} />
-      </div>
+      <StatRow label="행동 우선순위" value={fmtPct(analysis.action_priority_score)} />
     </Card>
   )
 }
 
 function TradeReadinessCard({ analysis }: { analysis: AnalysisResult }) {
-  const factors = analysis.score_factors ?? []
-  const readiness = analysis.trade_readiness_score ?? 0
-
+  const score = analysis.trade_readiness_score ?? 0
   return (
     <Card className="space-y-3 border-emerald-400/20 bg-emerald-400/5">
       <div className="flex items-center gap-2 text-sm font-semibold">
         <Target size={15} className="text-emerald-300" />
         거래 준비도
-        <Badge variant={readinessVariant(readiness)} className="ml-auto">
-          {analysis.trade_readiness_label || readinessLabel(readiness)}
+        <Badge variant={scoreVariant(score)} className="ml-auto">
+          {analysis.trade_readiness_label}
         </Badge>
       </div>
-      <div>
-        <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
-          <span>실전 점검 점수</span>
-          <span className="font-mono">{fmtPct(readiness, 0)}</span>
-        </div>
-        <div className="h-2 overflow-hidden rounded-full bg-background">
-          <div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${Math.round(readiness * 100)}%` }} />
-        </div>
-      </div>
-      {analysis.trade_readiness_summary && (
-        <p className="text-xs leading-relaxed text-muted-foreground">{analysis.trade_readiness_summary}</p>
-      )}
-      {factors.length > 0 && (
+      <ProgressBar score={score} color="bg-emerald-400" />
+      <p className="text-xs leading-relaxed text-muted-foreground">{analysis.trade_readiness_summary}</p>
+      {analysis.score_factors?.length > 0 && (
         <div className="grid grid-cols-1 gap-2">
-          {factors.map(factor => (
+          {analysis.score_factors.map(factor => (
             <div key={factor.label} className="rounded-lg border border-border bg-background/60 p-2.5">
               <div className="mb-1 flex items-center justify-between gap-2 text-xs">
                 <span className="font-medium text-foreground">{factor.label}</span>
-                <span className="font-mono text-muted-foreground">
-                  {fmtPct(factor.score, 0)} · 가중 {Math.round(factor.weight * 100)}%
-                </span>
+                <span className="font-mono text-muted-foreground">{fmtPct(factor.score, 0)} / {Math.round(factor.weight * 100)}%</span>
               </div>
               <div className="h-1.5 overflow-hidden rounded-full bg-card">
                 <div className="h-full rounded-full bg-primary/80" style={{ width: `${Math.round(factor.score * 100)}%` }} />
@@ -361,55 +261,54 @@ function TradeReadinessCard({ analysis }: { analysis: AnalysisResult }) {
 
 function EntryWindowCard({ analysis }: { analysis: AnalysisResult }) {
   const score = analysis.entry_window_score ?? 0
-
   return (
     <Card className="space-y-3 border-sky-400/20 bg-sky-400/5">
       <div className="flex items-center gap-2 text-sm font-semibold">
         <Target size={15} className="text-sky-300" />
         진입 구간
-        <Badge variant={score >= 0.7 ? 'bullish' : score >= 0.5 ? 'neutral' : 'muted'} className="ml-auto">
-          {analysis.entry_window_label || '재확인 필요'}
+        <Badge variant={scoreVariant(score)} className="ml-auto">
+          {analysis.entry_window_label}
         </Badge>
       </div>
-      <div>
-        <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
-          <span>현재 가격 자리 평가</span>
-          <span className="font-mono">{fmtPct(score, 0)}</span>
-        </div>
-        <div className="h-2 overflow-hidden rounded-full bg-background">
-          <div className="h-full rounded-full bg-sky-300 transition-all" style={{ width: `${Math.round(score * 100)}%` }} />
-        </div>
+      <ProgressBar score={score} color="bg-sky-300" />
+      <p className="text-xs leading-relaxed text-muted-foreground">{analysis.entry_window_summary}</p>
+    </Card>
+  )
+}
+
+function FreshnessCard({ analysis }: { analysis: AnalysisResult }) {
+  const score = analysis.freshness_score ?? 0
+  return (
+    <Card className="space-y-3 border-violet-400/20 bg-violet-400/5">
+      <div className="flex items-center gap-2 text-sm font-semibold">
+        <Layers3 size={15} className="text-violet-300" />
+        패턴 신선도
+        <Badge variant={scoreVariant(score)} className="ml-auto">
+          {analysis.freshness_label}
+        </Badge>
       </div>
-      {analysis.entry_window_summary && <p className="text-xs leading-relaxed text-muted-foreground">{analysis.entry_window_summary}</p>}
+      <ProgressBar score={score} color="bg-violet-300" />
+      <p className="text-xs leading-relaxed text-muted-foreground">{analysis.freshness_summary}</p>
     </Card>
   )
 }
 
 function ActiveSetupCard({ analysis }: { analysis: AnalysisResult }) {
   const score = analysis.active_setup_score ?? 0
-
   return (
     <Card className="space-y-3 border-cyan-400/20 bg-cyan-400/5">
       <div className="flex items-center gap-2 text-sm font-semibold">
         <Activity size={15} className="text-cyan-300" />
         활성 셋업
-        <Badge variant={score >= 0.56 ? 'neutral' : 'muted'} className="ml-auto">
+        <Badge variant={scoreVariant(score)} className="ml-auto">
           {analysis.active_setup_label}
         </Badge>
       </div>
-      <div>
-        <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
-          <span>현재 살아있는 패턴 점수</span>
-          <span className="font-mono">{fmtPct(score, 0)}</span>
-        </div>
-        <div className="h-2 overflow-hidden rounded-full bg-background">
-          <div className="h-full rounded-full bg-cyan-300 transition-all" style={{ width: `${Math.round(score * 100)}%` }} />
-        </div>
-      </div>
+      <ProgressBar score={score} color="bg-cyan-300" />
       <p className="text-xs leading-relaxed text-muted-foreground">{analysis.active_setup_summary}</p>
       <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-        <span>활성 패턴 {analysis.active_pattern_count ?? 0}개</span>
-        <span className="text-right">종료/무효 {analysis.completed_pattern_count ?? 0}개</span>
+        <span>활성 패턴 {analysis.active_pattern_count}개</span>
+        <span className="text-right">종료/무효 {analysis.completed_pattern_count}개</span>
       </div>
     </Card>
   )
@@ -424,7 +323,7 @@ function DecisionSupportCard({ analysis }: { analysis: AnalysisResult }) {
     <Card className="space-y-3">
       <div className="flex items-center gap-2 text-sm font-semibold">
         <ShieldAlert size={15} className="text-orange-400" />
-        실전 검증 체크
+        실전 체크
       </div>
       {analysis.next_trigger && (
         <div className="rounded-lg border border-primary/20 bg-primary/5 p-2.5 text-xs leading-relaxed text-muted-foreground">
@@ -432,30 +331,38 @@ function DecisionSupportCard({ analysis }: { analysis: AnalysisResult }) {
         </div>
       )}
       {flags.length > 0 && (
-        <div>
-          <div className="mb-1.5 text-xs font-medium text-muted-foreground">리스크 플래그</div>
-          <div className="space-y-1.5">
-            {flags.map((flag, index) => (
-              <div key={`${flag}-${index}`} className="rounded-md border border-orange-400/15 bg-orange-400/5 px-2.5 py-1.5 text-xs text-orange-100">
-                {flag}
-              </div>
-            ))}
-          </div>
+        <div className="space-y-1.5">
+          {flags.map((flag, index) => (
+            <div key={`${flag}-${index}`} className="rounded-md border border-orange-400/15 bg-orange-400/5 px-2.5 py-1.5 text-xs text-orange-100">
+              {flag}
+            </div>
+          ))}
         </div>
       )}
       {checklist.length > 0 && (
-        <div>
-          <div className="mb-1.5 text-xs font-medium text-muted-foreground">확인 순서</div>
-          <ol className="space-y-1.5 text-xs text-muted-foreground">
-            {checklist.map((item, index) => (
-              <li key={`${item}-${index}`} className="rounded-md border border-border bg-background/60 px-2.5 py-1.5">
-                {index + 1}. {item}
-              </li>
-            ))}
-          </ol>
-        </div>
+        <ol className="space-y-1.5 text-xs text-muted-foreground">
+          {checklist.map((item, index) => (
+            <li key={`${item}-${index}`} className="rounded-md border border-border bg-background/60 px-2.5 py-1.5">
+              {index + 1}. {item}
+            </li>
+          ))}
+        </ol>
       )}
     </Card>
+  )
+}
+
+function ProgressBar({ score, color }: { score: number; color: string }) {
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
+        <span>점수</span>
+        <span className="font-mono">{fmtPct(score, 0)}</span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-background">
+        <div className={cn('h-full rounded-full transition-all', color)} style={{ width: `${Math.round(score * 100)}%` }} />
+      </div>
+    </div>
   )
 }
 
@@ -470,53 +377,9 @@ function actionPlanVariant(plan: string): 'bullish' | 'warning' | 'muted' | 'neu
   return 'muted'
 }
 
-function readinessVariant(score: number): 'bullish' | 'warning' | 'muted' | 'neutral' {
+function scoreVariant(score: number): 'bullish' | 'warning' | 'muted' | 'neutral' {
   if (score >= 0.72) return 'bullish'
-  if (score >= 0.58) return 'neutral'
-  if (score >= 0.44) return 'warning'
+  if (score >= 0.56) return 'neutral'
+  if (score >= 0.4) return 'warning'
   return 'muted'
-}
-
-function readinessLabel(score: number): string {
-  if (score >= 0.72) return '실전 후보'
-  if (score >= 0.58) return '관찰 후보'
-  if (score >= 0.44) return '재확인 필요'
-  return '보류'
-}
-
-function trendDirectionLabel(direction: string): string {
-  if (direction === 'up') return '상승'
-  if (direction === 'down') return '하락'
-  return '횡보'
-}
-
-function patternActionText(pattern: PatternInfo, analysis: AnalysisResult): string {
-  const bias = getPatternBias(pattern.pattern_type)
-  const variantText = pattern.variant ? `${PATTERN_VARIANT_NAMES[pattern.variant] ?? pattern.variant} 타입으로 ` : ''
-
-  if (pattern.state === 'played_out') {
-    return `${variantText}기존 패턴 목표가가 이미 한 번 이상 도달된 상태로 보는 편이 맞습니다. 지금은 같은 패턴을 다시 추격하기보다 새로운 재축적 또는 이어지는 추세 패턴을 확인하는 쪽이 더 안전합니다.`
-  }
-
-  if (pattern.state === 'invalidated') {
-    return `${variantText}기존 패턴은 무효화된 쪽으로 해석하는 편이 맞습니다. 손절 기준 이후 구조가 복원되는지부터 다시 확인하는 것이 좋습니다.`
-  }
-
-  if (pattern.state === 'forming') {
-    return bias === 'bullish'
-      ? `${variantText}아직 패턴을 만드는 중입니다. 레그 균형, 반전 에너지, 최근 확인 캔들, 목선 부근 거래량 확장을 먼저 보고 판단하는 편이 좋습니다.`
-      : `${variantText}아직 패턴을 만드는 중입니다. 지지 이탈이나 반등 실패가 실제로 나오는지 조금 더 확인하는 편이 안전합니다.`
-  }
-
-  if (pattern.state === 'armed') {
-    return bias === 'bullish'
-      ? `${variantText}완성 직전 구간입니다. 급한 추격보다 목선 돌파와 Retest 유지, 확인 캔들 질을 함께 보는 편이 더 좋습니다.`
-      : `${variantText}이탈 직전 구간입니다. 지지 붕괴가 실제로 확인되는지와 반등 캔들의 질을 함께 보는 편이 좋습니다.`
-  }
-
-  if (analysis.p_up >= 0.6) {
-    return `${variantText}이미 확인된 패턴으로 해석됩니다. 다만 현재 자리에서 목표까지 여유, 손절 대비 기대수익, 최근 확인 캔들 강도를 같이 봐야 합니다.`
-  }
-
-  return `${variantText}패턴은 감지됐지만 확신 구간은 아닙니다. 교과서 유사도보다 현재 자리, 추세 정렬, 데이터 품질, 확인 캔들을 함께 보는 편이 더 안전합니다.`
 }

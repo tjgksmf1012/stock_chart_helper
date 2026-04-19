@@ -63,6 +63,9 @@ def _make_item(rank: int, row: dict) -> DashboardItem:
         entry_window_score=row.get("entry_window_score", 0.0),
         entry_window_label=row.get("entry_window_label", "재확인 필요"),
         entry_window_summary=row.get("entry_window_summary", ""),
+        freshness_score=row.get("freshness_score", 0.0),
+        freshness_label=row.get("freshness_label", "재확인 필요"),
+        freshness_summary=row.get("freshness_summary", ""),
         score_factors=row.get("score_factors", []),
         active_setup_score=row.get("active_setup_score", 0.0),
         active_setup_label=row.get("active_setup_label", "활성 셋업 없음"),
@@ -133,6 +136,7 @@ async def dashboard_long(
         key=lambda row: (
             row.get("trade_readiness_score", 0.0),
             row.get("entry_window_score", 0.0),
+            row.get("freshness_score", 0.0),
             row.get("active_setup_score", 0.0),
             row.get("composite_score", row["entry_score"]),
             row.get("historical_edge_score", 0.0),
@@ -157,6 +161,7 @@ async def dashboard_short(
         key=lambda row: (
             row.get("trade_readiness_score", 0.0),
             row.get("entry_window_score", 0.0),
+            row.get("freshness_score", 0.0),
             row.get("active_setup_score", 0.0),
             row.get("composite_score", row["p_down"]),
             row.get("historical_edge_score", 0.0),
@@ -181,6 +186,7 @@ async def dashboard_similarity(
         key=lambda row: (
             row.get("trade_readiness_score", 0.0),
             row.get("entry_window_score", 0.0),
+            row.get("freshness_score", 0.0),
             row.get("active_setup_score", 0.0),
             row["textbook_similarity"],
             row.get("historical_edge_score", 0.0),
@@ -221,6 +227,7 @@ async def dashboard_armed(
         key=lambda row: (
             row.get("trade_readiness_score", 0.0),
             row.get("entry_window_score", 0.0),
+            row.get("freshness_score", 0.0),
             row.get("active_setup_score", 0.0),
             row["completion_proximity"],
             row.get("historical_edge_score", 0.0),

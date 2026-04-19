@@ -1,4 +1,4 @@
-import { fmtPct } from '@/lib/utils'
+﻿import { fmtPct } from '@/lib/utils'
 
 interface ProbBarProps {
   p_up: number

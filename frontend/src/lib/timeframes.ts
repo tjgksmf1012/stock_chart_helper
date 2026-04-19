@@ -1,4 +1,4 @@
-import type { Timeframe } from '@/types/api'
+﻿import type { Timeframe } from '@/types/api'
 
 export const DEFAULT_TIMEFRAME: Timeframe = '1d'
 

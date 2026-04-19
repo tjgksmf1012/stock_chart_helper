@@ -1,4 +1,4 @@
-"""
+﻿"""
 Shared analysis pipeline for symbol detail pages and scanner snapshots.
 """
 
@@ -33,20 +33,20 @@ _BEARISH_PATTERNS = {
 
 _FETCH_STATUS_LABELS = {
     "live_ok": "실시간 수집 성공",
-    "live_augmented_by_store": "실시간과 저장 분봉 결합",
+    "live_augmented_by_store": "실시간 + 저장 데이터 보강",
     "stored_fallback": "저장 분봉 대체",
     "stored_empty": "저장 분봉 없음",
     "intraday_rate_limited": "분봉 요청 제한",
-    "intraday_unavailable": "분봉 공급처 응답 없음",
-    "intraday_empty": "분봉 바 수 부족",
-    "yahoo_symbol_missing": "야후 심볼 매핑 실패",
-    "yahoo_rate_limited": "야후 요청 제한",
-    "yahoo_empty": "야후 분봉 없음",
-    "kis_not_configured": "KIS 미설정",
-    "kis_error": "KIS 요청 실패",
-    "kis_empty": "KIS 분봉 없음",
+    "intraday_unavailable": "분봉 데이터를 지원하지 않음",
+    "intraday_empty": "분봉 데이터 없음",
+    "yahoo_symbol_missing": "공개 데이터 심볼 없음",
+    "yahoo_rate_limited": "공개 데이터 요청 제한",
+    "yahoo_empty": "공개 데이터 없음",
+    "kis_not_configured": "KIS 설정 없음",
+    "kis_error": "KIS 호출 실패",
+    "kis_empty": "KIS 데이터 없음",
     "daily_ok": "일봉 수집 성공",
-    "daily_empty": "일봉 바 수 부족",
+    "daily_empty": "일봉 데이터 없음",
     "daily_error": "일봉 수집 실패",
     "unknown": "상태 정보 없음",
 }
@@ -55,10 +55,10 @@ _FETCH_STATUS_LABELS = {
 _FETCH_STATUS_LABELS.update(
     {
         "stored_recent": "최근 저장 분봉 사용",
-        "kis_cooldown": "KIS 쿨다운",
-        "scanner_store_only": "스캐너 저장 분봉 우선",
-        "scanner_public_only": "스캐너 공개 분봉 사용",
-        "scanner_public_augmented": "스캐너 공개 분봉+저장 결합",
+        "kis_cooldown": "KIS 쿨다운 중",
+        "scanner_store_only": "스캐너 저장 데이터 전용",
+        "scanner_public_only": "스캐너 공개 데이터 전용",
+        "scanner_public_augmented": "스캐너 공개 데이터 보강",
     }
 )
 
@@ -281,7 +281,7 @@ def _trend_alignment_profile(df: pd.DataFrame, pattern_type: str) -> dict[str, A
         return {
             "trend_alignment_score": 0.5,
             "trend_direction": "sideways",
-            "trend_warning": "추세 판단에 필요한 바 수가 아직 충분하지 않습니다.",
+            "trend_warning": "?怨뺣뾼?????堉???熬곣뫗???????? ?熬곣뫗異??寃몃쳳???? ???용????덈펲.",
         }
 
     fast = close.rolling(20).mean()
@@ -308,23 +308,23 @@ def _trend_alignment_profile(df: pd.DataFrame, pattern_type: str) -> dict[str, A
             warning = ""
         elif trend_direction == "sideways":
             score = 0.58
-            warning = "상위 추세가 아직 완전한 상승 정렬은 아니라 추세 추종보다 눌림 확인이 더 중요합니다."
+            warning = "??⑤챷留??怨뺣뾼??泥? ?熬곣뫗異??熬곣뫗?????⑤챶諭??筌먲퐣議?? ?熬곣뫀鍮???怨뺣뾼???怨뺣뾼鴉딅슜????????逾??筌먦끉逾????繞벿살탳???紐껊퉵??"
         else:
             score = 0.24
-            warning = "현재 패턴은 중기 하락 추세에 역행하는 반등형 구조라 실패 확률을 더 보수적으로 봐야 합니다."
+            warning = "?熬곣뫗???????? 繞벿살탪????濡?뎅 ?怨뺣뾼?????筌??濡ル츎 ?꾩룇瑗띈린????뚮벣??????덉넮 ?筌먲퐣??????곌랜????⑤챷紐드슖???끚딃뜮???紐껊퉵??"
     elif bearish:
         if trend_direction == "down":
             score = 0.92 if last_close < fast_now else 0.82
             warning = ""
         elif trend_direction == "sideways":
             score = 0.58
-            warning = "상위 추세가 아직 완전한 하락 정렬은 아니라 이탈 실패 가능성을 함께 봐야 합니다."
+            warning = "??⑤챷留??怨뺣뾼??泥? ?熬곣뫗異??熬곣뫗?????濡?뎅 ?筌먲퐣議?? ?熬곣뫀鍮????袁㏉돮 ???덉넮 ?띠럾???쒑땻????節띾쐾 ??끚딃뜮???紐껊퉵??"
         else:
             score = 0.24
-            warning = "현재 패턴은 중기 상승 추세에 역행하는 하락형 구조라 과신하지 않는 편이 좋습니다."
+            warning = "?熬곣뫗???????? 繞벿살탪????⑤챶諭??怨뺣뾼?????筌??濡ル츎 ??濡?뎅????뚮벣?????λ닔???? ???낅츎 ?筌뤾쑴逾???ル열????덈펲."
     else:
         score = 0.5
-        warning = "중립형 패턴은 상위 추세와 함께 해석해야 의미가 커집니다."
+        warning = "繞벿살탮????????? ??⑤챷留??怨뺣뾼??? ??節띾쐾 ??怨댄맍??怨룻뒍 ????띠럾? ??ｋ걠壤???덈펲."
 
     return {
         "trend_alignment_score": round(score, 3),
@@ -340,7 +340,7 @@ def _wyckoff_profile(df: pd.DataFrame, pattern_type: str) -> dict[str, Any]:
         return {
             "wyckoff_phase": "neutral",
             "wyckoff_score": 0.5,
-            "wyckoff_note": "와이코프 단계 판단에 필요한 바 수가 아직 충분하지 않습니다.",
+            "wyckoff_note": "????怨밸쭨????節띉????堉???熬곣뫗???????? ?熬곣뫗異??寃몃쳳???? ???용????덈펲.",
         }
 
     last_close = float(close.iloc[-1])
@@ -371,32 +371,32 @@ def _wyckoff_profile(df: pd.DataFrame, pattern_type: str) -> dict[str, Any]:
 
     phase = "neutral"
     score = 0.52
-    note = "와이코프 기준으로는 아직 뚜렷한 단계 확정 전의 중립 구간에 가깝습니다."
+    note = "????怨밸쭨???リ옇????怨쀬Ŧ???熬곣뫗異???類ㅼ＋????節띉??筌먦끉???熬곣뫗踰?繞벿살탮????뚮뜆????띠럾?濚밸Ŋ鍮????덈펲."
 
     if last_close > ma20_now > ma60_now and slope > 0.02 and range_pos > 0.62:
         phase = "markup"
         score = 0.88 if contraction > 0.15 else 0.78
-        note = "중기 상승 추세가 유지되고 있어 와이코프 기준 상승 진행 구간으로 해석하는 편이 맞습니다."
+        note = "繞벿살탪????⑤챶諭??怨뺣뾼??泥? ??????겶????곗꽑 ????怨밸쭨???リ옇?? ??⑤챶諭?嶺뚯쉳?듸쭛???뚮뜆???怨쀬Ŧ ??怨댄맍??濡ル츎 ?筌뤾쑴逾?嶺뚮씮?????덈펲."
     elif last_close < ma20_now < ma60_now and slope < -0.02 and range_pos < 0.36:
         phase = "markdown"
         score = 0.88 if contraction < 0.1 else 0.78
-        note = "중기 하락 추세가 이어지는 구간이라 와이코프 기준 하락 진행 구간으로 보는 편이 안전합니다."
+        note = "繞벿살탪????濡?뎅 ?怨뺣뾼??泥? ??怨룹꽑嶺뚯솘?????뚮뜆??????????怨밸쭨???リ옇?? ??濡?뎅 嶺뚯쉳?듸쭛???뚮뜆???怨쀬Ŧ ?곌랜????筌뤾쑴逾????깆쓧??紐껊퉵??"
     elif range_pos < 0.46 and abs(slope) < 0.04 and contraction > 0.18 and volume_ratio < 0.95:
         phase = "accumulation"
         score = 0.82 if bullish else 0.68
-        note = "하단에서 변동성 수축과 거래량 감소가 함께 보여 매집 말기 또는 재축적 가능성을 의심할 수 있습니다."
+        note = "??濡ル펺??????곌떠????뉗뎽 ??瑜귣??濾곌쑨?????띠룆흮??붿쾸? ??節띾쐾 ?곌랜?삭굢?嶺뚮씞?됧퐲?嶺뚮씭횧?????裕???????띠럾???쒑땻????琉용펿???????곕????덈펲."
     elif range_pos > 0.58 and abs(slope) < 0.04 and volume_ratio > 1.05:
         phase = "distribution"
         score = 0.82 if bearish else 0.68
-        note = "상단에서 거래량이 늘고 추세가 둔화돼 분산 또는 재분배 구간일 가능성을 함께 봐야 합니다."
+        note = "??⑤８堉?????濾곌쑨????源녿턄 ???겶??怨뺣뾼??泥? ??됀????釉뚯뫒亦????裕?????볦낯???뚮뜆????띠럾???쒑땻????節띾쐾 ??끚딃뜮???紐껊퉵??"
     elif last_close > ma60_now and contraction > 0.22 and volume_ratio < 0.92:
         phase = "accumulation"
         score = 0.72 if bullish else 0.58
-        note = "상승 추세 위에서 다시 타이트해지는 재축적 성격이 보입니다."
+        note = "??⑤챶諭??怨뺣뾼???熬곣뫖??????곕뻣 ????袁⑤콦???????????繹먭퍒遊???곌랜?????덈펲."
     elif last_close < ma60_now and contraction > 0.18 and volume_ratio > 1.0:
         phase = "distribution"
         score = 0.72 if bearish else 0.58
-        note = "약세 추세 안에서 반등 에너지가 약해 분배 또는 재분배 성격을 경계해야 합니다."
+        note = "????돪 ?怨뺣뾼?????고뱺???꾩룇瑗띈린?????먪춯?뼿?띠럾? ??????釉뚯뫊揶????裕?????볦낯??繹먭퍒遊???롪퍔????怨룻뒍 ??紐껊퉵??"
 
     return {
         "wyckoff_phase": phase,
@@ -418,7 +418,7 @@ def _intraday_session_profile(df: pd.DataFrame, timeframe: str, pattern_type: st
         return {
             "intraday_session_phase": "neutral",
             "intraday_session_score": 0.5,
-            "intraday_session_note": "장중 시간대 판정을 위한 타임스탬프가 부족합니다.",
+            "intraday_session_note": "??쒎ㅇ???蹂?뜟?? ???????熬곥굥由????熬곣뫖裕???딆뜴泥? ?遊붋?브퀗?꿴뜮????덈펲.",
         }
 
     last_ts = timestamps.iloc[-1]
@@ -429,7 +429,7 @@ def _intraday_session_profile(df: pd.DataFrame, timeframe: str, pattern_type: st
         return {
             "intraday_session_phase": "neutral",
             "intraday_session_score": 0.5,
-            "intraday_session_note": "장중 흐름을 읽기엔 최근 분봉 수가 아직 부족합니다.",
+            "intraday_session_note": "??쒎ㅇ?????????袁ⓥ뵛??嶺뚣끉裕???釉뚯뫊????? ?熬곣뫗異??遊붋?브퀗?꿴뜮????덈펲.",
         }
 
     recent_close = close.tail(min(len(close), 4))
@@ -458,67 +458,67 @@ def _intraday_session_profile(df: pd.DataFrame, timeframe: str, pattern_type: st
         phase = "off_hours"
 
     score = 0.52
-    note = "현재 시간대 문맥은 중립에 가깝습니다."
+    note = "?熬곣뫗????蹂?뜟?? ??쒖굡??? 繞벿살탮????띠럾?濚밸Ŋ鍮????덈펲."
 
     if phase == "open_drive":
         if bullish:
             if momentum > 0.008 and volume_ratio > 1.15:
                 score = 0.84
-                note = "장 초반 수급이 강하게 붙는 구간이라 상승형 패턴 확인에는 우호적인 시간대입니다."
+                note = "???貫?꾥????곷땵???띠룆踰ㅹ뇡?移??釉먮듋????뚮뜆????????⑤챶諭????????筌먦끉逾???裕???⑥쥙源??⑤챷逾???蹂?뜟?????낅퉵??"
             elif momentum < -0.004:
                 score = 0.32
-                note = "장 초반부터 밀리는 흐름이라 추격 매수보다는 실패 가능성을 더 경계해야 합니다."
+                note = "???貫?꾥뚭였寃????꾩럾??洹먮맧裕???????????怨뺣뼺??嶺뚮씞??遺삵돦????????덉넮 ?띠럾???쒑땻?????롪퍔????怨룻뒍 ??紐껊퉵??"
             else:
                 score = 0.58
-                note = "장 초반 방향성은 보이지만 한쪽으로 확정하기엔 아직 이릅니다."
+                note = "???貫?꾥??꾩렮維싧젆?繹? ?곌랜??醫묒??嶺???戮㏐국??怨쀬Ŧ ?筌먦끉????얄뵛???熬곣뫗異????藥???덈펲."
         elif bearish:
             if momentum < -0.008 and volume_ratio > 1.15:
                 score = 0.84
-                note = "장 초반 매도 압력이 강해 하락형 패턴 확인에는 우호적인 시간대입니다."
+                note = "???貫?꾥?嶺뚮씞?뉒뙴??筌먲퐣????띠룆踰ㅹ뜮???濡?뎅????????筌먦끉逾???裕???⑥쥙源??⑤챷逾???蹂?뜟?????낅퉵??"
             elif momentum > 0.004:
                 score = 0.32
-                note = "장 초반부터 반등이 강해 하락 지속 시나리오를 바로 믿기는 어렵습니다."
+                note = "???貫?꾥뚭였寃????꾩룇瑗띈린???띠룆踰ㅹ뜮???濡?뎅 嶺뚯솘?????類?룎?洹먮봿沅???꾩룆?餓?亦껋꼷?숂뵳?????鈺???鍮??"
             else:
                 score = 0.58
-                note = "장 초반 방향성은 보이지만 추가 확인이 더 필요합니다."
+                note = "???貫?꾥??꾩렮維싧젆?繹? ?곌랜??醫묒??嶺??怨뺣뼺? ?筌먦끉逾?????熬곣뫗???紐껊퉵??"
     elif phase == "midday":
         if abs(momentum) < 0.003 or volume_ratio < 0.9:
             score = 0.40
-            note = "점심장 특유의 소강 구간에 가까워 분봉 패턴은 신호 과신보다 대기 쪽이 더 안전합니다."
+            note = "???堉???獄????????類???뚮뜆????띠럾?濚밸Ŧ????釉뚯뫊???????? ??ル쪇源???λ닔??귦돦????????嶺뚯옕????????깆쓧??紐껊퉵??"
         else:
             score = 0.56
-            note = "점심장치고는 움직임이 있는 편이지만 마감 전 재확인이 더 중요합니다."
+            note = "???堉???洹씲?μ쪚????嶺뚯쉳???????덈츎 ?筌뤾쑴逾좂춯?뼿嶺?嶺뚮씭?껇???????筌뤾쑴逾???繞벿살탳???紐껊퉵??"
     elif phase == "closing_drive":
         if bullish:
             if momentum > 0.006:
                 score = 0.88 if volume_ratio > 1.0 else 0.78
-                note = "마감 전 재가속이 붙는 흐름이라 상승형 패턴 확인에는 가장 좋은 시간대 중 하나입니다."
+                note = "嶺뚮씭?껇?????????곕턄 ?釉먮듋?????????????⑤챶諭????????筌먦끉逾???裕??띠럾?????ル열? ??蹂?뜟?? 繞???濡る룎???낅퉵??"
             elif momentum < -0.004:
                 score = 0.30
-                note = "마감 전 힘이 꺾이면 당일 패턴 신뢰도는 크게 낮아집니다."
+                note = "嶺뚮씭?껇?????瑜곷턄 ?怨쀫폏?醫묒춺??獄??????????ル뱴?熬곣뫀裕????????됱꼻彛よ눧癒?퉵??"
             else:
                 score = 0.60
-                note = "마감 전 흐름은 무난하지만 확신을 주는 재가속까지는 아닙니다."
+                note = "嶺뚮씭?껇????????? ???亦???嶺??筌먦끇六???낅슣?????????듬뤀嶺뚯솘????熬곣뫀六???덈펲."
         elif bearish:
             if momentum < -0.006:
                 score = 0.88 if volume_ratio > 1.0 else 0.78
-                note = "마감 전 하방 재가속이 붙는 흐름이라 하락형 패턴 확인에는 우호적입니다."
+                note = "嶺뚮씭?껇?????濡れ빼 ??????곕턄 ?釉먮듋?????????????濡?뎅????????筌먦끉逾???裕???⑥쥙源??⑤챷肉???덈펲."
             elif momentum > 0.004:
                 score = 0.30
-                note = "마감 전 되받음이 강해 하락형 패턴을 과신하기 어렵습니다."
+                note = "嶺뚮씭?껇?????濡?퍩???逾??띠룆踰ㅹ뜮???濡?뎅??????????λ닔????얄뵛 ???鈺???鍮??"
             else:
                 score = 0.60
-                note = "마감 전 흐름은 무난하지만 강한 확인 구간까지는 아닙니다."
+                note = "嶺뚮씭?껇????????? ???亦???嶺??띠룆踰ㅹ뇡??筌먦끉逾???뚮뜆?®뭐癒?뒩????熬곣뫀六???덈펲."
     elif phase == "regular_session":
         if bullish:
             score = 0.64 if momentum > 0.004 else 0.46
-            note = "장중 일반 구간에서는 방향성은 참고하되 거래량 동반 여부를 함께 보는 편이 좋습니다."
+            note = "??쒎ㅇ???怨쀫틮 ??뚮뜆????????꾩렮維싧젆?繹? 嶺뚣볝늾???濡モ뵹 濾곌쑨???????쀫틮 ???????節띾쐾 ?곌랜????筌뤾쑴逾???ル열????덈펲."
         elif bearish:
             score = 0.64 if momentum < -0.004 else 0.46
-            note = "장중 일반 구간에서는 하락 지속 여부보다 이탈 유지 여부를 함께 봐야 합니다."
+            note = "??쒎ㅇ???怨쀫틮 ??뚮뜆?????????濡?뎅 嶺뚯솘???????곌랜?????袁㏉돮 ??? ???????節띾쐾 ??끚딃뜮???紐껊퉵??"
     else:
         score = 0.44
-        note = "정규장 바깥 시점이라 마지막 분봉의 시간대 해석은 보수적으로 보는 편이 맞습니다."
+        note = "?筌?????꾩룆?썼눧???戮곗젍?????嶺뚮씭??嶺??釉뚯뫊?????蹂?뜟?? ??怨댄맍?? ?곌랜????⑤챷紐드슖??곌랜????筌뤾쑴逾?嶺뚮씮?????덈펲."
 
     return {
         "intraday_session_phase": phase,
@@ -594,17 +594,15 @@ def _entry_window_profile(
         return {
             "entry_window_score": 0.22,
             "entry_window_label": "재확인 필요",
-            "entry_window_summary": f"{label} 기준 진입 구간을 계산할 패턴 정보가 아직 부족합니다.",
+            "entry_window_summary": f"{label} 기준 아직 유효한 패턴이 없어 진입 구간을 적극적으로 평가하기 어렵습니다.",
         }
 
     if pattern.state in {"played_out", "invalidated"} or target_hit_at or invalidated_at:
-        terminal_reason = "기존 패턴이 이미 종료 또는 무효화돼 새 진입 근거로 보기 어렵습니다."
-        if target_hit_at or pattern.state == "played_out":
-            terminal_reason = "기존 패턴의 목표가가 이미 상당 부분 소진돼 새 진입 자리로 보기 어렵습니다."
+        reason = "이미 목표 달성 또는 무효화가 확인되어 지금은 신규 진입보다 패턴 종료로 보는 편이 안전합니다."
         return {
             "entry_window_score": 0.08,
             "entry_window_label": "관망",
-            "entry_window_summary": f"{label} 기준 {terminal_reason}",
+            "entry_window_summary": f"{label} 기준 {reason}",
         }
 
     neckline = pattern.neckline
@@ -616,7 +614,7 @@ def _entry_window_profile(
         return {
             "entry_window_score": 0.28,
             "entry_window_label": "재확인 필요",
-            "entry_window_summary": f"{label} 기준 기준선/무효화 레벨이 충분치 않아 진입 구간 평가는 보수적으로 유지합니다.",
+            "entry_window_summary": f"{label} 기준 핵심 가격대가 충분히 잡히지 않아 보수적으로 해석하는 편이 좋습니다.",
         }
 
     trigger_span = max(abs(neckline - invalidation), max(current_close * 0.012, 1.0))
@@ -642,7 +640,7 @@ def _entry_window_profile(
         return {
             "entry_window_score": round(max(0.0, min(1.0, score)), 3),
             "entry_window_label": "목표 근접",
-            "entry_window_summary": f"{label} 기준 기존 패턴 목표가에 너무 가까워 지금은 새 진입보다 재패턴 형성을 기다리는 편이 낫습니다.",
+            "entry_window_summary": f"{label} 기준 목표가가 가까워 추가 기대수익이 작아졌습니다. 신규 진입보다 익절·관망에 가깝습니다.",
         }
 
     if stop_distance_pct <= 0.004:
@@ -650,49 +648,147 @@ def _entry_window_profile(
         return {
             "entry_window_score": round(max(0.0, min(1.0, score)), 3),
             "entry_window_label": "관망",
-            "entry_window_summary": f"{label} 기준 무효화 레벨과 너무 가까워 노이즈성 흔들림에 걸릴 가능성이 큽니다.",
+            "entry_window_summary": f"{label} 기준 손절 여유가 너무 좁아 실전 체결 잡음에 취약합니다. 진입보다는 기준 재정비가 먼저입니다.",
         }
 
     if pattern.state == "confirmed":
         if breakout_extension_pct <= (0.012 if is_intraday_timeframe(timeframe) else 0.025) and reward_risk_ratio >= 1.15:
             score = max(score, 0.74)
             entry_label = "초기 돌파"
-            summary = "막 돌파가 확인된 초기 구간으로 해석합니다. 리테스트 유지와 거래량 확인이 함께 붙으면 가장 이상적인 자리입니다."
+            summary = "돌파 직후 구간으로 해석할 수 있어 추격 부담이 아직 크지 않습니다. 다만 무효화 기준과 거래대금은 함께 확인해야 합니다."
         elif breakout_extension_pct <= (0.024 if is_intraday_timeframe(timeframe) else 0.045) and reward_risk_ratio >= 1.0:
             score = max(min(score, 0.64), 0.52)
-            entry_label = "리테스트 대기"
-            summary = "돌파는 확인됐지만 첫 확장 파동이 일부 진행된 상태입니다. 추격보다 눌림 또는 리테스트 확인이 더 좋습니다."
+            entry_label = "확장 추격"
+            summary = "이미 일부 확장이 진행되어 초기 진입보다 불리합니다. 재돌파 확인이나 눌림 확인 후 접근하는 편이 낫습니다."
         else:
             score = min(score, 0.34)
-            entry_label = "확장 추격"
-            summary = "돌파 이후 가격이 꽤 멀어진 상태라 현재 자리는 추격 성격이 강합니다."
+            entry_label = "관망"
+            summary = "확인 완료 이후 가격이 너무 앞서가 있어 지금 구간은 추격 위험이 큽니다."
     elif pattern.state == "armed":
         if distance_to_trigger_pct <= (0.008 if is_intraday_timeframe(timeframe) else 0.015) and reward_risk_ratio >= 1.1:
             score = max(score, 0.72)
-            entry_label = "트리거 대기"
-            summary = "기준선 바로 아래/위에서 트리거를 기다리는 구간입니다. 확인 봉이 붙을 때 반응하기 가장 좋은 자리입니다."
+            entry_label = "트리거 임박"
+            summary = "목선 또는 트리거 가격대 근처로, 확인만 붙으면 실전 진입 후보가 될 수 있습니다."
         elif distance_to_trigger_pct <= (0.02 if is_intraday_timeframe(timeframe) else 0.035):
             score = max(min(score, 0.58), 0.46)
-            entry_label = "기준선 접근"
-            summary = "기준선 접근 구간으로 구조는 좋지만 아직 즉시 추격보다 확인이 우선입니다."
+            entry_label = "트리거 대기"
+            summary = "아직 확인 직전 단계이므로 성급한 진입보다 돌파 확인 여부를 보는 편이 좋습니다."
         else:
             score = min(score, 0.40)
-            entry_label = "이른 구간"
-            summary = "패턴은 거의 완성됐지만 가격이 트리거에서 아직 멀어 기다리는 구간에 가깝습니다."
+            entry_label = "관망"
+            summary = "활성 직전이지만 아직 트리거까지 거리가 남아 있어 기다리는 편이 낫습니다."
     else:
         if completion_proximity >= 0.66 and distance_to_trigger_pct <= (0.025 if is_intraday_timeframe(timeframe) else 0.04):
             score = max(min(score, 0.54), 0.42)
-            entry_label = "막바지 형성"
-            summary = "패턴 후반부로 넘어가며 기준선 근처까지 접근 중입니다. 완성 확인 전까지는 관찰 중심이 적절합니다."
+            entry_label = "기준선 접근"
+            summary = "형성 중 패턴이지만 핵심 가격대에 가까워지고 있어 관찰 가치가 있습니다."
         else:
             score = min(score, 0.32)
-            entry_label = "이른 구간"
-            summary = "아직 구조가 만들어지는 초중반이라 지금은 좋은 진입 구간보다 관찰 구간에 가깝습니다."
+            entry_label = "패턴 형성"
+            summary = "아직 패턴이 진행 중이라 실전 진입보다 구조 완성을 더 기다리는 편이 좋습니다."
 
     return {
         "entry_window_score": round(max(0.0, min(1.0, score)), 3),
         "entry_window_label": entry_label,
         "entry_window_summary": f"{label} 기준 {summary}",
+    }
+
+def _freshness_profile(
+    *,
+    timeframe: str,
+    pattern: PatternResult | None,
+    current_close: float,
+    completion_proximity: float,
+    recency_score: float,
+    headroom_score: float,
+    target_distance_pct: float,
+    stop_distance_pct: float,
+    bars_since_signal: int | None,
+    target_hit_at: str | None,
+    invalidated_at: str | None,
+) -> dict[str, Any]:
+    label = timeframe_label(timeframe)
+    if pattern is None or current_close <= 0:
+        return {
+            "freshness_score": 0.18,
+            "freshness_label": "재확인 필요",
+            "freshness_summary": f"{label} 기준 아직 평가할 만한 활성 패턴이 부족합니다.",
+        }
+
+    target = pattern.target_level
+    neckline = pattern.neckline
+    anchor_level = neckline if neckline is not None else current_close
+    target_span = max(abs((target or current_close) - anchor_level), max(current_close * 0.015, 1.0))
+    cooling_to_trigger_score = 0.0
+    if neckline is not None:
+        cooling_to_trigger_score = max(0.0, 1.0 - min(1.0, abs(current_close - neckline) / target_span))
+
+    freshness = (
+        0.34 * recency_score
+        + 0.24 * completion_proximity
+        + 0.22 * headroom_score
+        + 0.12 * min(1.0, target_distance_pct / 0.08)
+        + 0.08 * min(1.0, stop_distance_pct / 0.03)
+    )
+
+    if invalidated_at or pattern.state == "invalidated":
+        return {
+            "freshness_score": 0.05,
+            "freshness_label": "무효 만료",
+            "freshness_summary": f"{label} 기준 무효화가 확인된 패턴이라 현재 시점의 신규 후보로 보기 어렵습니다.",
+        }
+
+    if target_hit_at or pattern.state == "played_out":
+        retrace_ready = (
+            cooling_to_trigger_score >= 0.58
+            and headroom_score >= 0.34
+            and target_distance_pct >= 0.04
+            and stop_distance_pct >= 0.01
+        )
+        if retrace_ready:
+            score = round(max(0.22, min(0.38, freshness * 0.62)), 3)
+            return {
+                "freshness_score": score,
+                "freshness_label": "재기초 관찰",
+                "freshness_summary": f"{label} 기준 과거 목표 달성 이후 다시 기준선 근처로 식어 들어왔습니다. 재형성 여부를 관찰하는 단계입니다.",
+            }
+        return {
+            "freshness_score": 0.08,
+            "freshness_label": "종료 패턴",
+            "freshness_summary": f"{label} 기준 이미 목표가를 소화한 패턴이라 지금은 신선한 신규 셋업으로 보기 어렵습니다.",
+        }
+
+    if bars_since_signal is not None:
+        stale_cutoff = 48 if is_intraday_timeframe(timeframe) else 16
+        if bars_since_signal >= stale_cutoff and recency_score <= 0.3:
+            score = round(max(0.12, min(0.28, freshness * 0.55)), 3)
+            return {
+                "freshness_score": score,
+                "freshness_label": "오래됨",
+                "freshness_summary": f"{label} 기준 신호가 나온 지 시간이 꽤 지나 현재 시점의 선명도는 떨어진 상태입니다.",
+            }
+
+    if pattern.state == "confirmed" and target_distance_pct >= 0.03 and headroom_score >= 0.3:
+        score = round(max(0.68, min(0.92, freshness)), 3)
+        return {
+            "freshness_score": score,
+            "freshness_label": "신선",
+            "freshness_summary": f"{label} 기준 확인 완료 이후에도 목표까지 여유가 남아 있어 아직 살아 있는 셋업으로 볼 수 있습니다.",
+        }
+
+    if pattern.state in {"confirmed", "armed"}:
+        score = round(max(0.46, min(0.74, freshness)), 3)
+        return {
+            "freshness_score": score,
+            "freshness_label": "진행중",
+            "freshness_summary": f"{label} 기준 패턴이 여전히 진행 중이지만 추가 확인이 더 붙으면 해석 품질이 좋아질 수 있습니다.",
+        }
+
+    score = round(max(0.24, min(0.5, freshness * 0.88)), 3)
+    return {
+        "freshness_score": score,
+        "freshness_label": "재확인 필요",
+        "freshness_summary": f"{label} 기준 아직 형성 단계라 신선도는 남아 있지만 확인 전 해석 오차도 함께 큽니다.",
     }
 
 def _stats_timeframe(timeframe: str) -> str:
@@ -715,60 +811,60 @@ def _data_profile(df: pd.DataFrame, timeframe: str) -> dict[str, Any]:
     if timeframe in {"1mo", "1wk", "1d"}:
         if source == "pykrx_daily":
             quality = 0.96
-            note = "KRX 일봉 데이터를 기준으로 사용하고 있어 상대적으로 신뢰도가 높은 편입니다."
+            note = "KRX ??怨좉껀 ??⑥щ턄??? ?リ옇????怨쀬Ŧ ??????겶????곗꽑 ?????⑤챷紐드슖???ル뱴?熬? ?沃? ?筌뤾쑴肉???덈펲."
         elif source == "fdr_daily":
             quality = 0.90
-            note = "FinanceDataReader 일봉 데이터를 보조 소스로 사용했습니다."
+            note = "FinanceDataReader ??怨좉껀 ??⑥щ턄??? ?곌랜??????裕욃슖???????곕????덈펲."
         else:
             quality = 0.84
-            note = "일봉 계열 데이터지만 공급처가 보조 소스라 해석은 한 단계 보수적으로 보는 편이 좋습니다."
+            note = "??怨좉껀 ??ｌ뫒????⑥щ턄???嶺???ㅻ??誘?럸?? ?곌랜??????裕????怨댄맍?? ????節띉??곌랜????⑤챷紐드슖??곌랜????筌뤾쑴逾???ル열????덈펲."
     else:
         if source == "kis_intraday":
             quality = 0.94
-            note = "KIS 분봉 데이터를 직접 사용했습니다."
+            note = "KIS ?釉뚯뫊????⑥щ턄??? 嶺뚯쉳?????????곕????덈펲."
         elif source == "hybrid_intraday":
             quality = 0.82
-            note = "최근 분봉은 KIS, 과거 구간은 보조 소스를 섞어 사용했습니다."
+            note = "嶺뚣끉裕???釉뚯뫊??? KIS, ??λ닁????뚮뜆??? ?곌랜??????裕????濡レ꽑 ??????곕????덈펲."
         elif source in {"intraday_store", "yahoo_fallback"}:
             quality = 0.62 if timeframe in {"60m", "30m", "15m"} else 0.45
-            note = "분봉은 공개 소스 또는 로컬 캐시에 의존하므로 일봉보다 보수적으로 해석해야 합니다."
+            note = "?釉뚯뫊??? ??ㅻ??????裕????裕??β돦裕뉛쭚?嶺?흮?????琉돠???????怨좉껀?곌랜????곌랜????⑤챷紐드슖???怨댄맍??怨룻뒍 ??紐껊퉵??"
         else:
             quality = 0.52
-            note = "분봉 데이터가 불완전해 No Signal로 떨어질 가능성이 높습니다."
+            note = "?釉뚯뫊????⑥щ턄??? ?釉띾쐠??熬곥굥??No Signal????貫?좂춯??띠럾???쒑땻???沃섅굥裕???덈펲."
 
     if fetch_status == "stored_recent":
         quality -= 0.02
-        note = "최근 저장한 장중 분봉을 다시 불러와 사용 중입니다. API 호출은 줄였지만 최신성은 약간 보수적으로 해석해야 합니다."
+        note = "嶺뚣끉裕?????繞③뇡???쒎ㅇ??釉뚯뫊??????곕뻣 ?釉띾쐞??? ????繞벿살탳????덈펲. API ?筌뤾쑵??? 繞벿븐뫒?嶺뚯솘?嶺?嶺뚣끉裕??繹? ??袁⑺뜟 ?곌랜????⑤챷紐드슖???怨댄맍??怨룻뒍 ??紐껊퉵??"
     elif fetch_status == "scanner_store_only":
         quality -= 0.05
-        note = "스캐너 절약 모드로 저장된 분봉만 사용했습니다. 실시간 장중 변화는 보수적으로 해석해야 합니다."
+        note = "???노뼆?????고뒎 嶺뚮ㅄ維獄?쑜?????縕ワ쭕??釉뚯뫊?釉앹춹???????곕????덈펲. ???곕뻣????쒎ㅇ??곌떠???븐뼔裕??곌랜????⑤챷紐드슖???怨댄맍??怨룻뒍 ??紐껊퉵??"
     elif fetch_status == "scanner_public_only":
         quality -= 0.07
-        note = "스캐너 절약 모드로 KIS 대신 공개 분봉 소스를 사용했습니다."
+        note = "???노뼆?????고뒎 嶺뚮ㅄ維獄?쑜??KIS ??????ㅻ????釉뚯뫊?????裕????????곕????덈펲."
     elif fetch_status == "scanner_public_augmented":
         quality -= 0.05
-        note = "스캐너 절약 모드에서 공개 분봉과 저장 분봉을 함께 사용했습니다."
+        note = "???노뼆?????고뒎 嶺뚮ㅄ維獄???????ㅻ????釉뚯뫊?酉맞??????釉뚯뫊?????節띾쐾 ??????곕????덈펲."
     elif fetch_status == "stored_fallback":
         quality -= 0.08
-        note = "실시간 분봉 공급이 비어 저장된 분봉 캐시를 대신 사용했습니다."
+        note = "???곕뻣???釉뚯뫊????ㅻ???????닷젆????縕ワ쭕??釉뚯뫊??嶺?흮??븍ご???????????곕????덈펲."
     elif fetch_status == "kis_cooldown":
         quality -= 0.10
-        note = "KIS 호출 직후 쿨다운 상태라 저장 분봉이나 공개 소스 위주로 해석하고 있습니다."
+        note = "KIS ?筌뤾쑵??嶺뚯쉳????臾낅??????⑤객臾???????釉뚯뫊????????ㅻ??????裕??熬곣뫜?믣슖???怨댄맍???겶????곕????덈펲."
     elif fetch_status in {"intraday_rate_limited", "yahoo_rate_limited"}:
         quality -= 0.12
-        note = "분봉 공급처 요청 제한에 걸려 일부 데이터 또는 이전 응답만 반영됐습니다."
+        note = "?釉뚯뫊????ㅻ??誘?럸???븐슙?????ル┰??濾곌쑬梨????? ??⑥щ턄?????裕???怨몄쓧 ??얜Ŧ堉쀧춯??꾩룇瑗????裕???덈펲."
     elif fetch_status in {"intraday_empty", "stored_empty", "intraday_unavailable", "yahoo_empty"}:
         quality -= 0.18
-        note = "현재 요청한 타임프레임에서 사용 가능한 분봉 바 수가 충분하지 않습니다."
+        note = "?熬곣뫗????븐슙??????熬곥굥????깅엮??????????띠럾??繞③뇡??釉뚯뫊??????? ?寃몃쳳???? ???용????덈펲."
     elif fetch_status == "yahoo_symbol_missing":
         quality -= 0.14
-        note = "해당 종목의 야후 매핑이 불안정해 분봉 공급이 끊겼습니다."
+        note = "???????リ턁??????밸쐩 嶺뚮씞?뗩뇡???釉띾쐠??筌먐삵돵 ?釉뚯뫊????ㅻ??????袁㏉렩???鍮??"
     elif fetch_status == "kis_not_configured":
         quality -= 0.06
-        note = "KIS가 설정되지 않아 공개 소스만으로 분봉을 계산하고 있습니다."
+        note = "KIS?띠럾? ???깆젧??? ???욱닡 ??ㅻ??????裕욅춯?얠뒩???뿉??釉뚯뫊?????ｌ뫒亦???겶????곕????덈펲."
 
     if stored_source:
-        note = f"{note} 대체 소스: {stored_source}."
+        note = f"{note} ??嶺????裕? {stored_source}."
 
     quality = max(0.2, min(0.98, quality))
     return {
@@ -848,33 +944,32 @@ def _pattern_lifecycle_profile(
 
     if terminal:
         score = min(score, 0.22)
-        label = "종료 패턴" if target_hit_at or pattern.state == "played_out" else "무효 패턴"
-        note = "이미 목표 도달 또는 무효화가 확인된 과거 구조라 현재 진입 근거로 쓰기 어렵습니다."
+        label = "종료 패턴" if target_hit_at or pattern.state == "played_out" else "무효 만료"
+        note = "이미 목표 달성 또는 무효화가 확인된 패턴이라 현재 시점의 활성 셋업으로 보기 어렵습니다."
     elif pattern.state == "confirmed":
         score = max(score, 0.62)
-        label = "확인된 셋업"
-        note = "돌파/이탈이 확인된 구조입니다. 리테스트 유지와 손익비가 다음 판단 기준입니다."
+        label = "확인 완료"
+        note = "패턴 구조와 확인 신호가 모두 붙어 현재 기준으로 가장 실전형에 가까운 단계입니다."
     elif pattern.state == "armed":
         score = max(score, 0.58)
-        label = "트리거 임박"
-        note = "완성 직전 구간입니다. 기준선 돌파/이탈과 거래량 확인이 핵심입니다."
+        label = "활성 임박"
+        note = "핵심 가격대에 근접해 있어 돌파 또는 확인 여부를 바로 체크할 단계입니다."
     elif completion >= 0.58:
-        label = "형성 후반"
-        note = "패턴은 아직 완성 전이지만 기준선 근처까지 진행돼 관찰 후보로 볼 수 있습니다."
+        label = "형성 진전"
+        note = "패턴이 꽤 진행되어 관찰 가치는 높지만 아직 확인 전이므로 성급한 해석은 주의가 필요합니다."
     else:
         label = "초기 형성"
-        note = "패턴 후보는 보이지만 아직 구조 확인이 부족해 관찰 단계에 가깝습니다."
+        note = "구조는 보이지만 아직 초기 단계라 교과서형 패턴으로 단정하기에는 이릅니다."
 
     if bars_since_signal > 0 and recency < 0.35 and not terminal:
         score = min(score, 0.48)
-        note = f"{note} 다만 신호 이후 {bars_since_signal}개 봉이 지나 현재 구조와의 연결성을 다시 확인할 필요가 있습니다."
+        note = f"{note} 신호 발생 이후 {bars_since_signal}개 바가 지나 신선도도 함께 낮아졌습니다."
 
     return {
         "lifecycle_score": round(max(0.0, min(1.0, score)), 3),
         "lifecycle_label": label,
         "lifecycle_note": note,
     }
-
 
 def _active_setup_profile(
     items: list[tuple[PatternResult, float, float, int, str | None, str | None]],
@@ -883,7 +978,7 @@ def _active_setup_profile(
         return {
             "active_setup_score": 0.0,
             "active_setup_label": "활성 셋업 없음",
-            "active_setup_summary": "현재 살아 있는 활성 패턴 후보가 없습니다.",
+            "active_setup_summary": "현재 활성 상태로 볼 패턴이 없어 관찰 우선 종목으로 보기 어렵습니다.",
             "active_pattern_count": 0,
             "completed_pattern_count": 0,
         }
@@ -903,20 +998,20 @@ def _active_setup_profile(
     active_rows = [row for row in lifecycle_rows if not row["terminal"]]
     score = max((float(row["lifecycle_score"]) for row in active_rows), default=0.0)
     if active_count == 0:
-        label = "종료 구조만 감지"
-        summary = "감지된 패턴은 있지만 모두 목표 도달 또는 무효화된 과거 구조입니다. 새 패턴이 다시 만들어지는지 기다리는 쪽이 안전합니다."
+        label = "종료 패턴 위주"
+        summary = "현재 잡힌 패턴은 대부분 이미 끝났거나 무효화된 상태입니다. 신규 진입보다 과거 패턴 정리에 가깝습니다."
     elif score >= 0.72:
         label = "활성 셋업 강함"
-        summary = f"현재 살아있는 패턴 {active_count}개가 감지됐고, 그중 하나는 실전 점검 가치가 높습니다."
+        summary = f"지금 살아 있는 패턴이 {active_count}개이며, 그중 적어도 하나는 실전 후보로 바로 볼 만한 강도를 보입니다."
     elif score >= 0.56:
-        label = "활성 셋업 관찰"
-        summary = f"현재 살아있는 패턴 {active_count}개가 있으나 추가 확인 봉과 손익비 점검이 필요합니다."
+        label = "활성 셋업 보통"
+        summary = f"지금 살아 있는 패턴이 {active_count}개입니다. 다만 추가 확인 신호가 붙을 때 해석 품질이 더 좋아집니다."
     else:
-        label = "초기 셋업"
-        summary = f"현재 살아있는 패턴 {active_count}개가 있으나 아직 초기 형성 단계에 가깝습니다."
+        label = "재확인 필요"
+        summary = f"활성 패턴은 {active_count}개 있지만 아직 초기 형성 또는 관찰 단계 비중이 큽니다."
 
     if completed_count:
-        summary = f"{summary} 종료/무효 패턴 {completed_count}개는 현재 점수에서 감점 처리했습니다."
+        summary = f"{summary} 종료 또는 무효 패턴 {completed_count}개는 별도로 감점 반영했습니다."
 
     return {
         "active_setup_score": round(score, 3),
@@ -926,18 +1021,22 @@ def _active_setup_profile(
         "completed_pattern_count": completed_count,
     }
 
-
 def _no_signal_text(timeframe: str, available_bars: int, source_note: str, fetch_message: str) -> tuple[str, str]:
     label = timeframe_label(timeframe)
     suffix = f" {fetch_message}" if fetch_message else ""
-    if is_intraday_timeframe(timeframe):
+    if available_bars <= 0:
         return (
-            "분봉 데이터를 충분히 확보하지 못했습니다.",
-            f"{label} 기준으로 사용 가능한 바 수가 {available_bars}개라 패턴과 확률을 안정적으로 계산하기 어렵습니다. {source_note}{suffix}",
+            "데이터 부족으로 패턴을 평가하지 못했습니다.",
+            f"{label} 기준 사용할 가격 데이터가 부족합니다. {source_note}{suffix}",
+        )
+    if available_bars < 40:
+        return (
+            "표본이 적어 신호를 만들지 못했습니다.",
+            f"{label} 기준 바 수가 충분하지 않아 패턴 인식과 통계 판단을 보수적으로 제한했습니다. {source_note}{suffix}",
         )
     return (
-        "뚜렷한 패턴 신호가 부족합니다.",
-        f"{label} 기준으로는 교과서형 패턴이 충분히 선명하지 않아 확률을 강하게 제시하지 않습니다.{suffix}",
+        "현재는 뚜렷한 활성 패턴이 없습니다.",
+        f"{label} 기준 가격 구조는 읽히지만 교과서형 패턴으로 확정할 만한 구조는 아직 부족합니다.{suffix}",
     )
 
 
@@ -948,8 +1047,8 @@ def _no_signal_action_plan(timeframe: str, data_quality: float, available_bars: 
             "action_plan": "recheck",
             "action_plan_label": "재확인 필요",
             "action_plan_summary": (
-                f"{label} 데이터가 아직 충분하지 않아 매매 후보로 올리기보다 장중 데이터가 더 쌓인 뒤 다시 확인하는 구간입니다. "
-                f"현재 사용 가능 봉 수는 {available_bars}개이고 데이터 신뢰도는 {round(data_quality * 100)}%입니다."
+                f"{label} 기준 분봉 신호가 아직 약합니다. 장중 재수집 이후 구조가 더 선명해질 수 있어, 현재는 관찰 후 재평가가 우선입니다. "
+                f"현재 데이터 품질은 {round(data_quality * 100)}%이고 사용 가능한 바 수는 {available_bars}개입니다."
             ),
             "action_priority_score": round(max(0.0, min(1.0, data_quality * 0.35)), 3),
         }
@@ -957,8 +1056,8 @@ def _no_signal_action_plan(timeframe: str, data_quality: float, available_bars: 
         "action_plan": "cooling",
         "action_plan_label": "관망",
         "action_plan_summary": (
-            f"{label} 기준으로 뚜렷한 패턴 신호가 없어 신규 판단을 보류하는 편이 안전합니다. "
-            "패턴이 새로 형성되거나 거래량/추세 정렬이 개선될 때 다시 후보로 올리는 흐름입니다."
+            f"{label} 기준 아직 구조 완성도가 낮아 즉시 대응보다 대기 쪽이 적절합니다. "
+            "추가 돌파, 눌림, 거래대금 회복 같은 보강 조건이 붙는지 보는 편이 좋습니다."
         ),
         "action_priority_score": round(max(0.0, min(1.0, data_quality * 0.25)), 3),
     }
@@ -977,6 +1076,8 @@ def _action_plan_profile(
     headroom_score: float,
     entry_window_score: float,
     entry_window_label: str,
+    freshness_score: float,
+    freshness_label: str,
     historical_edge_score: float,
     trend_alignment_score: float,
     intraday_session_score: float,
@@ -993,8 +1094,9 @@ def _action_plan_profile(
         + 0.12 * rr_score
         + 0.08 * headroom_score
         + 0.08 * entry_window_score
+        + 0.08 * freshness_score
         + 0.08 * historical_edge_score
-        + 0.08 * trend_alignment_score
+        + 0.06 * trend_alignment_score
     )
     if is_intraday_timeframe(timeframe):
         priority = priority * 0.86 + intraday_session_score * 0.14
@@ -1009,9 +1111,15 @@ def _action_plan_profile(
         priority -= 0.12
     if recency_score < 0.28:
         priority -= 0.08
+    if freshness_label in {"종료 패턴", "무효 만료"}:
+        priority -= 0.18
+    elif freshness_label == "재기초 관찰":
+        priority -= 0.08
+    elif freshness_score < 0.30:
+        priority -= 0.10
     if entry_window_label in {"확장 추격", "목표 근접"}:
         priority -= 0.12
-    elif entry_window_label in {"이른 구간", "관망"}:
+    elif entry_window_label in {"트리거 대기", "관망"}:
         priority -= 0.06
 
     priority = round(max(0.0, min(1.0, priority)), 3)
@@ -1022,76 +1130,73 @@ def _action_plan_profile(
     if invalidated_at or pattern.state == "invalidated":
         return {
             "action_plan": "cooling",
-            "action_plan_label": "관망/무효",
-            "action_plan_summary": (
-                f"{label} 기준 기존 패턴이 무효화된 상태입니다. 같은 모양을 계속 추격하기보다 새 지지/저항 구조가 만들어지는지 다시 봐야 합니다."
-            ),
+            "action_plan_label": "무효 만료",
+            "action_plan_summary": f"{label} 기준 패턴이 무효화되어 현재는 신규 {direction} 대응보다 관망이 우선입니다.",
             "action_priority_score": priority,
         }
 
-    if target_hit_at or pattern.state == "played_out" or headroom_score < 0.16:
+    if target_hit_at or pattern.state == "played_out":
+        if freshness_label == "재기초 관찰":
+            return {
+                "action_plan": "watch",
+                "action_plan_label": "재기초 관찰",
+                "action_plan_summary": f"{label} 기준 목표 달성 이후 다시 기준선 근처로 식고 있어 재형성 여부를 관찰할 구간입니다.",
+                "action_priority_score": priority,
+            }
         return {
             "action_plan": "cooling",
-            "action_plan_label": "목표 도달 후 관망",
-            "action_plan_summary": (
-                f"{label} 기준 기존 패턴의 목표가 여지가 대부분 소진된 구간입니다. 확률보다 남은 기대수익과 재진입 구조를 우선 확인해야 합니다."
-            ),
+            "action_plan_label": "목표 소진",
+            "action_plan_summary": f"{label} 기준 기존 패턴은 이미 목표가를 소화했습니다. 지금은 과거 패턴 종료로 보는 편이 안전합니다.",
             "action_priority_score": priority,
         }
 
-    if data_quality < 0.58 or fetch_status in {"kis_cooldown", "intraday_rate_limited", "yahoo_rate_limited"}:
-        return {
-            "action_plan": "recheck",
-            "action_plan_label": "데이터 재확인",
-            "action_plan_summary": (
-                f"{label} 데이터 품질이나 수집 상태가 약해 {direction} 시나리오를 바로 신뢰하기 어렵습니다. 최신 봉이 갱신된 뒤 다시 계산하는 후보입니다."
-            ),
-            "action_priority_score": priority,
-        }
-
-    if (
-        priority >= 0.68
-        and max(p_up, p_down) >= 0.57
+    ready_now = (
+        pattern.state == "confirmed"
+        and entry_window_score >= 0.68
+        and freshness_score >= 0.58
         and reward_risk_ratio >= 1.15
-        and entry_window_score >= 0.62
-        and entry_window_label not in {"확장 추격", "목표 근접", "관망"}
-        and pattern.state in {"confirmed", "armed"}
-    ):
+        and data_quality >= 0.6
+    )
+    if ready_now:
         return {
             "action_plan": "ready_now",
-            "action_plan_label": "즉시 대응 후보",
-            "action_plan_summary": (
-                f"{label} 기준 패턴 완성도, 최근성, 손익비에 더해 현재 진입 구간도 비교적 무난한 편입니다. 다만 실제 진입은 기준선 이탈 여부와 거래량 확인을 같이 봐야 합니다."
-            ),
+            "action_plan_label": "실전 후보",
+            "action_plan_summary": f"{label} 기준 확인 완료 패턴이며 진입 구간과 신선도가 모두 받쳐줘 바로 검토할 수 있는 후보입니다.",
             "action_priority_score": priority,
         }
 
-    if entry_window_label == "확장 추격":
-        return {
-            "action_plan": "recheck",
-            "action_plan_label": "추격보다 재확인",
-            "action_plan_summary": (
-                f"{label} 기준 패턴 방향성 자체보다 현재 가격 위치가 너무 앞서 있습니다. 눌림/리테스트가 나오는지 확인한 뒤 다시 판단하는 편이 좋습니다."
-            ),
-            "action_priority_score": priority,
-        }
-
-    if pattern.state in {"forming", "armed"} or completion_proximity >= 0.45:
+    if freshness_label == "재기초 관찰":
         return {
             "action_plan": "watch",
-            "action_plan_label": "형성 관찰",
-            "action_plan_summary": (
-                f"{label} 기준 패턴이 만들어지는 중입니다. 완성 신호 전에는 예측보다 목선/지지선 반응, 캔들 확인, 거래량 확장을 기다리는 쪽이 좋습니다."
-            ),
+            "action_plan_label": "재기초 관찰",
+            "action_plan_summary": f"{label} 기준 과거 패턴이 끝난 뒤 재형성 가능성이 보여 즉시 대응보다 재확인이 중요합니다.",
+            "action_priority_score": priority,
+        }
+
+    watch_ready = (
+        pattern.state in {"armed", "forming"}
+        or entry_window_label in {"트리거 임박", "트리거 대기", "기준선 접근"}
+    )
+    if watch_ready:
+        return {
+            "action_plan": "watch",
+            "action_plan_label": "관찰 후보",
+            "action_plan_summary": f"{label} 기준 아직 확인 전이거나 트리거 직전 단계입니다. 돌파·거래대금·무효화 기준을 함께 체크하세요.",
+            "action_priority_score": priority,
+        }
+
+    if freshness_score < 0.3 or entry_window_score < 0.28:
+        return {
+            "action_plan": "recheck",
+            "action_plan_label": "재확인 필요",
+            "action_plan_summary": f"{label} 기준 구조는 보이지만 현재 자리 또는 신선도가 약해 다시 확인하는 편이 낫습니다.",
             "action_priority_score": priority,
         }
 
     return {
-        "action_plan": "recheck",
-        "action_plan_label": "재평가 후보",
-        "action_plan_summary": (
-            f"{label} 기준 패턴은 감지됐지만 우선순위가 높지는 않습니다. 다른 타임프레임 정렬이나 새 확인봉이 붙으면 다시 후보군에 올리는 흐름입니다."
-        ),
+        "action_plan": "cooling",
+        "action_plan_label": "관망",
+        "action_plan_summary": f"{label} 기준 실전 점수는 남아 있지만 지금 자리의 손익비와 타이밍은 보수적으로 보는 편이 좋습니다.",
         "action_priority_score": priority,
     }
 
@@ -1099,38 +1204,37 @@ def _action_plan_profile(
 def _no_signal_decision_support(timeframe: str, data_quality: float, available_bars: int, fetch_status: str) -> dict[str, Any]:
     flags: list[str] = []
     checklist: list[str] = []
-    label = timeframe_label(timeframe)
 
-    if available_bars < get_timeframe_spec(timeframe).min_bars:
-        flags.append(f"{label} 분석에 필요한 바 수가 아직 부족합니다.")
-    if data_quality < 0.65:
-        flags.append("데이터 품질이 낮아 신호를 보수적으로 해석해야 합니다.")
+    if available_bars < 40:
+        flags.append("사용 가능한 데이터 바 수가 적어 패턴 인식 신뢰도가 낮습니다.")
+    if data_quality < 0.55:
+        flags.append("데이터 품질이 낮아 현재 결과를 강한 신호로 보기 어렵습니다.")
     if fetch_status in {"kis_cooldown", "intraday_rate_limited", "yahoo_rate_limited"}:
-        flags.append("데이터 공급처 제한 또는 쿨다운으로 최신성이 떨어질 수 있습니다.")
+        flags.append("분봉 수집이 제한된 상태라 저장 데이터 또는 공개 데이터 보강 비중이 높습니다.")
     if not flags:
-        flags.append("교과서형 패턴이 충분히 선명하지 않아 관찰 우선 구간입니다.")
+        flags.append("현재는 무신호 상태이지만 데이터 자체는 재확인용으로 볼 수 있습니다.")
 
     if is_intraday_timeframe(timeframe):
         checklist.extend(
             [
-                "장중 최신 봉이 더 쌓인 뒤 다시 계산하기",
-                "상위 타임프레임 방향과 같은지 확인하기",
-                "거래량이 평균보다 붙는 구간만 후보로 보기",
+                "장중 재수집 후 거래대금과 분봉 구조를 다시 확인하기",
+                "시가·고가·저가 핵심 구간에서 재돌파가 나오는지 보기",
+                "저장 분봉과 실시간 분봉의 시간 정렬이 맞는지 확인하기",
             ]
         )
     else:
         checklist.extend(
             [
-                "새 지지/저항 구조가 생기는지 확인하기",
-                "거래량 감소 후 돌파 거래량이 붙는지 확인하기",
-                "일봉/주봉 방향이 서로 충돌하지 않는지 확인하기",
+                "주봉/월봉 추세와 현재 일봉 구조가 충돌하지 않는지 확인하기",
+                "거래대금과 종가 위치가 함께 좋아지는지 확인하기",
+                "최근 고점 또는 목선 재돌파 가능성을 체크하기",
             ]
         )
 
     return {
         "risk_flags": flags[:5],
         "confirmation_checklist": checklist[:5],
-        "next_trigger": "패턴 구조가 새로 감지되거나 데이터 품질이 회복되면 다시 후보로 올립니다.",
+        "next_trigger": "신규 패턴이 형성되거나 데이터 품질이 좋아진 뒤 다시 분석하는 것이 좋습니다.",
     }
 
 
@@ -1164,68 +1268,68 @@ def _decision_support_profile(
     pattern_name = pattern.pattern_type.replace("_", " ")
 
     if invalidated_at or pattern.state == "invalidated":
-        flags.append("기존 패턴이 무효화돼 같은 구조를 그대로 추격하는 것은 위험합니다.")
+        flags.append("패턴이 이미 무효화되어 신규 대응 근거가 약합니다.")
     if target_hit_at or pattern.state == "played_out":
-        flags.append("기존 목표가가 이미 상당 부분 소진된 패턴입니다.")
+        flags.append("패턴이 이미 목표 구간을 소화해 신규 진입 메리트가 낮습니다.")
     if headroom_score < 0.25 or target_distance_pct < 0.025:
-        flags.append("현재 자리에서 목표가까지 남은 공간이 작습니다.")
+        flags.append("남은 목표 공간이 좁아 추가 기대수익이 작습니다.")
     if reward_risk_ratio < 1.2:
-        flags.append("손익비가 낮아 작은 흔들림에도 기대값이 쉽게 줄 수 있습니다.")
+        flags.append("손익비가 낮아 실전 대응 우위가 약합니다.")
     if confidence < 0.42:
-        flags.append("종합 신뢰도가 아직 충분히 높지 않습니다.")
+        flags.append("패턴 신뢰도가 아직 충분히 높지 않습니다.")
     if data_quality < 0.65:
-        flags.append("데이터 품질이 낮아 최신 봉 반영 여부를 다시 확인해야 합니다.")
+        flags.append("데이터 품질이 낮아 해석 오차 가능성이 큽니다.")
     if sample_reliability < 0.35:
-        flags.append("유사 패턴 표본 신뢰도가 낮은 편입니다.")
+        flags.append("통계 표본 신뢰도가 낮습니다.")
     if recency_score < 0.35:
-        flags.append("감지된 신호가 다소 오래돼 현재 구조와의 연결성이 약할 수 있습니다.")
+        flags.append("신호가 나온 지 시간이 지나 패턴 신선도가 약해졌습니다.")
     if trend_alignment_score < 0.45:
-        flags.append("추세 정렬이 약해 패턴 단독 해석은 위험할 수 있습니다.")
+        flags.append("상위 추세와의 정렬이 좋지 않습니다.")
     if bullish and wyckoff_phase in {"distribution", "markdown"}:
-        flags.append("와이코프 국면이 상승 패턴과 충돌합니다.")
+        flags.append("와이코프 국면이 상승 패턴과 잘 맞지 않습니다.")
     if bearish and wyckoff_phase in {"accumulation", "markup"}:
-        flags.append("와이코프 국면이 하락 패턴과 충돌합니다.")
+        flags.append("와이코프 국면이 하락 패턴과 잘 맞지 않습니다.")
     if is_intraday_timeframe(timeframe) and intraday_session_score < 0.48:
-        flags.append("분봉 시간대 컨디션이 약해 장중 진입 타이밍이 애매합니다.")
+        flags.append("장중 세션 컨디션이 지금 구간에 우호적이지 않습니다.")
     if fetch_status in {"kis_cooldown", "stored_fallback", "scanner_store_only", "scanner_public_only"}:
-        flags.append("실시간 KIS 대신 저장/공개 분봉 비중이 높습니다.")
+        flags.append("실시간 수집이 제한되어 저장 또는 공개 데이터 비중이 높습니다.")
 
     if pattern.state == "forming":
-        checklist.append("패턴 완성 전에는 목선/지지선 반응을 먼저 확인하기")
+        checklist.append("패턴이 완성되는지와 목선 형성 여부를 확인하기")
     elif pattern.state == "armed":
-        checklist.append("트리거 직전 후보이므로 기준선 돌파와 거래량 확대를 함께 확인하기")
+        checklist.append("트리거 근처에서 거래대금과 캔들 확인이 붙는지 보기")
     elif pattern.state == "confirmed":
-        checklist.append("돌파 후 지지/저항 재확인과 손절 기준 이탈 여부를 확인하기")
+        checklist.append("확인 직후 되돌림과 무효화 기준이 유지되는지 보기")
     else:
-        checklist.append("새 구조가 만들어질 때까지 같은 패턴 재활용은 피하기")
+        checklist.append("이미 종료된 패턴인지 먼저 확인하기")
 
     if pattern.neckline:
-        relation = "상향 돌파" if direction == "상승" else "하향 이탈"
-        checklist.append(f"목선 {pattern.neckline:,.0f}원 기준 {relation} 여부 확인하기")
+        relation = "돌파" if direction == "상승" else "이탈"
+        checklist.append(f"목선 {pattern.neckline:,.0f} 부근에서 {relation} 여부 확인하기")
     if pattern.invalidation_level:
-        checklist.append(f"무효화 기준 {pattern.invalidation_level:,.0f}원 이탈 여부 확인하기")
+        checklist.append(f"무효화 기준 {pattern.invalidation_level:,.0f} 이탈 여부 확인하기")
     if pattern.target_level and action_plan.get("action_plan") != "cooling":
-        checklist.append(f"1차 목표 {pattern.target_level:,.0f}원까지 남은 공간과 손익비 확인하기")
+        checklist.append(f"1차 목표가 {pattern.target_level:,.0f}까지 남은 공간 확인하기")
     if stop_distance_pct > 0.0:
-        checklist.append(f"손절 폭이 현재가 대비 {stop_distance_pct:.1%} 수준인지 감당 가능한지 확인하기")
+        checklist.append(f"손절 거리 {stop_distance_pct:.1%}가 감당 가능한지 점검하기")
     if bars_since_signal is not None and bars_since_signal > 0:
-        checklist.append(f"신호 이후 {bars_since_signal}개 봉이 지났으므로 구조 지속 여부 확인하기")
+        checklist.append(f"신호 이후 {bars_since_signal}개 바 경과가 해석에 미치는 영향 보기")
     if is_intraday_timeframe(timeframe):
-        checklist.append("분봉은 최신 체결과 거래량이 이어지는지 확인하기")
+        checklist.append("장중 재수집 시 분봉 정렬과 거래대금 회복 확인하기")
     else:
-        checklist.append("상위/하위 타임프레임이 같은 방향인지 함께 확인하기")
+        checklist.append("상위 타임프레임 추세와 종가 위치를 함께 점검하기")
 
     if action_plan.get("action_plan") == "ready_now":
-        next_trigger = f"{pattern_name} 기준선 확인 후 {direction} 방향 추세가 유지되면 우선 대응 후보입니다."
+        next_trigger = f"{pattern_name} 패턴 기준으로 {direction} 확인이 유지되는지만 체크하면 됩니다."
     elif action_plan.get("action_plan") == "watch":
-        next_trigger = "완성 신호가 붙을 때까지 기다리다가 돌파/지지 확인 시 다시 점검합니다."
+        next_trigger = "핵심 가격대에서 돌파 또는 재돌파 신호가 붙는지 기다리는 것이 다음 단계입니다."
     elif action_plan.get("action_plan") == "recheck":
-        next_trigger = "최신 봉과 데이터 품질이 개선되면 같은 조건으로 다시 계산합니다."
+        next_trigger = "데이터 품질 또는 패턴 완성도가 좋아진 뒤 다시 평가하는 것이 좋습니다."
     else:
-        next_trigger = "목표 소진 또는 무효 가능성이 큰 상태라 새 패턴 형성까지 관망합니다."
+        next_trigger = "현재는 목표 소진·무효화 여부와 같은 종료 신호를 우선 확인하는 편이 좋습니다."
 
     if not flags:
-        flags.append("치명적인 리스크 플래그는 적지만 기준선 이탈 여부는 계속 확인해야 합니다.")
+        flags.append("크게 치명적인 리스크는 보이지 않지만 무효화 기준 확인은 여전히 필요합니다.")
 
     return {
         "risk_flags": flags[:6],
@@ -1250,6 +1354,7 @@ def _trade_readiness_profile(
     pattern: PatternResult | None,
     action_plan: dict[str, Any],
     entry_window: dict[str, Any] | None,
+    freshness: dict[str, Any] | None,
     p_up: float,
     p_down: float,
     entry_score: float,
@@ -1276,15 +1381,15 @@ def _trade_readiness_profile(
 
     if pattern is None:
         factors = [
-            {"label": "데이터", "score": round(data_quality, 3), "weight": 0.35, "note": "사용 가능한 봉 수와 데이터 출처 기준입니다."},
-            {"label": "패턴", "score": 0.0, "weight": 0.35, "note": "현재 의미 있는 패턴이 확인되지 않았습니다."},
-            {"label": "재확인", "score": action_score, "weight": 0.30, "note": str(action_plan.get("action_plan_summary") or "")},
+            {"label": "데이터", "score": round(data_quality, 3), "weight": 0.34, "note": "분석 가능한 데이터 품질입니다."},
+            {"label": "패턴", "score": 0.0, "weight": 0.33, "note": "현재 활성 패턴이 없습니다."},
+            {"label": "실전 액션", "score": action_score, "weight": 0.33, "note": str(action_plan.get("action_plan_summary") or "")},
         ]
         score = sum(float(item["score"]) * float(item["weight"]) for item in factors)
         return {
             "trade_readiness_score": round(max(0.0, min(1.0, score)), 3),
             "trade_readiness_label": _readiness_label(score),
-            "trade_readiness_summary": "패턴이 없거나 데이터가 부족해 실전 후보가 아니라 관찰/재확인 후보로만 봅니다.",
+            "trade_readiness_summary": "활성 패턴이 없어 현재는 관찰·재확인 단계로 보는 편이 좋습니다.",
             "score_factors": factors,
         }
 
@@ -1307,6 +1412,9 @@ def _trade_readiness_profile(
     entry_window_score = float((entry_window or {}).get("entry_window_score", 0.0))
     entry_window_label = str((entry_window or {}).get("entry_window_label") or "재확인 필요")
     entry_window_summary = str((entry_window or {}).get("entry_window_summary") or "")
+    freshness_score = float((freshness or {}).get("freshness_score", 0.0))
+    freshness_label = str((freshness or {}).get("freshness_label") or "재확인 필요")
+    freshness_summary = str((freshness or {}).get("freshness_summary") or "")
     evidence_score = 0.56 * sample_reliability + 0.44 * historical_edge_score
     context_score = trend_alignment_score
     if is_intraday_timeframe(timeframe):
@@ -1316,63 +1424,74 @@ def _trade_readiness_profile(
         timing_score = min(timing_score, 0.16)
         opportunity_score = min(opportunity_score, 0.20)
         entry_window_score = min(entry_window_score, 0.12)
+        freshness_score = min(freshness_score, 0.12)
         action_score = min(action_score, 0.18)
     if bars_since_signal is not None and bars_since_signal > 0 and recency_score < 0.35:
         timing_score = min(timing_score, 0.34)
+    if freshness_label in {"종료 패턴", "무효 만료"}:
+        action_score = min(action_score, 0.20)
+    elif freshness_label == "재기초 관찰":
+        action_score = min(max(action_score, 0.42), 0.58)
 
     factors = [
         {
             "label": "패턴 완성도",
             "score": round(formation_quality, 3),
-            "weight": 0.15,
-            "note": "교과서 유사도, 레그 균형, 반전 에너지, 돌파/리테스트 품질을 합산했습니다.",
+            "weight": 0.14,
+            "note": "교과서 유사도와 구조 품질을 함께 반영합니다.",
         },
         {
             "label": "타이밍",
             "score": round(timing_score, 3),
-            "weight": 0.13,
-            "note": "완성 임박도와 신호 최신성을 함께 반영합니다. 목표 도달/무효 패턴은 강하게 깎습니다.",
+            "weight": 0.12,
+            "note": "완성도와 신호 최신성을 함께 봅니다.",
         },
         {
             "label": "확률/신뢰도",
             "score": round(probability_score, 3),
-            "weight": 0.13,
-            "note": "상승/하락 우세 확률과 종합 신뢰도를 같이 반영했습니다.",
+            "weight": 0.12,
+            "note": "상승/하락 확률과 종합 신뢰도를 반영합니다.",
         },
         {
             "label": "손익비 여지",
             "score": round(opportunity_score, 3),
-            "weight": 0.14,
-            "note": "목표가까지 남은 공간과 손절 거리 대비 기대보상을 평가합니다.",
+            "weight": 0.13,
+            "note": "기대 손익비와 목표 여유를 반영합니다.",
         },
         {
             "label": "진입 구간",
             "score": round(entry_window_score, 3),
-            "weight": 0.13,
-            "note": entry_window_summary or f"현재 가격 위치를 {entry_window_label} 상태로 평가했습니다.",
+            "weight": 0.12,
+            "note": entry_window_summary or f"현재 구간은 {entry_window_label} 상태입니다.",
+        },
+        {
+            "label": "패턴 신선도",
+            "score": round(freshness_score, 3),
+            "weight": 0.12,
+            "note": freshness_summary or f"현재 패턴 신선도는 {freshness_label} 상태입니다.",
         },
         {
             "label": "데이터 품질",
             "score": round(data_quality, 3),
-            "weight": 0.10,
-            "note": "KRX/KIS/공개/저장 캐시 출처와 수집 상태를 반영합니다.",
+            "weight": 0.09,
+            "note": "실시간/저장/공개 데이터 품질을 반영합니다.",
         },
         {
             "label": "통계 근거",
             "score": round(evidence_score, 3),
-            "weight": 0.11,
-            "note": "유사 패턴 표본 신뢰도와 백테스트 edge를 합산했습니다.",
+            "weight": 0.10,
+            "note": "표본 신뢰도와 백테스트 edge를 함께 반영합니다.",
         },
         {
             "label": "추세/세션",
             "score": round(context_score, 3),
-            "weight": 0.07,
-            "note": "상위 추세 정렬과 분봉 시간대 컨디션을 반영합니다.",
+            "weight": 0.04,
+            "note": "상위 추세와 장중 세션 컨디션을 반영합니다.",
         },
         {
             "label": "실전 액션",
             "score": round(action_score, 3),
-            "weight": 0.04,
+            "weight": 0.02,
             "note": str(action_plan.get("action_plan_summary") or ""),
         },
     ]
@@ -1390,17 +1509,23 @@ def _trade_readiness_profile(
         raw_score = min(raw_score, 0.44)
     elif entry_window_score < 0.28:
         raw_score = min(raw_score, 0.50)
+    if freshness_label in {"종료 패턴", "무효 만료"}:
+        raw_score = min(raw_score, 0.22)
+    elif freshness_label == "재기초 관찰":
+        raw_score = min(raw_score, 0.46)
+    elif freshness_score < 0.28:
+        raw_score = min(raw_score, 0.50)
 
     score = round(max(0.0, min(1.0, raw_score)), 3)
     label = _readiness_label(score)
     if label == "실전 후보":
-        summary = "패턴, 타이밍, 손익비, 진입 구간이 함께 맞는 편입니다. 그래도 실제 매매 전에는 트리거와 무효화 기준을 먼저 확인해야 합니다."
+        summary = "패턴, 타이밍, 손익비, 진입 구간, 신선도가 함께 맞물려 실전 검토 후보로 볼 수 있습니다."
     elif label == "관찰 후보":
-        summary = "구조는 볼 만하지만 아직 한두 가지 조건이 부족합니다. 바로 추격하기보다 다음 트리거를 기다리는 쪽이 안전합니다."
+        summary = "구조는 괜찮지만 한두 가지 조건이 더 붙어야 실전 대응 품질이 좋아집니다."
     elif label == "재확인 필요":
-        summary = "일부 신호는 있지만 데이터, 타이밍, 손익비 중 약한 부분이 있습니다. 최신 봉 갱신 뒤 다시 판단하는 후보입니다."
+        summary = "시그널은 있으나 데이터·타이밍·신선도 중 약한 구간이 있어 다시 확인하는 편이 좋습니다."
     else:
-        summary = "목표 도달, 무효화, 추격 구간, 낮은 손익비처럼 실전 점수를 깎는 요인이 남아 있습니다."
+        summary = "목표 소진, 무효화, 낮은 신선도, 추격 구간 같은 감점 요인이 커 현재는 보류에 가깝습니다."
 
     return {
         "trade_readiness_score": score,
@@ -1492,10 +1617,10 @@ def _build_projection(
             (steps[3], drift, "rebuild"),
         ]
         summary = (
-            f"기존 {pattern_name} 패턴은 이미 1차 목표가에 도달해 종료된 것으로 보는 편이 맞습니다. "
-            f"다음 흐름은 재축적 또는 박스권 정리 여부를 새 패턴으로 다시 보는 편이 좋습니다."
+            f"{pattern_name} 패턴은 이미 1차 목표를 소화한 뒤 숨 고르기 국면으로 보는 시나리오입니다. "
+            "재돌파가 바로 나오기보다 박스 조정 또는 재기초 형성 가능성을 우선 반영했습니다."
         )
-        return "1차 목표 달성 후 재정비", summary, _projected_points(last_ts, timeframe, prices)
+        return "목표 달성 이후 재정비", summary, _projected_points(last_ts, timeframe, prices)
 
     if pattern.state == "invalidated":
         drift = invalidation - span * 0.15 if bullish else invalidation + span * 0.15
@@ -1506,10 +1631,10 @@ def _build_projection(
             (steps[3], drift, "range"),
         ]
         summary = (
-            f"{pattern_name} 패턴은 이미 무효화된 쪽으로 보는 게 안전합니다. "
-            f"기존 패턴 추종보다 새로운 바닥/천장 형성 시나리오를 다시 기다리는 편이 좋습니다."
+            f"{pattern_name} 패턴은 무효화 이후 새 균형점을 찾는 흐름으로 가정했습니다. "
+            "기존 패턴 재개보다 손실 정리와 재축적 여부 확인이 먼저라는 의미입니다."
         )
-        return "무효화 이후 재정비", summary, _projected_points(last_ts, timeframe, prices)
+        return "무효화 이후 재균형", summary, _projected_points(last_ts, timeframe, prices)
 
     if bullish:
         if pattern.state == "forming":
@@ -1520,10 +1645,9 @@ def _build_projection(
                 (steps[3], target, "target"),
             ]
             summary = (
-                f"{pattern_name} 패턴은 아직 완성 전이라 목선 부근까지 구조를 더 만들어갈 흐름으로 가정합니다. "
-                f"목선 돌파가 실제로 나오기 전까지는 준비 시나리오로만 보는 편이 좋습니다."
+                f"{pattern_name} 패턴이 아직 형성 중이라 눌림과 기준선 접근을 거친 뒤 돌파가 나오는 보수적 시나리오입니다."
             )
-            return "패턴 완성 시도", summary, _projected_points(last_ts, timeframe, prices)
+            return "형성 후 돌파", summary, _projected_points(last_ts, timeframe, prices)
 
         if pattern.state == "armed":
             prices = [
@@ -1532,10 +1656,7 @@ def _build_projection(
                 (steps[2], max(neckline, current_close - span * 0.08), "retest"),
                 (steps[3], target, "target"),
             ]
-            summary = (
-                f"{pattern_name} 패턴은 완성 직전으로 보고 있습니다. "
-                f"짧은 눌림 이후 목선 돌파 확인과 목표가 접근 흐름을 기본 시나리오로 둡니다."
-            )
+            summary = f"{pattern_name} 패턴이 활성 직전이라 목선 돌파와 리테스트를 거쳐 목표가로 향하는 흐름을 우선 가정했습니다."
             return "돌파 임박", summary, _projected_points(last_ts, timeframe, prices)
 
         prices = [
@@ -1545,10 +1666,9 @@ def _build_projection(
             (steps[3], target + span * 0.12, "extension"),
         ]
         summary = (
-            f"{pattern_name} 패턴은 이미 확인된 것으로 보고 있어 짧은 눌림 후 목표가 재도전 흐름을 기본으로 둡니다. "
-            f"다만 {target_hit_at or '현재까지'} 목표가가 이미 일부 소진됐다면 retest 성공 여부를 먼저 확인해야 합니다."
+            f"{pattern_name} 패턴은 이미 확인된 상태라 재테스트 이후 목표 구간과 추가 확장을 시도하는 흐름을 가정했습니다."
         )
-        return "확인 후 retest", summary, _projected_points(last_ts, timeframe, prices)
+        return "확인 후 재테스트", summary, _projected_points(last_ts, timeframe, prices)
 
     if pattern.state == "forming":
         prices = [
@@ -1557,11 +1677,8 @@ def _build_projection(
             (steps[2], neckline * 0.98, "breakdown"),
             (steps[3], target, "target"),
         ]
-        summary = (
-            f"{pattern_name} 패턴은 아직 완성 전이라 지지 붕괴 구조를 더 만들어갈 흐름으로 가정합니다. "
-            f"목선 이탈이 확정되기 전까지는 준비 시나리오로 봐야 합니다."
-        )
-        return "하락 패턴 완성 시도", summary, _projected_points(last_ts, timeframe, prices)
+        summary = f"{pattern_name} 패턴이 아직 형성 중이라 반등 후 기준선 이탈이 나오는 보수적 하락 시나리오입니다."
+        return "형성 후 이탈", summary, _projected_points(last_ts, timeframe, prices)
 
     if pattern.state == "armed":
         prices = [
@@ -1570,10 +1687,7 @@ def _build_projection(
             (steps[2], min(neckline, current_close + span * 0.08), "retest"),
             (steps[3], target, "target"),
         ]
-        summary = (
-            f"{pattern_name} 패턴은 하락 완성 직전으로 보고 있습니다. "
-            f"짧은 반등 뒤 지지 이탈 확인과 목표가 접근 흐름을 기본 시나리오로 둡니다."
-        )
+        summary = f"{pattern_name} 패턴이 활성 직전이라 기준선 이탈과 되돌림 확인 뒤 목표가로 향하는 흐름을 우선 가정했습니다."
         return "이탈 임박", summary, _projected_points(last_ts, timeframe, prices)
 
     prices = [
@@ -1582,11 +1696,8 @@ def _build_projection(
         (steps[2], target, "target"),
         (steps[3], target - span * 0.12, "extension"),
     ]
-    summary = (
-        f"{pattern_name} 패턴은 이미 확인된 것으로 보고 있어 짧은 반등 후 목표가 재도전 흐름을 기본으로 둡니다. "
-        f"무효화 기준을 회복하면 기존 시나리오는 바로 접어야 합니다."
-    )
-    return "확인 후 retest", summary, _projected_points(last_ts, timeframe, prices)
+    summary = f"{pattern_name} 패턴은 이미 확인된 상태라 되돌림 확인 후 추가 하락을 시도하는 흐름을 가정했습니다."
+    return "확인 후 재테스트", summary, _projected_points(last_ts, timeframe, prices)
 
 
 def build_no_signal_snapshot(
@@ -1613,6 +1724,7 @@ def build_no_signal_snapshot(
         pattern=None,
         action_plan=action_plan,
         entry_window=None,
+        freshness=None,
         p_up=0.5,
         p_down=0.5,
         entry_score=0.0,
@@ -1671,11 +1783,14 @@ def build_no_signal_snapshot(
         trade_readiness_summary=readiness["trade_readiness_summary"],
         entry_window_score=0.0,
         entry_window_label="재확인 필요",
-        entry_window_summary="의미 있는 패턴이 아직 없어 현재 가격의 진입 구간을 평가하지 않았습니다.",
+        entry_window_summary="활성 패턴이 없어 현재 자리의 진입 구간은 보수적으로 해석합니다.",
+        freshness_score=0.0,
+        freshness_label="재확인 필요",
+        freshness_summary="의미 있는 활성 패턴이 아직 없어 패턴 신선도를 평가하지 않았습니다.",
         score_factors=readiness["score_factors"],
         active_setup_score=0.0,
         active_setup_label="활성 셋업 없음",
-        active_setup_summary="현재 살아 있는 활성 패턴 후보가 없어 새 구조가 만들어지는지부터 기다립니다.",
+        active_setup_summary="현재는 활성 셋업이 없어 신규 대응보다 관찰과 데이터 축적이 우선입니다.",
         active_pattern_count=0,
         completed_pattern_count=0,
         no_signal_flag=True,
@@ -1685,8 +1800,8 @@ def build_no_signal_snapshot(
         empirical_win_rate=0.5,
         sample_reliability=0.0,
         patterns=[],
-        projection_label="예측 보류",
-        projection_summary="현재는 유의미한 패턴이 없어 미래 경로를 예측하지 않습니다.",
+        projection_label="중립 시나리오",
+        projection_summary="활성 패턴이 부족해 미래 경로는 보수적인 중립 시나리오로 처리했습니다.",
         projected_path=[],
         is_provisional=True,
         updated_at=datetime.utcnow().isoformat(),
@@ -1757,6 +1872,19 @@ async def analyze_symbol_dataframe(
         target_distance_pct=opportunity["target_distance_pct"],
         stop_distance_pct=opportunity["stop_distance_pct"],
         completion_proximity=best_completion,
+        target_hit_at=best_target_hit_at,
+        invalidated_at=best_invalidated_at,
+    )
+    freshness = _freshness_profile(
+        timeframe=timeframe,
+        pattern=best_pattern,
+        current_close=current_close,
+        completion_proximity=best_completion,
+        recency_score=best_recency,
+        headroom_score=opportunity["headroom_score"],
+        target_distance_pct=opportunity["target_distance_pct"],
+        stop_distance_pct=opportunity["stop_distance_pct"],
+        bars_since_signal=bars_since_signal,
         target_hit_at=best_target_hit_at,
         invalidated_at=best_invalidated_at,
     )
@@ -1905,7 +2033,7 @@ async def analyze_symbol_dataframe(
         )
 
     if probability.no_signal_flag and not probability.no_signal_reason:
-        probability.no_signal_reason = "표본 신뢰도, 신호 최신성, 데이터 품질이 기준치에 미달했습니다."
+        probability.no_signal_reason = "??類ｊ텥 ??ル뱴?? ??ル쪇源?嶺뚣끉裕??? ??⑥щ턄?????깆떨???リ옇???곸궡瑗룩굢?亦껋꼶梨????곕????덈펲."
 
     action_plan = _action_plan_profile(
         timeframe,
@@ -1920,6 +2048,8 @@ async def analyze_symbol_dataframe(
         probability.headroom_score,
         entry_window["entry_window_score"],
         entry_window["entry_window_label"],
+        freshness["freshness_score"],
+        freshness["freshness_label"],
         probability.historical_edge_score,
         trend_profile["trend_alignment_score"],
         intraday_profile["intraday_session_score"],
@@ -1954,6 +2084,7 @@ async def analyze_symbol_dataframe(
         pattern=best_pattern,
         action_plan=action_plan,
         entry_window=entry_window,
+        freshness=freshness,
         p_up=probability.p_up,
         p_down=probability.p_down,
         entry_score=probability.entry_score,
@@ -2014,6 +2145,9 @@ async def analyze_symbol_dataframe(
         entry_window_score=entry_window["entry_window_score"],
         entry_window_label=entry_window["entry_window_label"],
         entry_window_summary=entry_window["entry_window_summary"],
+        freshness_score=freshness["freshness_score"],
+        freshness_label=freshness["freshness_label"],
+        freshness_summary=freshness["freshness_summary"],
         score_factors=readiness["score_factors"],
         active_setup_score=active_setup["active_setup_score"],
         active_setup_label=active_setup["active_setup_label"],
@@ -2044,4 +2178,9 @@ async def analyze_symbol_dataframe(
         stats_timeframe=stats_timeframe,
         available_bars=profile["available_bars"],
     )
+
+
+
+
+
 

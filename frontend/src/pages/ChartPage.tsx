@@ -1,4 +1,4 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Database, Layers3, Loader2, Search, Star, TrendingDown, TrendingUp } from 'lucide-react'
@@ -8,14 +8,8 @@ import { CandleChart } from '@/components/chart/CandleChart'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { symbolsApi } from '@/lib/api'
-import {
-  DEFAULT_TIMEFRAME,
-  getChartLookbackDays,
-  getContextTimeframes,
-  TIMEFRAME_OPTIONS,
-  timeframeLabel,
-} from '@/lib/timeframes'
-import { cn, fmtDateTime, fmtNumber, fmtPct, fmtPrice, PATTERN_NAMES, STATE_COLORS, STATE_LABELS } from '@/lib/utils'
+import { DEFAULT_TIMEFRAME, getChartLookbackDays, getContextTimeframes, TIMEFRAME_OPTIONS, timeframeLabel } from '@/lib/timeframes'
+import { cn, fmtDateTime, fmtNumber, fmtPct, fmtPrice } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
 import type { AnalysisResult } from '@/types/api'
 
@@ -72,10 +66,9 @@ export default function ChartPage() {
   }
 
   const analysis = analysisQ.data
-  const qualityTone =
-    (analysis?.data_quality ?? 0) >= 0.8 ? 'bullish' : (analysis?.data_quality ?? 0) >= 0.6 ? 'muted' : 'warning'
   const contextAnalyses = contextQueries.flatMap(query => (query.data ? [query.data] : []))
   const contextSummary = summarizeContext(analysis, contextAnalyses)
+  const qualityTone = (analysis?.data_quality ?? 0) >= 0.8 ? 'bullish' : (analysis?.data_quality ?? 0) >= 0.6 ? 'neutral' : 'warning'
 
   return (
     <div className="space-y-4">
@@ -118,11 +111,12 @@ export default function ChartPage() {
             <button
               key={option.value}
               onClick={() => setTimeframe(option.value)}
-              className={`rounded-md px-2.5 py-1.5 text-xs transition-colors ${
+              className={cn(
+                'rounded-md px-2.5 py-1.5 text-xs transition-colors',
                 timeframe === option.value
                   ? 'bg-primary text-primary-foreground'
-                  : 'border border-border bg-card text-muted-foreground hover:text-foreground'
-              }`}
+                  : 'border border-border bg-card text-muted-foreground hover:text-foreground',
+              )}
             >
               {option.label}
             </button>
@@ -130,34 +124,26 @@ export default function ChartPage() {
         </div>
       </div>
 
+      {!symbol && (
+        <Card>
+          <p className="text-sm text-muted-foreground">차트를 보려면 종목을 검색하거나 대시보드에서 종목을 선택해 주세요.</p>
+        </Card>
+      )}
+
       {analysis && (
         <div className="rounded-xl border border-border bg-card p-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="space-y-1">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div className="space-y-2">
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="text-lg font-bold">{analysis.symbol.name}</h1>
                 <span className="font-mono text-sm text-muted-foreground">{symbol}</span>
                 <span className="text-xs text-muted-foreground">{analysis.symbol.market}</span>
                 <Badge variant={qualityTone}>{analysis.timeframe_label}</Badge>
                 <Badge variant={actionPlanVariant(analysis.action_plan)}>{analysis.action_plan_label}</Badge>
-                <Badge variant={readinessVariant(analysis.trade_readiness_score ?? 0)}>
-                  준비도 {Math.round((analysis.trade_readiness_score ?? 0) * 100)}%
-                </Badge>
-                <Badge
-                  variant={
-                    (analysis.entry_window_score ?? 0) >= 0.7
-                      ? 'bullish'
-                      : (analysis.entry_window_score ?? 0) >= 0.5
-                        ? 'neutral'
-                        : 'muted'
-                  }
-                >
-                  진입 {Math.round((analysis.entry_window_score ?? 0) * 100)}%
-                </Badge>
-                <Badge variant={(analysis.active_setup_score ?? 0) >= 0.56 ? 'neutral' : 'muted'}>
-                  활성 {Math.round((analysis.active_setup_score ?? 0) * 100)}%
-                </Badge>
-                <Badge variant={qualityTone}>품질 {Math.round(analysis.data_quality * 100)}%</Badge>
+                <Badge variant={scoreVariant(analysis.trade_readiness_score ?? 0)}>준비 {Math.round((analysis.trade_readiness_score ?? 0) * 100)}%</Badge>
+                <Badge variant={scoreVariant(analysis.entry_window_score ?? 0)}>진입 {Math.round((analysis.entry_window_score ?? 0) * 100)}%</Badge>
+                <Badge variant={scoreVariant(analysis.freshness_score ?? 0)}>신선 {Math.round((analysis.freshness_score ?? 0) * 100)}%</Badge>
+                <Badge variant={scoreVariant(analysis.active_setup_score ?? 0)}>활성 {Math.round((analysis.active_setup_score ?? 0) * 100)}%</Badge>
                 {analysis.is_provisional && <Badge variant="warning">잠정</Badge>}
                 <button
                   onClick={() => {
@@ -173,12 +159,12 @@ export default function ChartPage() {
                   )}
                 >
                   <Star size={12} className={watched ? 'fill-yellow-400' : ''} />
-                  {watched ? '관심 종목' : '추가'}
+                  {watched ? '관심종목' : '추가'}
                 </button>
               </div>
 
               {priceQ.data && priceQ.data.close > 0 && (
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                   <span className="font-mono text-xl font-bold">{fmtPrice(priceQ.data.close)}</span>
                   <span
                     className={cn(
@@ -194,9 +180,7 @@ export default function ChartPage() {
                       {fmtPct(priceQ.data.change_pct)})
                     </span>
                   </span>
-                  <span className="text-xs text-muted-foreground">
-                    {priceQ.data.source === 'kis' ? '실시간' : '종가 기준'}
-                  </span>
+                  <span className="text-xs text-muted-foreground">{priceQ.data.source === 'kis' ? '실시간' : '종가 기준'}</span>
                 </div>
               )}
 
@@ -209,14 +193,15 @@ export default function ChartPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 text-right sm:grid-cols-6">
+            <div className="grid grid-cols-2 gap-3 text-right sm:grid-cols-4 xl:grid-cols-7">
               <MetricCell label="상승 확률" value={`${(analysis.p_up * 100).toFixed(0)}%`} tone="text-green-400" />
               <MetricCell label="하락 확률" value={`${(analysis.p_down * 100).toFixed(0)}%`} tone="text-red-400" />
               <MetricCell label="신뢰도" value={`${(analysis.confidence * 100).toFixed(0)}%`} />
-              <MetricCell label="준비도" value={`${Math.round((analysis.trade_readiness_score ?? 0) * 100)}%`} />
+              <MetricCell label="거래 준비도" value={`${Math.round((analysis.trade_readiness_score ?? 0) * 100)}%`} />
               <MetricCell label="진입 구간" value={`${Math.round((analysis.entry_window_score ?? 0) * 100)}%`} />
+              <MetricCell label="패턴 신선도" value={`${Math.round((analysis.freshness_score ?? 0) * 100)}%`} />
               <MetricCell label="활성 셋업" value={`${Math.round((analysis.active_setup_score ?? 0) * 100)}%`} />
-              <MetricCell label="시총" value={analysis.symbol.market_cap ? `${fmtNumber(analysis.symbol.market_cap)}억` : '-'} />
+              <MetricCell label="시가총액" value={analysis.symbol.market_cap ? fmtNumber(analysis.symbol.market_cap) : '-'} />
             </div>
           </div>
 
@@ -233,6 +218,11 @@ export default function ChartPage() {
           {analysis.entry_window_summary && (
             <div className="mt-3 rounded-lg border border-sky-400/20 bg-sky-400/5 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
               <span className="font-semibold text-sky-200">진입 구간:</span> {analysis.entry_window_summary}
+            </div>
+          )}
+          {analysis.freshness_summary && (
+            <div className="mt-3 rounded-lg border border-violet-400/20 bg-violet-400/5 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+              <span className="font-semibold text-violet-200">패턴 신선도:</span> {analysis.freshness_summary}
             </div>
           )}
         </div>
@@ -259,53 +249,104 @@ export default function ChartPage() {
         </Card>
       )}
 
-      {!symbol ? (
-        <div className="flex h-80 flex-col items-center justify-center gap-3 text-muted-foreground">
-          <Search size={40} className="opacity-20" />
-          <p className="text-sm">검색창에서 종목을 선택하면 차트 분석을 시작합니다.</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_340px]">
-          <div>
-            {barsQ.isLoading ? (
-              <div className="flex h-96 items-center justify-center rounded-lg bg-card">
-                <Loader2 size={24} className="animate-spin text-muted-foreground" />
-              </div>
-            ) : barsQ.data && barsQ.data.length > 0 ? (
-              <CandleChart bars={barsQ.data} analysis={analysis ?? null} height={480} />
-            ) : (
-              <div className="flex h-96 items-center justify-center rounded-lg bg-card px-6 text-center text-sm text-muted-foreground">
-                {analysis?.fetch_message || '차트 데이터를 불러오지 못했습니다. 잠시 후 다시 시도하거나 다른 타임프레임을 확인해 주세요.'}
-              </div>
-            )}
-          </div>
+      {barsQ.isLoading || analysisQ.isLoading ? (
+        <Card className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 size={16} className="animate-spin" />
+          차트와 분석을 불러오는 중입니다.
+        </Card>
+      ) : null}
 
-          <div>
-            {analysisQ.isLoading ? (
-              <div className="flex h-40 items-center justify-center">
-                <Loader2 size={20} className="animate-spin text-muted-foreground" />
-              </div>
-            ) : analysis ? (
-              <AnalysisPanel analysis={analysis} />
-            ) : (
-              <div className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
-                분석 결과를 불러오지 못했습니다.
-              </div>
-            )}
-          </div>
+      {barsQ.error && (
+        <Card>
+          <p className="text-sm text-red-300">차트 데이터를 불러오지 못했습니다.</p>
+        </Card>
+      )}
+
+      {barsQ.data && barsQ.data.length > 0 && (
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <Card>
+            <CandleChart bars={barsQ.data} analysis={analysis} height={520} />
+          </Card>
+          {analysis && <AnalysisPanel analysis={analysis} />}
         </div>
       )}
     </div>
   )
 }
 
+function ContextCard({
+  analysis,
+  isPrimary = false,
+  isLoading = false,
+  labelOverride,
+}: {
+  analysis: AnalysisResult | null
+  isPrimary?: boolean
+  isLoading?: boolean
+  labelOverride?: string
+}) {
+  if (isLoading) {
+    return (
+      <Card>
+        <div className="text-xs text-muted-foreground">불러오는 중...</div>
+      </Card>
+    )
+  }
+
+  if (!analysis) {
+    return (
+      <Card>
+        <div className="text-xs text-muted-foreground">컨텍스트 데이터 없음</div>
+      </Card>
+    )
+  }
+
+  return (
+    <Card className={isPrimary ? 'border-primary/40' : undefined}>
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-sm font-semibold">{labelOverride ?? analysis.timeframe_label}</div>
+        {isPrimary && <Badge variant="default">현재</Badge>}
+      </div>
+      <div className="mt-3 space-y-2 text-xs text-muted-foreground">
+        <div className="flex items-center justify-between">
+          <span>상승 확률</span>
+          <span className="text-green-400">{fmtPct(analysis.p_up, 0)}</span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span>거래 준비도</span>
+          <span>{fmtPct(analysis.trade_readiness_score ?? 0, 0)}</span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span>패턴 신선도</span>
+          <span>{fmtPct(analysis.freshness_score ?? 0, 0)}</span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span>상태</span>
+          <span>{analysis.action_plan_label}</span>
+        </div>
+      </div>
+    </Card>
+  )
+}
+
 function MetricCell({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
-    <div className="rounded-lg border border-border bg-background/60 p-3">
+    <div>
       <div className="text-xs text-muted-foreground">{label}</div>
-      <div className={`mt-1 text-sm font-semibold ${tone ?? 'text-foreground'}`}>{value}</div>
+      <div className={cn('mt-1 text-sm font-semibold', tone)}>{value}</div>
     </div>
   )
+}
+
+function summarizeContext(primary: AnalysisResult | undefined, contexts: AnalysisResult[]): string {
+  if (!primary) return '현재 분석 결과가 아직 없습니다.'
+  if (contexts.length === 0) return `${primary.timeframe_label} 기준 분석입니다.`
+
+  const strongest = [...contexts].sort(
+    (left, right) => (right.trade_readiness_score ?? 0) + right.p_up - ((left.trade_readiness_score ?? 0) + left.p_up),
+  )[0]
+
+  return `${primary.timeframe_label} 기준 현재 판단은 ${primary.action_plan_label}입니다. 보조 타임프레임 중에서는 ${strongest.timeframe_label}가 가장 강하며, 준비도 ${fmtPct(strongest.trade_readiness_score ?? 0, 0)} / 신선도 ${fmtPct(strongest.freshness_score ?? 0, 0)} 수준입니다.`
 }
 
 function actionPlanVariant(plan: string): 'bullish' | 'warning' | 'muted' | 'neutral' {
@@ -315,98 +356,9 @@ function actionPlanVariant(plan: string): 'bullish' | 'warning' | 'muted' | 'neu
   return 'muted'
 }
 
-function readinessVariant(score: number): 'bullish' | 'warning' | 'muted' | 'neutral' {
+function scoreVariant(score: number): 'bullish' | 'warning' | 'muted' | 'neutral' {
   if (score >= 0.72) return 'bullish'
-  if (score >= 0.58) return 'neutral'
-  if (score >= 0.44) return 'warning'
+  if (score >= 0.56) return 'neutral'
+  if (score >= 0.4) return 'warning'
   return 'muted'
-}
-
-function ContextCard({
-  analysis,
-  isLoading,
-  isPrimary = false,
-  labelOverride,
-}: {
-  analysis: AnalysisResult | null
-  isLoading?: boolean
-  isPrimary?: boolean
-  labelOverride?: string
-}) {
-  if (isLoading) {
-    return (
-      <div className="rounded-lg border border-border bg-background/60 p-3">
-        <div className="flex items-center justify-center py-6 text-muted-foreground">
-          <Loader2 size={16} className="animate-spin" />
-        </div>
-      </div>
-    )
-  }
-
-  if (!analysis) {
-    return (
-      <div className="rounded-lg border border-border bg-background/60 p-3">
-        <div className="text-xs text-muted-foreground">{labelOverride ?? '-'}</div>
-        <div className="mt-2 text-xs text-muted-foreground">분석 결과 없음</div>
-      </div>
-    )
-  }
-
-  const best = analysis.patterns[0]
-  const qualityVariant = analysis.data_quality >= 0.8 ? 'bullish' : analysis.data_quality >= 0.6 ? 'muted' : 'warning'
-
-  return (
-    <div className={`rounded-lg border bg-background/60 p-3 ${isPrimary ? 'border-primary/40' : 'border-border'}`}>
-      <div className="flex items-center justify-between gap-2">
-        <div className="text-xs font-semibold">{labelOverride ?? analysis.timeframe_label}</div>
-        <Badge variant={qualityVariant}>품질 {Math.round(analysis.data_quality * 100)}%</Badge>
-      </div>
-
-      <div className="mt-2 flex items-center justify-between">
-        <div className="text-sm font-semibold">{Math.round(analysis.p_up * 100)}%</div>
-        <div className="text-xs text-muted-foreground">상승 확률</div>
-      </div>
-
-      {best ? (
-        <div className="mt-2 space-y-1">
-          <div className="text-xs text-muted-foreground">{PATTERN_NAMES[best.pattern_type] ?? best.pattern_type}</div>
-          <div className="flex items-center gap-2">
-            <span className={cn('rounded px-1.5 py-0.5 text-xs', STATE_COLORS[best.state])}>
-              {STATE_LABELS[best.state]}
-            </span>
-            <span className="text-xs text-muted-foreground">유사도 {fmtPct(best.textbook_similarity)}</span>
-          </div>
-        </div>
-      ) : (
-        <div className="mt-2 text-xs text-muted-foreground">유의미한 패턴 없음</div>
-      )}
-
-      <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-        <span>신뢰도 {fmtPct(analysis.confidence)}</span>
-        <span className="text-right">신선도 {fmtPct(analysis.recency_score)}</span>
-      </div>
-    </div>
-  )
-}
-
-function summarizeContext(primary: AnalysisResult | undefined, contexts: AnalysisResult[]): string {
-  if (!primary) return '현재 타임프레임 기준 분석을 불러오는 중입니다.'
-
-  const primaryBias = primary.p_up - primary.p_down
-  const aligned = contexts.filter(context => (context.p_up - context.p_down) * primaryBias > 0.02).length
-  const opposite = contexts.filter(context => (context.p_up - context.p_down) * primaryBias < -0.02).length
-
-  if (contexts.length === 0) {
-    return `${primary.timeframe_label} 단독 신호 기준으로 해석하고 있습니다.`
-  }
-
-  if (aligned === contexts.length) {
-    return `${primary.timeframe_label} 신호가 주변 타임프레임과 같은 방향으로 정렬돼 있어 추세 추종 관점으로 보기 좋습니다.`
-  }
-
-  if (opposite > 0) {
-    return `${primary.timeframe_label} 신호는 있지만 상위 또는 하위 축이 엇갈립니다. 무조건 추격하기보다 지지와 무효화 기준을 함께 보는 편이 좋습니다.`
-  }
-
-  return `${primary.timeframe_label} 신호는 유효하지만 주변 타임프레임은 일부만 동조하고 있습니다. 보수적으로 확인하는 편이 좋습니다.`
 }

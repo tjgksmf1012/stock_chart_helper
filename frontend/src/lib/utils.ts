@@ -1,4 +1,4 @@
-import { type ClassValue, clsx } from 'clsx'
+﻿import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 
 export function cn(...inputs: ClassValue[]) {
@@ -9,15 +9,18 @@ export function fmtPct(val: number, decimals = 1): string {
   return `${(val * 100).toFixed(decimals)}%`
 }
 
-export function fmtPrice(val: number): string {
+export function fmtPrice(val: number | null | undefined): string {
+  if (val === null || val === undefined || Number.isNaN(val)) return '-'
   return `${Math.round(val).toLocaleString('ko-KR')}원`
 }
 
-export function fmtNumber(val: number): string {
+export function fmtNumber(val: number | null | undefined): string {
+  if (val === null || val === undefined || Number.isNaN(val)) return '-'
   return val.toLocaleString('ko-KR')
 }
 
-export function fmtTurnoverBillion(val: number): string {
+export function fmtTurnoverBillion(val: number | null | undefined): string {
+  if (val === null || val === undefined || Number.isNaN(val)) return '-'
   return `${val.toFixed(1)}억`
 }
 
@@ -32,7 +35,7 @@ export function fmtDateTime(value: string | null | undefined): string {
 
 export const STATE_LABELS: Record<string, string> = {
   forming: '형성 중',
-  armed: '완성 임박',
+  armed: '활성 임박',
   confirmed: '확인 완료',
   invalidated: '무효화',
   played_out: '목표 달성',
@@ -50,7 +53,7 @@ export const PATTERN_NAMES: Record<string, string> = {
   double_bottom: '이중 바닥 (W)',
   double_top: '이중 천장 (M)',
   head_and_shoulders: '헤드 앤 숄더',
-  inverse_head_and_shoulders: '역 헤드 앤 숄더',
+  inverse_head_and_shoulders: '역헤드 앤 숄더',
   ascending_triangle: '상승 삼각형',
   descending_triangle: '하락 삼각형',
   symmetric_triangle: '대칭 삼각형',
@@ -72,8 +75,8 @@ export const PATTERN_VARIANT_NAMES: Record<string, string> = {
   adam_hybrid: 'Adam / Hybrid',
   eve_hybrid: 'Eve / Hybrid',
   hybrid_hybrid: 'Hybrid / Hybrid',
-  '3_contractions': '3단 수축',
-  '4_contractions': '4단 수축',
+  '3_contractions': '3회 수축',
+  '4_contractions': '4회 수축',
 }
 
 export const DIRECTION_LABELS: Record<string, string> = {
@@ -100,22 +103,18 @@ export const CANDLE_CONFIRMATION_LABELS: Record<string, string> = {
 }
 
 export const INTRADAY_SESSION_LABELS: Record<string, string> = {
-  open_drive: '장초반',
-  midday: '점심장',
-  closing_drive: '마감 전',
-  regular_session: '장중',
-  off_hours: '장외 시점',
+  open_drive: '시가 주도',
+  midday: '장중 소강',
+  closing_drive: '종가 주도',
+  regular_session: '정규장',
+  off_hours: '장외 시간',
   neutral: '중립',
 }
 
 export function getPatternBias(patternType: string | null | undefined): 'bullish' | 'bearish' | 'neutral' {
   if (!patternType) return 'neutral'
 
-  if (['double_bottom', 'inverse_head_and_shoulders', 'ascending_triangle', 'cup_and_handle', 'rounding_bottom'].includes(patternType)) {
-    return 'bullish'
-  }
-
-  if (['vcp'].includes(patternType)) {
+  if (['double_bottom', 'inverse_head_and_shoulders', 'ascending_triangle', 'cup_and_handle', 'rounding_bottom', 'vcp'].includes(patternType)) {
     return 'bullish'
   }
 

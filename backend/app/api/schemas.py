@@ -121,6 +121,9 @@ class AnalysisResult(BaseModel):
     entry_window_score: float = 0.0
     entry_window_label: str = "재확인 필요"
     entry_window_summary: str = ""
+    freshness_score: float = 0.0
+    freshness_label: str = "재확인 필요"
+    freshness_summary: str = ""
     score_factors: list[ScoreFactor] = Field(default_factory=list)
     active_setup_score: float = 0.0
     active_setup_label: str = "활성 셋업 없음"
@@ -200,6 +203,9 @@ class DashboardItem(BaseModel):
     entry_window_score: float = 0.0
     entry_window_label: str = "재확인 필요"
     entry_window_summary: str = ""
+    freshness_score: float = 0.0
+    freshness_label: str = "재확인 필요"
+    freshness_summary: str = ""
     score_factors: list[ScoreFactor] = Field(default_factory=list)
     active_setup_score: float = 0.0
     active_setup_label: str = "활성 셋업 없음"
@@ -419,6 +425,7 @@ class ScreenerRequest(BaseModel):
     min_data_quality: float = 0.0
     min_trade_readiness_score: float = 0.0
     min_entry_window_score: float = 0.0
+    min_freshness_score: float = 0.0
     min_active_setup_score: float = 0.0
     min_confluence_score: float = 0.0
     min_historical_edge_score: float = 0.0

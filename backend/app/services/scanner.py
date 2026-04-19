@@ -55,12 +55,12 @@ _KST = ZoneInfo("Asia/Seoul")
 
 
 def _full_scan_cache_key(timeframe: str) -> str:
-    return f"scanner:v7:full_results:{timeframe}"
+    return f"scanner:v8:full_results:{timeframe}"
 
 
 def _single_scan_cache_key(timeframe: str, code: str, allow_live_intraday: bool = True) -> str:
     mode = "live" if allow_live_intraday else "budget"
-    return f"scan:v7:result:{timeframe}:{code}:{mode}"
+    return f"scan:v8:result:{timeframe}:{code}:{mode}"
 
 
 def _utc_now_iso() -> str:
@@ -199,12 +199,13 @@ def _live_intraday_priority(row: dict[str, Any], timeframe: str) -> float:
     return (
         0.22 * float(row.get("entry_score", 0.0))
         + 0.18 * float(row.get("entry_window_score", 0.0))
+        + 0.12 * float(row.get("freshness_score", 0.0))
         + 0.18 * float(row.get("completion_proximity", 0.0))
-        + 0.16 * float(row.get("liquidity_score", 0.0))
+        + 0.14 * float(row.get("liquidity_score", 0.0))
         + 0.10 * float(row.get("confidence", 0.0))
         + 0.10 * float(row.get("recency_score", 0.0))
-        + 0.08 * float(row.get("historical_edge_score", 0.0))
-        + 0.08 * float(row.get("trend_alignment_score", 0.0))
+        + 0.06 * float(row.get("historical_edge_score", 0.0))
+        + 0.06 * float(row.get("trend_alignment_score", 0.0))
         + 0.05 * float(row.get("data_quality", 0.0))
         + 0.08 * float(row.get("action_priority_score", 0.0))
         + stage_bonus
@@ -275,6 +276,8 @@ def _non_live_intraday_reason(
         reasons.append("liquidity is lighter than the current live cohort")
     if float(row.get("recency_score", 0.0)) < 0.55:
         reasons.append("signal freshness is lagging")
+    if float(row.get("freshness_score", 0.0)) < 0.5:
+        reasons.append("pattern freshness is below the live cutoff")
 
     fetch_status = str(row.get("fetch_status") or "")
     if fetch_status == "scanner_store_only":
@@ -375,6 +378,22 @@ def _apply_setup_metadata(row: dict[str, Any]) -> dict[str, Any]:
         row["composite_score"] = round(float(row.get("composite_score", 0.0)) - 0.10, 3)
     elif entry_window_score < 0.3:
         row["composite_score"] = round(float(row.get("composite_score", 0.0)) - 0.04, 3)
+
+    freshness_score = float(row.get("freshness_score", 0.0))
+    freshness_label = str(row.get("freshness_label") or "")
+    if freshness_label == "신선":
+        row["composite_score"] = round(float(row.get("composite_score", 0.0)) + 0.06, 3)
+    elif freshness_label == "진행중":
+        row["composite_score"] = round(float(row.get("composite_score", 0.0)) + 0.03, 3)
+    elif freshness_label == "재기초 관찰":
+        row["composite_score"] = round(float(row.get("composite_score", 0.0)) - 0.02, 3)
+        row["scenario_text"] = (
+            f"{row.get('scenario_text', '')} The prior target may already be spent, so treat this as a rebuild watch instead of a fresh trigger."
+        ).strip()
+    elif freshness_label in {"종료 패턴", "무효 만료"}:
+        row["composite_score"] = round(float(row.get("composite_score", 0.0)) - 0.18, 3)
+    elif freshness_score < 0.35:
+        row["composite_score"] = round(float(row.get("composite_score", 0.0)) - 0.06, 3)
 
     phase = str(row.get("wyckoff_phase") or "neutral")
     if phase == "accumulation":
@@ -662,6 +681,9 @@ async def _analyze_one(
             "entry_window_score": analysis.entry_window_score,
             "entry_window_label": analysis.entry_window_label,
             "entry_window_summary": analysis.entry_window_summary,
+            "freshness_score": analysis.freshness_score,
+            "freshness_label": analysis.freshness_label,
+            "freshness_summary": analysis.freshness_summary,
             "score_factors": [factor.model_dump() for factor in analysis.score_factors],
             "active_setup_score": analysis.active_setup_score,
             "active_setup_label": analysis.active_setup_label,
@@ -866,6 +888,7 @@ async def run_scan(
                         0 if row["no_signal_flag"] else 1,
                         row.get("trade_readiness_score", 0),
                         row.get("entry_window_score", 0),
+                        row.get("freshness_score", 0),
                         row.get("active_setup_score", 0),
                     row.get("composite_score", 0),
                     row.get("historical_edge_score", 0),
@@ -978,6 +1001,7 @@ async def get_scan_results(timeframe: str = DEFAULT_TIMEFRAME) -> list[dict[str,
         key=lambda row: (
             row.get("trade_readiness_score", 0),
             row.get("entry_window_score", 0),
+            row.get("freshness_score", 0),
             row.get("active_setup_score", 0),
             row.get("composite_score", row.get("entry_score", 0)),
             row.get("historical_edge_score", 0),
