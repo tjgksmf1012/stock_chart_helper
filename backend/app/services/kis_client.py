@@ -29,6 +29,10 @@ class KISClient:
         self._resolved_base_url: str | None = None
         self._token_cache_file = Path(settings.kis_token_cache_path)
         self._token_lock = asyncio.Lock()
+        self._request_semaphore = asyncio.Semaphore(max(1, int(settings.kis_max_concurrent_requests)))
+        self._request_spacing_lock = asyncio.Lock()
+        self._request_spacing_seconds = max(0.0, float(settings.kis_request_spacing_ms) / 1000.0)
+        self._next_request_at = 0.0
         self.timeout = httpx.Timeout(10.0, connect=5.0)
 
     @property
@@ -214,8 +218,10 @@ class KISClient:
         base_url: str | None = None,
     ) -> dict[str, Any]:
         target_base_url = base_url or self._resolved_base_url or self.prod_base_url
-        async with httpx.AsyncClient(base_url=target_base_url, timeout=self.timeout) as client:
-            response = await client.request(method, path, headers=headers, params=params, json=json_body)
+        async with self._request_semaphore:
+            await self._respect_request_spacing()
+            async with httpx.AsyncClient(base_url=target_base_url, timeout=self.timeout) as client:
+                response = await client.request(method, path, headers=headers, params=params, json=json_body)
 
         response.raise_for_status()
         payload = response.json()
@@ -224,6 +230,18 @@ class KISClient:
             message = payload.get("msg1") or payload.get("msg_cd") or "KIS API request failed."
             raise RuntimeError(f"{message} (rt_cd={rt_cd})")
         return payload
+
+    async def _respect_request_spacing(self) -> None:
+        if self._request_spacing_seconds <= 0:
+            return
+        loop = asyncio.get_running_loop()
+        async with self._request_spacing_lock:
+            now = loop.time()
+            wait_seconds = max(0.0, self._next_request_at - now)
+            if wait_seconds > 0:
+                await asyncio.sleep(wait_seconds)
+                now = loop.time()
+            self._next_request_at = max(now, self._next_request_at) + self._request_spacing_seconds
 
     def _get_token_ttl(self, payload: dict[str, Any]) -> int:
         expires_in = payload.get("expires_in")

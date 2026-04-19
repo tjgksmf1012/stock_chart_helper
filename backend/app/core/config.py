@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     kis_base_url: str = "https://openapi.koreainvestment.com:9443"
     kis_mock_base_url: str = "https://openapivts.koreainvestment.com:29443"
     kis_token_cache_path: str = "data/kis_token_cache.json"
+    kis_max_concurrent_requests: int = 2
+    kis_request_spacing_ms: int = 350
 
     # Cache TTL (seconds)
     daily_bars_ttl: int = 3600
