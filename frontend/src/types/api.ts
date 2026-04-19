@@ -124,6 +124,9 @@ export interface AnalysisResult {
   reentry_summary: string
   reentry_case: string
   reentry_case_label: string
+  reentry_profile_key: string
+  reentry_profile_label: string
+  reentry_profile_summary: string
   reentry_trigger: string
   reentry_compression_score: number
   reentry_volume_recovery_score: number
@@ -218,6 +221,9 @@ export interface DashboardItem {
   reentry_summary: string
   reentry_case: string
   reentry_case_label: string
+  reentry_profile_key: string
+  reentry_profile_label: string
+  reentry_profile_summary: string
   reentry_trigger: string
   reentry_compression_score: number
   reentry_volume_recovery_score: number

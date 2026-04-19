@@ -129,6 +129,9 @@ class AnalysisResult(BaseModel):
     reentry_summary: str = ""
     reentry_case: str = "none"
     reentry_case_label: str = "구조 없음"
+    reentry_profile_key: str = "none"
+    reentry_profile_label: str = "평가 보류"
+    reentry_profile_summary: str = ""
     reentry_trigger: str = ""
     reentry_compression_score: float = 0.0
     reentry_volume_recovery_score: float = 0.0
@@ -223,6 +226,9 @@ class DashboardItem(BaseModel):
     reentry_summary: str = ""
     reentry_case: str = "none"
     reentry_case_label: str = "구조 없음"
+    reentry_profile_key: str = "none"
+    reentry_profile_label: str = "평가 보류"
+    reentry_profile_summary: str = ""
     reentry_trigger: str = ""
     reentry_compression_score: float = 0.0
     reentry_volume_recovery_score: float = 0.0

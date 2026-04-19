@@ -30,6 +30,25 @@ _BEARISH_PATTERNS = {
     "head_and_shoulders",
     "descending_triangle",
 }
+_REENTRY_REVERSAL_PATTERNS = {
+    "double_bottom",
+    "double_top",
+    "inverse_head_and_shoulders",
+    "head_and_shoulders",
+    "rounding_bottom",
+}
+_REENTRY_COMPRESSION_PATTERNS = {
+    "ascending_triangle",
+    "descending_triangle",
+    "symmetric_triangle",
+    "rectangle",
+}
+_REENTRY_MOMENTUM_PATTERNS = {
+    "cup_and_handle",
+    "vcp",
+    "falling_channel",
+    "rising_channel",
+}
 
 _FETCH_STATUS_LABELS = {
     "live_ok": "실시간 수집 성공",
@@ -69,6 +88,208 @@ def _is_bullish(pattern_type: str) -> bool:
 
 def _is_bearish(pattern_type: str) -> bool:
     return pattern_type in _BEARISH_PATTERNS
+
+
+def _reentry_pattern_profile(pattern_type: str) -> dict[str, Any]:
+    if pattern_type in _REENTRY_REVERSAL_PATTERNS:
+        return {
+            "profile_key": "reversal_reclaim",
+            "profile_label": "반전 복구형",
+            "profile_summary": "W·역헤드앤숄더·반전 계열은 기준선 재장악과 거래량 재유입을 더 크게 봅니다.",
+            "weights": {
+                "compression": 0.15,
+                "volume_recovery": 0.24,
+                "trigger_hold": 0.28,
+                "wick_absorption": 0.16,
+                "failure_burden": 0.17,
+            },
+            "notes": {
+                "compression": "반전형은 급한 확장보다 바닥권 진폭이 차분히 줄어드는지를 먼저 봅니다.",
+                "volume_recovery": "목선 재도전 구간에서 거래량이 다시 붙어야 반전 신뢰도가 올라갑니다.",
+                "trigger_hold": "W/헤드앤숄더 계열은 목선 재장악 여부가 재진입 해석의 핵심입니다.",
+                "wick_absorption": "되밀림 꼬리를 빠르게 흡수할수록 매물 소화가 잘 되는 반전형으로 봅니다.",
+                "failure_burden": "반전형은 직전 실패 돌파가 누적될수록 다시 실패할 확률도 같이 봅니다.",
+            },
+            "thresholds": {
+                "inside_reset_box_span": 0.24,
+                "shallow_pullback_span": 0.32,
+                "repair_recovery": 0.42,
+                "repair_distance": 0.44,
+                "repair_headroom": 0.24,
+                "repair_recency": 0.22,
+                "box_compression": 0.48,
+                "box_trigger_hold": 0.58,
+                "box_failure_burden": 0.50,
+                "pullback_entry_window": 0.46,
+                "pullback_volume_recovery": 0.58,
+                "pullback_wick_absorption": 0.50,
+                "primary_entry_window": 0.62,
+                "primary_headroom": 0.30,
+                "forming_distance": 0.50,
+                "forming_headroom": 0.24,
+            },
+        }
+
+    if pattern_type in _REENTRY_COMPRESSION_PATTERNS:
+        return {
+            "profile_key": "compression_breakout",
+            "profile_label": "압축 돌파형",
+            "profile_summary": "삼각수렴·박스 계열은 폭 수축 유지와 실패 누적 관리 비중이 큽니다.",
+            "weights": {
+                "compression": 0.29,
+                "volume_recovery": 0.15,
+                "trigger_hold": 0.20,
+                "wick_absorption": 0.10,
+                "failure_burden": 0.26,
+            },
+            "notes": {
+                "compression": "수렴/박스형은 폭이 계속 줄어드는지가 재돌파 준비의 첫 번째 단서입니다.",
+                "volume_recovery": "돌파 직전 거래량이 서서히 붙어야 압축이 의미 있는 에너지로 이어집니다.",
+                "trigger_hold": "상단·하단 기준선을 너무 자주 넘나들면 박스형 재돌파 해석이 약해집니다.",
+                "wick_absorption": "박스 끝단에서 꼬리를 소화해야 가짜 돌파보다 구조 유지 쪽으로 해석됩니다.",
+                "failure_burden": "수렴형은 재돌파 실패가 반복될수록 에너지 소모가 커져 감점 폭을 키웁니다.",
+            },
+            "thresholds": {
+                "inside_reset_box_span": 0.28,
+                "shallow_pullback_span": 0.30,
+                "repair_recovery": 0.45,
+                "repair_distance": 0.48,
+                "repair_headroom": 0.25,
+                "repair_recency": 0.24,
+                "box_compression": 0.62,
+                "box_trigger_hold": 0.52,
+                "box_failure_burden": 0.60,
+                "pullback_entry_window": 0.50,
+                "pullback_volume_recovery": 0.46,
+                "pullback_wick_absorption": 0.44,
+                "primary_entry_window": 0.64,
+                "primary_headroom": 0.32,
+                "forming_distance": 0.54,
+                "forming_headroom": 0.24,
+            },
+        }
+
+    if pattern_type in _REENTRY_MOMENTUM_PATTERNS:
+        return {
+            "profile_key": "momentum_relaunch",
+            "profile_label": "추세 재가속형",
+            "profile_summary": "VCP·컵핸들·채널 계열은 거래량 복원, 꼬리 흡수, 얕은 눌림 뒤 재가속을 더 봅니다.",
+            "weights": {
+                "compression": 0.24,
+                "volume_recovery": 0.25,
+                "trigger_hold": 0.18,
+                "wick_absorption": 0.21,
+                "failure_burden": 0.12,
+            },
+            "notes": {
+                "compression": "추세 재가속형도 수축은 중요하지만 너무 타이트하지 않아도 얕은 눌림이면 용인합니다.",
+                "volume_recovery": "재가속형은 거래량이 다시 늘어나는 순간이 실제 재출발 신호에 가깝습니다.",
+                "trigger_hold": "핸들 상단이나 기준선 근처를 지켜야 재가속 시나리오가 유지됩니다.",
+                "wick_absorption": "눌림 뒤 아랫꼬리 흡수 또는 윗꼬리 소화가 잘 보이면 재가속 확률을 높게 봅니다.",
+                "failure_burden": "직전 실패 횟수는 보조적으로 보되, 흐름이 빠르게 회복되면 일부 만회할 수 있습니다.",
+            },
+            "thresholds": {
+                "inside_reset_box_span": 0.22,
+                "shallow_pullback_span": 0.42,
+                "repair_recovery": 0.46,
+                "repair_distance": 0.44,
+                "repair_headroom": 0.22,
+                "repair_recency": 0.22,
+                "box_compression": 0.54,
+                "box_trigger_hold": 0.50,
+                "box_failure_burden": 0.46,
+                "pullback_entry_window": 0.44,
+                "pullback_volume_recovery": 0.56,
+                "pullback_wick_absorption": 0.56,
+                "primary_entry_window": 0.60,
+                "primary_headroom": 0.28,
+                "forming_distance": 0.48,
+                "forming_headroom": 0.22,
+            },
+        }
+
+    return {
+        "profile_key": "balanced",
+        "profile_label": "균형형",
+        "profile_summary": "특정 재진입 편향을 두기보다 수축, 거래량, 기준선 유지력을 고르게 봅니다.",
+        "weights": {
+            "compression": 0.20,
+            "volume_recovery": 0.22,
+            "trigger_hold": 0.24,
+            "wick_absorption": 0.18,
+            "failure_burden": 0.16,
+        },
+        "notes": {
+            "compression": "최근 변동폭이 직전 구간보다 줄수록 재축적 구조로 해석합니다.",
+            "volume_recovery": "최근 2~3개 바에서 거래량이 다시 붙는지 확인합니다.",
+            "trigger_hold": "목선 또는 기준선 위/아래를 얼마나 안정적으로 지키는지 반영합니다.",
+            "wick_absorption": "윗꼬리 또는 아랫꼬리를 얼마나 잘 소화하는지 봅니다.",
+            "failure_burden": "최근 재돌파 실패 횟수가 적을수록 높은 점수를 줍니다.",
+        },
+        "thresholds": {
+            "inside_reset_box_span": 0.22,
+            "shallow_pullback_span": 0.38,
+            "repair_recovery": 0.45,
+            "repair_distance": 0.46,
+            "repair_headroom": 0.24,
+            "repair_recency": 0.22,
+            "box_compression": 0.56,
+            "box_trigger_hold": 0.54,
+            "box_failure_burden": 0.48,
+            "pullback_entry_window": 0.46,
+            "pullback_volume_recovery": 0.50,
+            "pullback_wick_absorption": 0.46,
+            "primary_entry_window": 0.64,
+            "primary_headroom": 0.32,
+            "forming_distance": 0.52,
+            "forming_headroom": 0.24,
+        },
+    }
+
+
+def _build_reentry_factors(
+    *,
+    profile: dict[str, Any],
+    compression_score: float,
+    volume_recovery_score: float,
+    trigger_hold_score: float,
+    wick_absorption_score: float,
+    failure_burden_score: float,
+) -> list[dict[str, Any]]:
+    factors = [
+        {
+            "label": "박스 수축도",
+            "score": compression_score,
+            "weight": float(profile["weights"]["compression"]),
+            "note": str(profile["notes"]["compression"]),
+        },
+        {
+            "label": "거래량 복원",
+            "score": volume_recovery_score,
+            "weight": float(profile["weights"]["volume_recovery"]),
+            "note": str(profile["notes"]["volume_recovery"]),
+        },
+        {
+            "label": "기준선 유지력",
+            "score": trigger_hold_score,
+            "weight": float(profile["weights"]["trigger_hold"]),
+            "note": str(profile["notes"]["trigger_hold"]),
+        },
+        {
+            "label": "꼬리 흡수력",
+            "score": wick_absorption_score,
+            "weight": float(profile["weights"]["wick_absorption"]),
+            "note": str(profile["notes"]["wick_absorption"]),
+        },
+        {
+            "label": "실패 부담 관리",
+            "score": failure_burden_score,
+            "weight": float(profile["weights"]["failure_burden"]),
+            "note": str(profile["notes"]["failure_burden"]),
+        },
+    ]
+    factors.sort(key=lambda item: (-float(item["weight"]), item["label"]))
+    return factors
 
 
 def _df_timestamp_column(df: pd.DataFrame) -> str:
@@ -815,7 +1036,16 @@ def _reentry_factor_breakdown(
     timeframe: str,
     pattern: PatternResult,
 ) -> dict[str, Any]:
+    profile = _reentry_pattern_profile(pattern.pattern_type)
     if df.empty:
+        reentry_factors = _build_reentry_factors(
+            profile=profile,
+            compression_score=0.5,
+            volume_recovery_score=0.5,
+            trigger_hold_score=0.5,
+            wick_absorption_score=0.5,
+            failure_burden_score=0.5,
+        )
         return {
             "compression_score": 0.5,
             "volume_recovery_score": 0.5,
@@ -823,7 +1053,11 @@ def _reentry_factor_breakdown(
             "wick_absorption_score": 0.5,
             "failure_burden_score": 0.5,
             "detail_score": 0.5,
-            "reentry_factors": [],
+            "reentry_factors": reentry_factors,
+            "reentry_profile_key": profile["profile_key"],
+            "reentry_profile_label": profile["profile_label"],
+            "reentry_profile_summary": profile["profile_summary"],
+            "thresholds": profile["thresholds"],
         }
 
     bullish = _is_bullish(pattern.pattern_type) or not _is_bearish(pattern.pattern_type)
@@ -903,38 +1137,14 @@ def _reentry_factor_breakdown(
                     fail_count += 1
         failure_burden_score = _score_clamp(1.0 - fail_count / 3.0)
 
-    reentry_factors = [
-        {
-            "label": "박스 수축도",
-            "score": compression_score,
-            "weight": 0.20,
-            "note": "최근 변동폭이 직전 구간보다 줄수록 재축적 구조로 해석합니다.",
-        },
-        {
-            "label": "거래량 복원",
-            "score": volume_recovery_score,
-            "weight": 0.22,
-            "note": "최근 2~3개 바에서 거래량이 다시 붙는지 확인합니다.",
-        },
-        {
-            "label": "기준선 유지력",
-            "score": trigger_hold_score,
-            "weight": 0.24,
-            "note": "목선 또는 기준선 위/아래를 얼마나 안정적으로 지키는지 반영합니다.",
-        },
-        {
-            "label": "꼬리 흡수력",
-            "score": wick_absorption_score,
-            "weight": 0.18,
-            "note": "윗꼬리 또는 아랫꼬리를 얼마나 잘 소화하는지 봅니다.",
-        },
-        {
-            "label": "실패 부담 관리",
-            "score": failure_burden_score,
-            "weight": 0.16,
-            "note": "최근 재돌파 실패 횟수가 적을수록 높은 점수를 줍니다.",
-        },
-    ]
+    reentry_factors = _build_reentry_factors(
+        profile=profile,
+        compression_score=compression_score,
+        volume_recovery_score=volume_recovery_score,
+        trigger_hold_score=trigger_hold_score,
+        wick_absorption_score=wick_absorption_score,
+        failure_burden_score=failure_burden_score,
+    )
     detail_score = _score_clamp(sum(float(item["score"]) * float(item["weight"]) for item in reentry_factors))
     return {
         "compression_score": compression_score,
@@ -944,6 +1154,10 @@ def _reentry_factor_breakdown(
         "failure_burden_score": failure_burden_score,
         "detail_score": detail_score,
         "reentry_factors": reentry_factors,
+        "reentry_profile_key": profile["profile_key"],
+        "reentry_profile_label": profile["profile_label"],
+        "reentry_profile_summary": profile["profile_summary"],
+        "thresholds": profile["thresholds"],
     }
 
 
@@ -970,6 +1184,9 @@ def _reentry_profile(
             "reentry_summary": f"{label} 기준 아직 재진입 구조를 평가할 만한 패턴 정보가 부족합니다.",
             "reentry_case": "none",
             "reentry_case_label": "구조 없음",
+            "reentry_profile_key": "none",
+            "reentry_profile_label": "평가 보류",
+            "reentry_profile_summary": "활성 패턴이 충분히 쌓이면 패턴군별 재진입 해석 기준을 계산합니다.",
             "reentry_trigger": "활성 패턴이 충분히 쌓이면 재진입 구조를 계산합니다.",
             "reentry_compression_score": 0.0,
             "reentry_volume_recovery_score": 0.0,
@@ -980,6 +1197,7 @@ def _reentry_profile(
         }
 
     factor_profile = _reentry_factor_breakdown(df=df, timeframe=timeframe, pattern=pattern)
+    thresholds = factor_profile["thresholds"]
     detail_fields = {
         "reentry_compression_score": factor_profile["compression_score"],
         "reentry_volume_recovery_score": factor_profile["volume_recovery_score"],
@@ -987,6 +1205,9 @@ def _reentry_profile(
         "reentry_wick_absorption_score": factor_profile["wick_absorption_score"],
         "reentry_failure_burden_score": factor_profile["failure_burden_score"],
         "reentry_factors": factor_profile["reentry_factors"],
+        "reentry_profile_key": factor_profile["reentry_profile_key"],
+        "reentry_profile_label": factor_profile["reentry_profile_label"],
+        "reentry_profile_summary": factor_profile["reentry_profile_summary"],
     }
 
     neckline = pattern.neckline
@@ -994,25 +1215,35 @@ def _reentry_profile(
     target = pattern.target_level
     anchor_level = neckline if neckline is not None else current_close
     span = max(abs((target or current_close) - anchor_level), max(current_close * 0.015, 1.0))
+    bullish = _is_bullish(pattern.pattern_type) or not _is_bearish(pattern.pattern_type)
 
     distance_to_trigger = 0.0
     if neckline is not None:
         distance_to_trigger = max(0.0, 1.0 - min(1.0, abs(current_close - neckline) / span))
 
-    above_neckline = neckline is None or current_close >= neckline
-    inside_reset_box = neckline is not None and abs(current_close - neckline) <= span * 0.22
-    shallow_pullback = neckline is not None and current_close > neckline and (current_close - neckline) <= span * 0.38
+    above_neckline = neckline is None or (current_close >= neckline if bullish else current_close <= neckline)
+    inside_reset_box = neckline is not None and abs(current_close - neckline) <= span * float(thresholds["inside_reset_box_span"])
+    if bullish:
+        shallow_pullback = neckline is not None and current_close > neckline and (current_close - neckline) <= span * float(thresholds["shallow_pullback_span"])
+    else:
+        shallow_pullback = neckline is not None and current_close < neckline and (neckline - current_close) <= span * float(thresholds["shallow_pullback_span"])
     trigger_price = neckline if neckline is not None else current_close
 
     recovery_from_invalidation = 0.0
     if invalidation is not None:
         if target and abs(target - invalidation) > 1e-9:
-            recovery_from_invalidation = max(
-                0.0,
-                min(1.0, (current_close - invalidation) / abs(target - invalidation)),
-            )
+            if bullish:
+                recovery_from_invalidation = max(
+                    0.0,
+                    min(1.0, (current_close - invalidation) / abs(target - invalidation)),
+                )
+            else:
+                recovery_from_invalidation = max(
+                    0.0,
+                    min(1.0, (invalidation - current_close) / abs(target - invalidation)),
+                )
         else:
-            recovery_from_invalidation = 1.0 if current_close > invalidation else 0.0
+            recovery_from_invalidation = 1.0 if (current_close > invalidation if bullish else current_close < invalidation) else 0.0
 
     rebuild_score = max(
         0.0,
@@ -1030,10 +1261,10 @@ def _reentry_profile(
 
     if invalidated_at or pattern.state == "invalidated":
         repaired = (
-            recovery_from_invalidation >= 0.45
-            and distance_to_trigger >= 0.46
-            and headroom_score >= 0.24
-            and recency_score >= 0.22
+            recovery_from_invalidation >= float(thresholds["repair_recovery"])
+            and distance_to_trigger >= float(thresholds["repair_distance"])
+            and headroom_score >= float(thresholds["repair_headroom"])
+            and recency_score >= float(thresholds["repair_recency"])
         )
         if repaired:
             score = round(max(0.28, min(0.54, 0.54 * rebuild_score + 0.22 * recovery_from_invalidation + 0.24 * factor_profile["detail_score"])), 3)
@@ -1063,7 +1294,13 @@ def _reentry_profile(
             and target_distance_pct >= 0.04
             and stop_distance_pct >= 0.01
         )
-        if reset_ready and inside_reset_box and factor_profile["compression_score"] >= 0.56 and factor_profile["trigger_hold_score"] >= 0.54:
+        if (
+            reset_ready
+            and inside_reset_box
+            and factor_profile["compression_score"] >= float(thresholds["box_compression"])
+            and factor_profile["trigger_hold_score"] >= float(thresholds["box_trigger_hold"])
+            and factor_profile["failure_burden_score"] >= float(thresholds["box_failure_burden"])
+        ):
             score = round(max(0.46, min(0.72, 0.52 * rebuild_score + 0.30 * factor_profile["compression_score"] + 0.18 * factor_profile["trigger_hold_score"])), 3)
             return {
                 "reentry_score": score,
@@ -1074,14 +1311,21 @@ def _reentry_profile(
                 "reentry_trigger": f"목선 {trigger_price:,.0f} 부근 박스 유지 후 거래대금 동반 재돌파를 기다리세요.",
                 **detail_fields,
             }
-        if reset_ready and shallow_pullback and above_neckline and entry_window_score >= 0.46 and factor_profile["volume_recovery_score"] >= 0.5:
+        if (
+            reset_ready
+            and shallow_pullback
+            and above_neckline
+            and entry_window_score >= float(thresholds["pullback_entry_window"])
+            and factor_profile["volume_recovery_score"] >= float(thresholds["pullback_volume_recovery"])
+            and factor_profile["wick_absorption_score"] >= float(thresholds["pullback_wick_absorption"])
+        ):
             score = round(max(0.44, min(0.70, 0.44 * rebuild_score + 0.22 * entry_window_score + 0.20 * factor_profile["volume_recovery_score"] + 0.14 * factor_profile["wick_absorption_score"])), 3)
             return {
                 "reentry_score": score,
                 "reentry_label": "재돌파 대기",
                 "reentry_summary": f"{label} 기준 목표 소화 후 깊지 않은 눌림만 거치며 다시 위쪽으로 힘을 모으는 중입니다. 눌림 후 재가속 여부가 중요합니다.",
                 "reentry_case": "pullback_relaunch",
-                "reentry_case_label": "눌림 후 재상승형",
+                "reentry_case_label": "눌림 후 재가속형",
                 "reentry_trigger": f"목선 위 안착 유지와 최근 고점 재돌파가 함께 나오는지 보세요.",
                 **detail_fields,
             }
@@ -1106,7 +1350,11 @@ def _reentry_profile(
             **detail_fields,
         }
 
-    if pattern.state == "confirmed" and entry_window_score >= 0.64 and headroom_score >= 0.32:
+    if (
+        pattern.state == "confirmed"
+        and entry_window_score >= float(thresholds["primary_entry_window"])
+        and headroom_score >= float(thresholds["primary_headroom"])
+    ):
         score = round(max(0.64, min(0.84, 0.46 * entry_window_score + 0.30 * headroom_score + 0.24 * factor_profile["detail_score"])), 3)
         return {
             "reentry_score": score,
@@ -1118,14 +1366,18 @@ def _reentry_profile(
             **detail_fields,
         }
 
-    if pattern.state in {"armed", "forming"} and distance_to_trigger >= 0.52 and headroom_score >= 0.24:
+    if (
+        pattern.state in {"armed", "forming"}
+        and distance_to_trigger >= float(thresholds["forming_distance"])
+        and headroom_score >= float(thresholds["forming_headroom"])
+    ):
         score = round(max(0.44, min(0.68, 0.58 * rebuild_score + 0.18 * factor_profile["volume_recovery_score"] + 0.14 * factor_profile["wick_absorption_score"] + 0.10 * factor_profile["trigger_hold_score"])), 3)
         return {
             "reentry_score": score,
             "reentry_label": "재돌파 대기",
             "reentry_summary": f"{label} 기준 기준선 재접근 이후 재돌파를 시도할 수 있는 구조입니다. 확인 전까지는 관찰 우선 구간입니다.",
             "reentry_case": "pullback_relaunch",
-            "reentry_case_label": "눌림 후 재상승형",
+            "reentry_case_label": "눌림 후 재가속형",
             "reentry_trigger": f"기준선 {trigger_price:,.0f} 재확인 뒤 돌파 캔들과 거래량 회복을 같이 확인하세요.",
             **detail_fields,
         }
@@ -2246,6 +2498,9 @@ def build_no_signal_snapshot(
         reentry_summary="활성 패턴이 없어 재진입 구조 평가는 아직 보류했습니다.",
         reentry_case="none",
         reentry_case_label="구조 없음",
+        reentry_profile_key="none",
+        reentry_profile_label="평가 보류",
+        reentry_profile_summary="활성 패턴이 충분히 쌓이면 패턴군별 재진입 해석 기준을 계산합니다.",
         reentry_trigger="활성 패턴이 충분히 쌓이면 재진입 유형을 계산합니다.",
         reentry_compression_score=0.0,
         reentry_volume_recovery_score=0.0,
@@ -2637,6 +2892,9 @@ async def analyze_symbol_dataframe(
         reentry_summary=reentry["reentry_summary"],
         reentry_case=reentry["reentry_case"],
         reentry_case_label=reentry["reentry_case_label"],
+        reentry_profile_key=reentry["reentry_profile_key"],
+        reentry_profile_label=reentry["reentry_profile_label"],
+        reentry_profile_summary=reentry["reentry_profile_summary"],
         reentry_trigger=reentry["reentry_trigger"],
         reentry_compression_score=reentry["reentry_compression_score"],
         reentry_volume_recovery_score=reentry["reentry_volume_recovery_score"],

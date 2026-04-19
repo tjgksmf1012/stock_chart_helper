@@ -42,7 +42,7 @@ const FETCH_STATUS_OPTIONS = [
 
 const REENTRY_CASE_OPTIONS = [
   { value: 'box_reaccumulation', label: '박스 재축적형' },
-  { value: 'pullback_relaunch', label: '눌림 후 재상승형' },
+  { value: 'pullback_relaunch', label: '눌림 후 재가속형' },
   { value: 'failed_breakout_recovery', label: '실패 돌파 복구형' },
   { value: 'range_reset', label: '재축적 준비형' },
   { value: 'primary_setup', label: '신규 셋업 우선형' },

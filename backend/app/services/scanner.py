@@ -401,20 +401,22 @@ def _apply_setup_metadata(row: dict[str, Any]) -> dict[str, Any]:
     reentry_score = float(row.get("reentry_score", 0.0))
     reentry_label = str(row.get("reentry_label") or "")
     reentry_case_label = str(row.get("reentry_case_label") or "")
+    reentry_profile_label = str(row.get("reentry_profile_label") or "")
+    reentry_structure_label = reentry_case_label or reentry_profile_label or "재진입 구조"
     if reentry_label == "재돌파 대기":
         row["composite_score"] = round(float(row.get("composite_score", 0.0)) + 0.05, 3)
         row["scenario_text"] = (
-            f"{row.get('scenario_text', '')} {reentry_case_label or '재돌파 구조'}로 읽히며, 기준선 부근 재정비 후 다시 확장될 수 있습니다."
+            f"{row.get('scenario_text', '')} {reentry_structure_label}로 읽히며, 기준선 부근 재정비 후 다시 확장될 수 있습니다."
         ).strip()
     elif reentry_label == "재축적 관찰":
         row["composite_score"] = round(float(row.get("composite_score", 0.0)) + 0.02, 3)
         row["scenario_text"] = (
-            f"{row.get('scenario_text', '')} {reentry_case_label or '재축적 구조'}가 진행 중이라 박스 유지 여부가 중요합니다."
+            f"{row.get('scenario_text', '')} {reentry_structure_label}가 진행 중이라 박스 유지 여부가 중요합니다."
         ).strip()
     elif reentry_label == "실패 후 복구 관찰":
         row["composite_score"] = round(float(row.get("composite_score", 0.0)) - 0.03, 3)
         row["scenario_text"] = (
-            f"{row.get('scenario_text', '')} {reentry_case_label or '복구 구조'}지만 이전 실패 이력이 있어 더 깔끔한 회복 확인이 필요합니다."
+            f"{row.get('scenario_text', '')} {reentry_structure_label}지만 이전 실패 이력이 있어 더 깔끔한 회복 확인이 필요합니다."
         ).strip()
     elif reentry_label == "재진입 비선호":
         row["composite_score"] = round(float(row.get("composite_score", 0.0)) - 0.12, 3)
@@ -715,6 +717,9 @@ async def _analyze_one(
             "reentry_summary": analysis.reentry_summary,
             "reentry_case": analysis.reentry_case,
             "reentry_case_label": analysis.reentry_case_label,
+            "reentry_profile_key": analysis.reentry_profile_key,
+            "reentry_profile_label": analysis.reentry_profile_label,
+            "reentry_profile_summary": analysis.reentry_profile_summary,
             "reentry_trigger": analysis.reentry_trigger,
             "reentry_compression_score": analysis.reentry_compression_score,
             "reentry_volume_recovery_score": analysis.reentry_volume_recovery_score,

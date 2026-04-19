@@ -305,19 +305,33 @@ function ReentryCard({ analysis }: { analysis: AnalysisResult }) {
         <Badge variant={scoreVariant(score)} className="ml-auto">
           {analysis.reentry_label}
         </Badge>
-      </div>
-      <ProgressBar score={score} color="bg-amber-300" />
-      <p className="text-xs leading-relaxed text-muted-foreground">{analysis.reentry_summary}</p>
-      {analysis.reentry_case_label && analysis.reentry_case !== 'none' && (
-        <div className="rounded-lg border border-amber-400/15 bg-background/60 p-2 text-xs text-amber-100">
-          <span className="font-medium">유형:</span> {analysis.reentry_case_label}
         </div>
-      )}
-      {analysis.reentry_trigger && (
-        <div className="rounded-lg border border-border bg-background/60 p-2 text-xs text-muted-foreground">
-          <span className="font-medium text-amber-200">확인 포인트:</span> {analysis.reentry_trigger}
-        </div>
-      )}
+        <ProgressBar score={score} color="bg-amber-300" />
+        <p className="text-xs leading-relaxed text-muted-foreground">{analysis.reentry_summary}</p>
+        {(analysis.reentry_case !== 'none' || analysis.reentry_profile_key !== 'none') && (
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {analysis.reentry_case_label && analysis.reentry_case !== 'none' && (
+              <div className="rounded-lg border border-amber-400/15 bg-background/60 p-2 text-xs text-amber-100">
+                <span className="font-medium">유형:</span> {analysis.reentry_case_label}
+              </div>
+            )}
+            {analysis.reentry_profile_label && analysis.reentry_profile_key !== 'none' && (
+              <div className="rounded-lg border border-amber-400/15 bg-background/60 p-2 text-xs text-amber-100">
+                <span className="font-medium">해석 기준:</span> {analysis.reentry_profile_label}
+              </div>
+            )}
+          </div>
+        )}
+        {analysis.reentry_profile_summary && analysis.reentry_profile_key !== 'none' && (
+          <div className="rounded-lg border border-amber-400/15 bg-amber-400/5 p-2 text-xs leading-relaxed text-amber-100/90">
+            <span className="font-medium text-amber-200">가중치 메모:</span> {analysis.reentry_profile_summary}
+          </div>
+        )}
+        {analysis.reentry_trigger && (
+          <div className="rounded-lg border border-border bg-background/60 p-2 text-xs text-muted-foreground">
+            <span className="font-medium text-amber-200">확인 포인트:</span> {analysis.reentry_trigger}
+          </div>
+        )}
       {analysis.reentry_factors?.length > 0 && (
         <div className="grid grid-cols-1 gap-2">
           {analysis.reentry_factors.map(factor => (
