@@ -291,6 +291,42 @@ export default function DashboardPage() {
           <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 p-3 text-xs text-cyan-100">
             {intradaySummary.guidance}
           </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => {
+                setIntradayView('all')
+                setIntradayPreset('all')
+              }}
+              className="rounded-md border border-border bg-card px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            >
+              전체 보기
+            </button>
+            <button
+              onClick={() => setIntradayView('live')}
+              className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-xs text-emerald-100 transition-colors hover:bg-emerald-500/15"
+            >
+              live만 보기
+            </button>
+            <button
+              onClick={() => setIntradayPreset('ready-now')}
+              className="rounded-md border border-sky-500/30 bg-sky-500/10 px-2.5 py-1.5 text-xs text-sky-100 transition-colors hover:bg-sky-500/15"
+            >
+              confirmed/즉시 대응
+            </button>
+            <button
+              onClick={() => setIntradayPreset('watch')}
+              className="rounded-md border border-violet-500/30 bg-violet-500/10 px-2.5 py-1.5 text-xs text-violet-100 transition-colors hover:bg-violet-500/15"
+            >
+              forming/watch
+            </button>
+            <button
+              onClick={() => setIntradayPreset('cooling')}
+              className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-100 transition-colors hover:bg-amber-500/15"
+            >
+              관망/냉각
+            </button>
+          </div>
         </Card>
       )}
 
