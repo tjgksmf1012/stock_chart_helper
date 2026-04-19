@@ -42,6 +42,7 @@ def _start_scheduler() -> None:
         from apscheduler.schedulers.asyncio import AsyncIOScheduler
         from apscheduler.triggers.cron import CronTrigger
 
+        from .api.routes.system import run_scheduled_intraday_warmup
         from .services.backtest_engine import run_backtest
         from .services.scanner import run_scan
 
@@ -74,9 +75,41 @@ def _start_scheduler() -> None:
             id="weekly_backtest",
             replace_existing=True,
         )
+        scheduler.add_job(
+            run_scheduled_intraday_warmup,
+            CronTrigger(day_of_week="mon-fri", hour=9, minute=20, timezone="Asia/Seoul"),
+            kwargs={"plan_id": "open_candidate_cache"},
+            id="open_intraday_warmup",
+            replace_existing=True,
+        )
+        scheduler.add_job(
+            run_scheduled_intraday_warmup,
+            CronTrigger(day_of_week="mon-fri", hour=12, minute=40, timezone="Asia/Seoul"),
+            kwargs={"plan_id": "midday_candidate_cache"},
+            id="midday_intraday_warmup",
+            replace_existing=True,
+        )
+        scheduler.add_job(
+            run_scheduled_intraday_warmup,
+            CronTrigger(day_of_week="mon-fri", hour=14, minute=50, timezone="Asia/Seoul"),
+            kwargs={"plan_id": "closing_candidate_cache"},
+            id="closing_intraday_warmup",
+            replace_existing=True,
+        )
 
         scheduler.start()
-        logger.info("APScheduler started", jobs=["morning_scan", "midday_scan", "close_scan", "weekly_backtest"])
+        logger.info(
+            "APScheduler started",
+            jobs=[
+                "morning_scan",
+                "midday_scan",
+                "close_scan",
+                "weekly_backtest",
+                "open_intraday_warmup",
+                "midday_intraday_warmup",
+                "closing_intraday_warmup",
+            ],
+        )
     except ImportError:
         logger.warning("APScheduler not installed; scheduled scans are disabled")
     except Exception as exc:

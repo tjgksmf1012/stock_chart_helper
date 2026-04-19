@@ -290,6 +290,16 @@ export interface IntradayStoreStatus {
   timeframes: IntradayStoreTimeframeStatus[]
 }
 
+export interface ScheduledWarmupPlan {
+  id: string
+  label: string
+  source_timeframe: Timeframe | string
+  limit: number
+  timeframes: string[]
+  allow_live: boolean
+  schedule: string
+}
+
 export interface RuntimeStatusResponse {
   generated_at: string
   app_name: string
@@ -298,6 +308,7 @@ export interface RuntimeStatusResponse {
   cache: CacheRuntimeStatus
   intraday_store: IntradayStoreStatus
   scheduler_enabled: boolean
+  scheduled_warmups: ScheduledWarmupPlan[]
   data_notes: string[]
 }
 

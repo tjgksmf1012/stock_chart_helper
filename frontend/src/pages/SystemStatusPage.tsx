@@ -249,6 +249,38 @@ export default function SystemStatusPage() {
             )}
           </Card>
 
+          {data.scheduled_warmups.length > 0 && (
+            <Card className="space-y-3">
+              <div className="flex items-center gap-2 text-sm font-semibold">
+                <Clock3 size={15} className="text-primary" />
+                자동 예열 스케줄
+              </div>
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                장중에는 후보군을 다시 뽑아 분봉 캐시를 자동으로 채웁니다. 기본값은 KIS 실시간 호출을 아껴 쓰도록 저장/공개 데이터 우선이며,
+                필요할 때만 수동 버튼으로 KIS 포함 예열을 실행하면 됩니다.
+              </p>
+              <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
+                {data.scheduled_warmups.map(plan => (
+                  <div key={plan.id} className="rounded-lg border border-border bg-background/60 p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="text-xs font-semibold text-foreground">{plan.label}</div>
+                        <div className="mt-1 text-[11px] text-muted-foreground">{plan.schedule}</div>
+                      </div>
+                      <Badge variant={plan.allow_live ? 'bullish' : 'muted'}>
+                        {plan.allow_live ? 'KIS 포함' : '저장 우선'}
+                      </Badge>
+                    </div>
+                    <div className="mt-3 space-y-1 text-xs text-muted-foreground">
+                      <div>후보 기준: {plan.source_timeframe} 상위 {plan.limit}개</div>
+                      <div>예열 분봉: {plan.timeframes.join(', ')}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
           <Card className="space-y-3">
             <div className="flex items-center gap-2 text-sm font-semibold">
               <ShieldCheck size={15} className="text-primary" />

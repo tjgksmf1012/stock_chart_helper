@@ -48,6 +48,35 @@ _warmup_status: dict[str, Any] = {
     "trigger_accepted": None,
     "results": [],
 }
+SCHEDULED_INTRADAY_WARMUP_PLANS: list[dict[str, Any]] = [
+    {
+        "id": "open_candidate_cache",
+        "label": "장초반 후보 분봉 캐시",
+        "source_timeframe": "1d",
+        "limit": 20,
+        "timeframes": ["15m", "30m", "60m"],
+        "allow_live": False,
+        "schedule": "평일 09:20",
+    },
+    {
+        "id": "midday_candidate_cache",
+        "label": "오후 후보 분봉 캐시",
+        "source_timeframe": "1d",
+        "limit": 20,
+        "timeframes": ["15m", "30m", "60m"],
+        "allow_live": False,
+        "schedule": "평일 12:40",
+    },
+    {
+        "id": "closing_candidate_cache",
+        "label": "마감 전 후보 분봉 캐시",
+        "source_timeframe": "60m",
+        "limit": 15,
+        "timeframes": ["15m", "30m", "60m"],
+        "allow_live": False,
+        "schedule": "평일 14:50",
+    },
+]
 
 
 def _read_token_cache_status(path_text: str) -> dict[str, Any]:
@@ -132,6 +161,7 @@ async def get_runtime_status() -> RuntimeStatusResponse:
         cache=CacheRuntimeStatus(**cache_status),
         intraday_store=IntradayStoreStatus(**intraday_store_status),
         scheduler_enabled=True,
+        scheduled_warmups=SCHEDULED_INTRADAY_WARMUP_PLANS,
         data_notes=[
             "일봉/주봉/월봉은 KRX 일봉을 기준으로 재샘플링합니다.",
             "분봉은 KIS 당일 분봉, Yahoo 공개 분봉, 로컬 저장 캐시를 조합합니다.",
@@ -409,6 +439,35 @@ def _trigger_background_warmup(
         )
     )
     return _get_warmup_status(trigger_accepted=True)
+
+
+def _scheduled_warmup_plan(plan_id: str) -> dict[str, Any] | None:
+    return next((plan for plan in SCHEDULED_INTRADAY_WARMUP_PLANS if plan["id"] == plan_id), None)
+
+
+async def run_scheduled_intraday_warmup(plan_id: str) -> IntradayWarmupJobStatus | None:
+    plan = _scheduled_warmup_plan(plan_id)
+    if not plan:
+        return None
+
+    request = IntradayCandidateWarmupRequest(
+        source_timeframe=str(plan["source_timeframe"]),
+        limit=int(plan["limit"]),
+        timeframes=list(plan["timeframes"]),
+        allow_live=bool(plan["allow_live"]),
+    )
+    timeframes = _normalize_intraday_timeframes(request.timeframes)
+    symbols = await _candidate_symbols_for_warmup(request)
+    if not symbols:
+        return _get_warmup_status(trigger_accepted=False)
+
+    return _trigger_background_warmup(
+        source=f"scheduled:{plan_id}",
+        symbols=symbols,
+        timeframes=timeframes,
+        allow_live=request.allow_live,
+        lookback_days=request.lookback_days,
+    )
 
 
 @router.post("/intraday/warmup/background", response_model=IntradayWarmupJobStatus)

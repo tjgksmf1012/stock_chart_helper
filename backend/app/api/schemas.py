@@ -262,6 +262,16 @@ class IntradayStoreStatus(BaseModel):
     timeframes: list[IntradayStoreTimeframeStatus] = Field(default_factory=list)
 
 
+class ScheduledWarmupPlan(BaseModel):
+    id: str
+    label: str
+    source_timeframe: str
+    limit: int
+    timeframes: list[str]
+    allow_live: bool
+    schedule: str
+
+
 class RuntimeStatusResponse(BaseModel):
     generated_at: str
     app_name: str
@@ -270,6 +280,7 @@ class RuntimeStatusResponse(BaseModel):
     cache: CacheRuntimeStatus
     intraday_store: IntradayStoreStatus
     scheduler_enabled: bool
+    scheduled_warmups: list[ScheduledWarmupPlan] = Field(default_factory=list)
     data_notes: list[str] = Field(default_factory=list)
 
 
