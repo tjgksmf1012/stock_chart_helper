@@ -6,7 +6,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Query
 
-from ..schemas import DashboardItem, DashboardResponse, ScanStatusResponse, SymbolInfo
+from ..schemas import DashboardItem, DashboardOverviewResponse, DashboardResponse, ScanStatusResponse, SymbolInfo
 from ...services.scanner import get_scan_results, get_scan_status, trigger_scan
 from ...services.timeframe_service import DEFAULT_TIMEFRAME, timeframe_label
 
@@ -146,23 +146,11 @@ def _resolve_ranked_rows(ranked: list[dict], data: list[dict], limit: int, *, al
     return _placeholder_rows(data, limit)
 
 
-@router.get("/scan-status", response_model=ScanStatusResponse)
-async def dashboard_scan_status(timeframe: str = Query(default=DEFAULT_TIMEFRAME)) -> ScanStatusResponse:
-    return ScanStatusResponse(**(await get_scan_status(_timeframe_query(timeframe))))
+def _allow_placeholder(timeframe: str) -> bool:
+    return timeframe in {"1m", "15m", "30m", "60m"}
 
 
-@router.post("/scan-refresh", response_model=ScanStatusResponse)
-async def dashboard_scan_refresh(timeframe: str = Query(default=DEFAULT_TIMEFRAME)) -> ScanStatusResponse:
-    return ScanStatusResponse(**(await trigger_scan(timeframe=_timeframe_query(timeframe), force_refresh=True, source="manual")))
-
-
-@router.get("/long-high-probability")
-async def dashboard_long(
-    timeframe: str = Query(default=DEFAULT_TIMEFRAME),
-    limit: int = Query(default=10, le=50),
-) -> DashboardResponse:
-    timeframe = _timeframe_query(timeframe)
-    data = await get_scan_results(timeframe)
+def _long_response(timeframe: str, data: list[dict], limit: int) -> DashboardResponse:
     ranked = [row for row in data if not row["no_signal_flag"] and row["p_up"] > 0.55 and row.get("action_plan") != "cooling"]
     ranked.sort(
         key=lambda row: (
@@ -178,18 +166,11 @@ async def dashboard_long(
         ),
         reverse=True,
     )
-    ranked = _resolve_ranked_rows(ranked, data, limit, allow_placeholder=timeframe in {"1m", "15m", "30m", "60m"})
-    items = [_make_item(index + 1, row) for index, row in enumerate(ranked)]
-    return _response("long_high_probability", timeframe, items)
+    ranked = _resolve_ranked_rows(ranked, data, limit, allow_placeholder=_allow_placeholder(timeframe))
+    return _response("long_high_probability", timeframe, [_make_item(index + 1, row) for index, row in enumerate(ranked)])
 
 
-@router.get("/short-high-probability")
-async def dashboard_short(
-    timeframe: str = Query(default=DEFAULT_TIMEFRAME),
-    limit: int = Query(default=10, le=50),
-) -> DashboardResponse:
-    timeframe = _timeframe_query(timeframe)
-    data = await get_scan_results(timeframe)
+def _short_response(timeframe: str, data: list[dict], limit: int) -> DashboardResponse:
     ranked = [row for row in data if not row["no_signal_flag"] and row["p_down"] > 0.55 and row.get("action_plan") != "cooling"]
     ranked.sort(
         key=lambda row: (
@@ -205,18 +186,11 @@ async def dashboard_short(
         ),
         reverse=True,
     )
-    ranked = _resolve_ranked_rows(ranked, data, limit, allow_placeholder=timeframe in {"1m", "15m", "30m", "60m"})
-    items = [_make_item(index + 1, row) for index, row in enumerate(ranked)]
-    return _response("short_high_probability", timeframe, items)
+    ranked = _resolve_ranked_rows(ranked, data, limit, allow_placeholder=_allow_placeholder(timeframe))
+    return _response("short_high_probability", timeframe, [_make_item(index + 1, row) for index, row in enumerate(ranked)])
 
 
-@router.get("/high-textbook-similarity")
-async def dashboard_similarity(
-    timeframe: str = Query(default=DEFAULT_TIMEFRAME),
-    limit: int = Query(default=10, le=50),
-) -> DashboardResponse:
-    timeframe = _timeframe_query(timeframe)
-    data = await get_scan_results(timeframe)
+def _similarity_response(timeframe: str, data: list[dict], limit: int) -> DashboardResponse:
     ranked = sorted(
         data,
         key=lambda row: (
@@ -232,31 +206,17 @@ async def dashboard_similarity(
         ),
         reverse=True,
     )
-    ranked = _resolve_ranked_rows(ranked, data, limit, allow_placeholder=timeframe in {"1m", "15m", "30m", "60m"})
-    items = [_make_item(index + 1, row) for index, row in enumerate(ranked)]
-    return _response("high_textbook_similarity", timeframe, items)
+    ranked = _resolve_ranked_rows(ranked, data, limit, allow_placeholder=_allow_placeholder(timeframe))
+    return _response("high_textbook_similarity", timeframe, [_make_item(index + 1, row) for index, row in enumerate(ranked)])
 
 
-@router.get("/watchlist-no-signal")
-async def dashboard_no_signal(
-    timeframe: str = Query(default=DEFAULT_TIMEFRAME),
-    limit: int = Query(default=10, le=50),
-) -> DashboardResponse:
-    timeframe = _timeframe_query(timeframe)
-    data = await get_scan_results(timeframe)
+def _no_signal_response(timeframe: str, data: list[dict], limit: int) -> DashboardResponse:
     ranked = [row for row in data if row["no_signal_flag"]]
     ranked.sort(key=lambda row: (row["data_quality"], row.get("historical_edge_score", 0.0), row["available_bars"]), reverse=True)
-    items = [_make_item(index + 1, row) for index, row in enumerate(ranked[:limit])]
-    return _response("watchlist_no_signal", timeframe, items)
+    return _response("watchlist_no_signal", timeframe, [_make_item(index + 1, row) for index, row in enumerate(ranked[:limit])])
 
 
-@router.get("/pattern-armed")
-async def dashboard_armed(
-    timeframe: str = Query(default=DEFAULT_TIMEFRAME),
-    limit: int = Query(default=10, le=50),
-) -> DashboardResponse:
-    timeframe = _timeframe_query(timeframe)
-    data = await get_scan_results(timeframe)
+def _armed_response(timeframe: str, data: list[dict], limit: int) -> DashboardResponse:
     ranked = [
         row for row in data
         if row.get("state") in ("armed", "forming") and row["textbook_similarity"] >= 0.5
@@ -275,18 +235,11 @@ async def dashboard_armed(
         ),
         reverse=True,
     )
-    ranked = _resolve_ranked_rows(ranked, data, limit, allow_placeholder=timeframe in {"1m", "15m", "30m", "60m"})
-    items = [_make_item(index + 1, row) for index, row in enumerate(ranked)]
-    return _response("pattern_armed", timeframe, items)
+    ranked = _resolve_ranked_rows(ranked, data, limit, allow_placeholder=_allow_placeholder(timeframe))
+    return _response("pattern_armed", timeframe, [_make_item(index + 1, row) for index, row in enumerate(ranked)])
 
 
-@router.get("/forming-candidates")
-async def dashboard_forming(
-    timeframe: str = Query(default=DEFAULT_TIMEFRAME),
-    limit: int = Query(default=10, le=50),
-) -> DashboardResponse:
-    timeframe = _timeframe_query(timeframe)
-    data = await get_scan_results(timeframe)
+def _forming_response(timeframe: str, data: list[dict], limit: int) -> DashboardResponse:
     ranked = [
         row for row in data
         if row.get("state") == "forming"
@@ -309,31 +262,23 @@ async def dashboard_forming(
         ),
         reverse=True,
     )
-    ranked = _resolve_ranked_rows(ranked, data, limit, allow_placeholder=timeframe in {"1m", "15m", "30m", "60m"})
-    items = [_make_item(index + 1, row) for index, row in enumerate(ranked)]
-    return _response("forming_candidates", timeframe, items)
+    ranked = _resolve_ranked_rows(ranked, data, limit, allow_placeholder=_allow_placeholder(timeframe))
+    return _response("forming_candidates", timeframe, [_make_item(index + 1, row) for index, row in enumerate(ranked)])
 
 
-@router.get("/live-intraday-candidates")
-async def dashboard_live_intraday(
-    timeframe: str = Query(default=DEFAULT_TIMEFRAME),
-    limit: int = Query(default=10, le=50),
-) -> DashboardResponse:
-    timeframe = _timeframe_query(timeframe)
-    status = await get_scan_status(timeframe)
-    if timeframe in {"1m", "15m", "30m", "60m"} and (status.get("cached_result_count") or 0) == 0:
+async def _live_intraday_response(timeframe: str, data: list[dict], limit: int, *, status: dict | None = None) -> DashboardResponse:
+    status = status or await get_scan_status(timeframe)
+    if _allow_placeholder(timeframe) and (status.get("cached_result_count") or 0) == 0:
         if not status.get("is_running"):
             await trigger_scan(timeframe=timeframe, force_refresh=False, source="background")
-        data = await get_scan_results(timeframe)
         placeholders = _placeholder_rows(data, limit)
-        items = [_make_item(index + 1, row) for index, row in enumerate(placeholders)]
-        return _response("live_intraday_candidates", timeframe, items)
-    data = await get_scan_results(timeframe)
+        return _response("live_intraday_candidates", timeframe, [_make_item(index + 1, row) for index, row in enumerate(placeholders)])
+
     ranked = [
         row for row in data
         if row.get("fetch_status") in {"live_ok", "live_augmented_by_store"}
     ]
-    ranked = _resolve_ranked_rows(ranked, data, limit, allow_placeholder=timeframe in {"1m", "15m", "30m", "60m"})
+    ranked = _resolve_ranked_rows(ranked, data, limit, allow_placeholder=_allow_placeholder(timeframe))
     ranked.sort(
         key=lambda row: (
             row.get("trade_readiness_score", 0.0),
@@ -347,5 +292,108 @@ async def dashboard_live_intraday(
         ),
         reverse=True,
     )
-    items = [_make_item(index + 1, row) for index, row in enumerate(ranked[:limit])]
-    return _response("live_intraday_candidates", timeframe, items)
+    return _response("live_intraday_candidates", timeframe, [_make_item(index + 1, row) for index, row in enumerate(ranked[:limit])])
+
+
+@router.get("/scan-status", response_model=ScanStatusResponse)
+async def dashboard_scan_status(timeframe: str = Query(default=DEFAULT_TIMEFRAME)) -> ScanStatusResponse:
+    return ScanStatusResponse(**(await get_scan_status(_timeframe_query(timeframe))))
+
+
+@router.post("/scan-refresh", response_model=ScanStatusResponse)
+async def dashboard_scan_refresh(timeframe: str = Query(default=DEFAULT_TIMEFRAME)) -> ScanStatusResponse:
+    return ScanStatusResponse(**(await trigger_scan(timeframe=_timeframe_query(timeframe), force_refresh=True, source="manual")))
+
+
+@router.get("/long-high-probability")
+async def dashboard_long(
+    timeframe: str = Query(default=DEFAULT_TIMEFRAME),
+    limit: int = Query(default=10, le=50),
+) -> DashboardResponse:
+    timeframe = _timeframe_query(timeframe)
+    data = await get_scan_results(timeframe)
+    return _long_response(timeframe, data, limit)
+
+
+@router.get("/short-high-probability")
+async def dashboard_short(
+    timeframe: str = Query(default=DEFAULT_TIMEFRAME),
+    limit: int = Query(default=10, le=50),
+) -> DashboardResponse:
+    timeframe = _timeframe_query(timeframe)
+    data = await get_scan_results(timeframe)
+    return _short_response(timeframe, data, limit)
+
+
+@router.get("/high-textbook-similarity")
+async def dashboard_similarity(
+    timeframe: str = Query(default=DEFAULT_TIMEFRAME),
+    limit: int = Query(default=10, le=50),
+) -> DashboardResponse:
+    timeframe = _timeframe_query(timeframe)
+    data = await get_scan_results(timeframe)
+    return _similarity_response(timeframe, data, limit)
+
+
+@router.get("/watchlist-no-signal")
+async def dashboard_no_signal(
+    timeframe: str = Query(default=DEFAULT_TIMEFRAME),
+    limit: int = Query(default=10, le=50),
+) -> DashboardResponse:
+    timeframe = _timeframe_query(timeframe)
+    data = await get_scan_results(timeframe)
+    return _no_signal_response(timeframe, data, limit)
+
+
+@router.get("/pattern-armed")
+async def dashboard_armed(
+    timeframe: str = Query(default=DEFAULT_TIMEFRAME),
+    limit: int = Query(default=10, le=50),
+) -> DashboardResponse:
+    timeframe = _timeframe_query(timeframe)
+    data = await get_scan_results(timeframe)
+    return _armed_response(timeframe, data, limit)
+
+
+@router.get("/forming-candidates")
+async def dashboard_forming(
+    timeframe: str = Query(default=DEFAULT_TIMEFRAME),
+    limit: int = Query(default=10, le=50),
+) -> DashboardResponse:
+    timeframe = _timeframe_query(timeframe)
+    data = await get_scan_results(timeframe)
+    return _forming_response(timeframe, data, limit)
+
+
+@router.get("/live-intraday-candidates")
+async def dashboard_live_intraday(
+    timeframe: str = Query(default=DEFAULT_TIMEFRAME),
+    limit: int = Query(default=10, le=50),
+) -> DashboardResponse:
+    timeframe = _timeframe_query(timeframe)
+    data = await get_scan_results(timeframe)
+    status = await get_scan_status(timeframe)
+    return await _live_intraday_response(timeframe, data, limit, status=status)
+
+
+@router.get("/overview", response_model=DashboardOverviewResponse)
+async def dashboard_overview(
+    timeframe: str = Query(default=DEFAULT_TIMEFRAME),
+    limit: int = Query(default=10, le=50),
+) -> DashboardOverviewResponse:
+    timeframe = _timeframe_query(timeframe)
+    status = await get_scan_status(timeframe)
+    data = await get_scan_results(timeframe)
+
+    return DashboardOverviewResponse(
+        timeframe=timeframe,
+        timeframe_label=timeframe_label(timeframe),
+        generated_at=datetime.utcnow().isoformat(),
+        long_high_probability=_long_response(timeframe, data, limit),
+        pattern_armed=_armed_response(timeframe, data, limit),
+        live_intraday_candidates=await _live_intraday_response(timeframe, data, limit, status=status),
+        forming_candidates=_forming_response(timeframe, data, limit),
+        high_textbook_similarity=_similarity_response(timeframe, data, limit),
+        short_high_probability=_short_response(timeframe, data, limit),
+        watchlist_no_signal=_no_signal_response(timeframe, data, limit),
+    )

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import math
 
 from .pattern_engine import PatternResult
+from .timeframe_service import probability_threshold_profile
 
 
 @dataclass
@@ -182,6 +183,7 @@ def _summary(
 
 def _probability_cap(
     pattern: PatternResult,
+    timeframe: str | None,
     no_signal: bool,
     reward_risk_ratio: float,
     headroom_score: float,
@@ -191,16 +193,17 @@ def _probability_cap(
     confidence: float,
     sample_reliability: float,
 ) -> float:
+    profile = probability_threshold_profile(timeframe)
     cap = 0.78
     if pattern.state == "forming":
-        cap = min(cap, 0.60)
+        cap = min(cap, profile.forming_direction_cap)
     elif pattern.state == "armed":
-        cap = min(cap, 0.67)
+        cap = min(cap, profile.armed_direction_cap)
     elif pattern.state == "confirmed":
-        cap = min(cap, 0.72)
+        cap = min(cap, profile.confirmed_direction_cap)
 
     if no_signal:
-        cap = min(cap, 0.56)
+        cap = min(cap, profile.no_signal_direction_cap)
     if pattern.textbook_similarity < 0.55:
         cap = min(cap, 0.59)
     if pattern.variant_fit < 0.52 or _formation_quality(pattern) < 0.46:
@@ -210,14 +213,14 @@ def _probability_cap(
     if edge_score < 0.34 or confidence < 0.45 or sample_reliability < 0.22:
         cap = min(cap, 0.60)
 
-    if target_distance_pct >= 0.35:
+    if target_distance_pct >= profile.extreme_target_warn_pct:
         cap = min(cap, 0.58 if pattern.state == "forming" else 0.62)
-    elif target_distance_pct >= 0.24 and pattern.state == "forming":
+    elif target_distance_pct >= profile.far_target_warn_pct and pattern.state == "forming":
         cap = min(cap, 0.59)
 
-    if avg_mfe_pct > 0 and target_distance_pct > max(0.18, avg_mfe_pct * 2.8):
+    if avg_mfe_pct > 0 and target_distance_pct > max(profile.far_target_warn_pct * 0.75, avg_mfe_pct * profile.mfe_soft_multiplier):
         cap = min(cap, 0.59)
-    if avg_mfe_pct > 0 and target_distance_pct > max(0.24, avg_mfe_pct * 4.0):
+    if avg_mfe_pct > 0 and target_distance_pct > max(profile.extreme_target_warn_pct * 0.7, avg_mfe_pct * profile.mfe_hard_multiplier):
         cap = min(cap, 0.56)
 
     return max(0.51, min(0.78, cap))
@@ -260,6 +263,7 @@ def _apply_directional_cap(p_up: float, p_down: float, cap: float) -> tuple[floa
 
 def compute_probability(
     pattern: PatternResult,
+    timeframe: str | None = None,
     similar_win_rate: float = 0.55,
     sample_size: int = 0,
     liquidity_score: float = 0.7,
@@ -280,6 +284,7 @@ def compute_probability(
     wins: int | None = None,
     total: int | None = None,
 ) -> ProbabilityOutput:
+    profile = probability_threshold_profile(timeframe)
     base_kwargs = {
         "textbook_similarity": pattern.textbook_similarity,
         "reward_risk_ratio": round(reward_risk_ratio, 3),
@@ -423,8 +428,8 @@ def compute_probability(
     )
 
     unrealistic_target = (
-        target_distance_pct >= 0.35
-        or (avg_mfe_pct > 0 and target_distance_pct > max(0.20, avg_mfe_pct * 3.2))
+        target_distance_pct >= profile.extreme_target_warn_pct
+        or (avg_mfe_pct > 0 and target_distance_pct > max(profile.far_target_warn_pct, avg_mfe_pct * ((profile.mfe_soft_multiplier + profile.mfe_hard_multiplier) / 2)))
     )
     no_signal = (
         confidence < 0.32
@@ -450,6 +455,7 @@ def compute_probability(
         no_signal_reason = "패턴 품질, 목표까지 남은 거리, 데이터 신뢰도, 백테스트 edge 중 하나 이상이 기준을 못 채워 보수적으로 No Signal로 분류했습니다."
     cap = _probability_cap(
         pattern=pattern,
+        timeframe=timeframe,
         no_signal=no_signal,
         reward_risk_ratio=reward_risk_ratio,
         headroom_score=headroom_score,

@@ -24,6 +24,7 @@ import numpy as np
 import pandas as pd
 
 from .swing_points import SwingPoint, get_significant_swings, alternating_swings
+from .timeframe_service import pattern_threshold_profile
 
 PatternType = Literal[
     "double_bottom", "double_top",
@@ -186,26 +187,35 @@ def _recent_true_range_pct(df: pd.DataFrame, lookback: int = 60) -> float:
     return float(np.clip(max(candidates), 0.008, 0.08))
 
 
-def _target_distance_cap_pct(df: pd.DataFrame, state: str, formation_height_pct: float) -> float:
+def _target_distance_cap_pct(df: pd.DataFrame, timeframe: str | None, state: str, formation_height_pct: float) -> float:
+    profile = pattern_threshold_profile(timeframe)
     recent_range = _recent_true_range_pct(df)
-    cap = float(np.clip(recent_range * 6.0, 0.08, 0.30))
+    cap = float(
+        np.clip(
+            recent_range * profile.target_cap_vol_multiplier,
+            profile.target_cap_floor_pct,
+            profile.target_cap_ceiling_pct,
+        )
+    )
     if state == "forming":
-        cap = min(cap, 0.22)
+        cap = min(cap, profile.target_cap_ceiling_pct * 0.74)
     elif state == "armed":
-        cap = min(cap, 0.26)
+        cap = min(cap, profile.target_cap_ceiling_pct * 0.86)
     if formation_height_pct > 0:
-        cap = min(cap, max(0.08, formation_height_pct * 1.15))
-    return float(np.clip(cap, 0.06, 0.30))
+        cap = min(cap, max(profile.target_cap_floor_pct, formation_height_pct * 1.15))
+    return float(np.clip(cap, profile.target_cap_floor_pct, profile.target_cap_ceiling_pct))
 
 
 def _too_far_from_trigger(
     df: pd.DataFrame,
+    timeframe: str | None,
     current_close: float,
     trigger_level: float,
     state: str,
     bullish: bool,
     formation_height_pct: float,
 ) -> bool:
+    profile = pattern_threshold_profile(timeframe)
     if state != "forming" or current_close <= 0 or trigger_level <= 0:
         return False
     if bullish and current_close >= trigger_level:
@@ -214,14 +224,24 @@ def _too_far_from_trigger(
         return False
 
     distance_pct = abs(trigger_level - current_close) / current_close
-    adaptive_limit = float(np.clip(_recent_true_range_pct(df) * 4.5, 0.055, 0.18))
+    adaptive_limit = float(
+        np.clip(
+            _recent_true_range_pct(df) * max(2.2, profile.target_cap_vol_multiplier * 0.7),
+            profile.max_forming_trigger_distance_pct * 0.55,
+            profile.max_forming_trigger_distance_pct,
+        )
+    )
     if formation_height_pct > 0:
-        adaptive_limit = min(adaptive_limit, max(0.075, formation_height_pct * 0.65))
+        adaptive_limit = min(
+            adaptive_limit,
+            max(profile.max_forming_trigger_distance_pct * 0.65, formation_height_pct * 0.65),
+        )
     return distance_pct > adaptive_limit
 
 
 def _apply_realistic_target(
     df: pd.DataFrame,
+    timeframe: str | None,
     current_close: float,
     trigger_level: float,
     raw_target: float,
@@ -233,7 +253,7 @@ def _apply_realistic_target(
         return raw_target, 0.55
 
     raw_distance_pct = abs(raw_target - current_close) / current_close
-    cap_pct = _target_distance_cap_pct(df, state, formation_height_pct)
+    cap_pct = _target_distance_cap_pct(df, timeframe, state, formation_height_pct)
     if raw_distance_pct <= cap_pct:
         return raw_target, 1.0
 
@@ -694,7 +714,7 @@ class PatternEngine:
     df must have: date (or datetime), open, high, low, close, volume
     """
 
-    def detect_all(self, df: pd.DataFrame, regime_fit: float = 0.5) -> list[PatternResult]:
+    def detect_all(self, df: pd.DataFrame, regime_fit: float = 0.5, timeframe: str | None = None) -> list[PatternResult]:
         if len(df) < 20:
             return []
         swings = alternating_swings(get_significant_swings(df))
@@ -709,7 +729,7 @@ class PatternEngine:
             self._detect_vcp,
             self._detect_rectangle,
         ]:
-            found = detector(df, swings, regime_fit)
+            found = detector(df, swings, regime_fit, timeframe)
             if found:
                 results.extend(found)
 
@@ -725,12 +745,13 @@ class PatternEngine:
     # ── Double Bottom (W) ────────────────────────────────────────────────────
 
     def _detect_double_bottom(
-        self, df: pd.DataFrame, swings: list[SwingPoint], regime_fit: float
+        self, df: pd.DataFrame, swings: list[SwingPoint], regime_fit: float, timeframe: str | None = None
     ) -> list[PatternResult]:
         lows = [s for s in swings if s.kind == "low"]
         highs = [s for s in swings if s.kind == "high"]
         results = []
         dates = df["date"].values if "date" in df.columns else df["datetime"].values
+        profile = pattern_threshold_profile(timeframe)
 
         for i in range(len(lows) - 1):
             L1, L2 = lows[i], lows[i + 1]
@@ -742,12 +763,12 @@ class PatternEngine:
             neckline = neckline_swing.price
 
             price_sym = _symmetry_score(L1.price, L2.price)
-            if price_sym < 0.6:
+            if price_sym < profile.price_symmetry_min:
                 continue
 
             # Second low must not be significantly lower than first
             low_diff = _safe_ratio(L2.price - L1.price, L1.price)
-            if low_diff < -0.05:  # more than 5% lower = not W, possible downtrend
+            if low_diff < profile.max_second_leg_overshoot_pct:
                 continue
 
             # Determine state
@@ -755,20 +776,29 @@ class PatternEngine:
             last_dt = pd.Timestamp(dates[-1]).to_pydatetime()
             if current_close >= neckline:
                 state = "confirmed"
-            elif current_close >= neckline * 0.98:
+            elif current_close >= neckline * (1 - profile.armed_trigger_buffer_pct):
                 state = "armed"
             else:
                 state = "forming"
 
             invalidation = L2.price * 0.99
             base_height_pct = _safe_ratio(neckline - min(L1.price, L2.price), neckline, default=0.0)
-            if base_height_pct < 0.025 or base_height_pct > 0.62:
+            if base_height_pct < profile.min_structure_height_pct or base_height_pct > profile.max_structure_height_pct:
                 continue
-            if _too_far_from_trigger(df, current_close, neckline, state, bullish=True, formation_height_pct=base_height_pct):
+            if _too_far_from_trigger(
+                df,
+                timeframe,
+                current_close,
+                neckline,
+                state,
+                bullish=True,
+                formation_height_pct=base_height_pct,
+            ):
                 continue
             raw_target = neckline + (neckline - min(L1.price, L2.price))
             target, target_realism = _apply_realistic_target(
                 df,
+                timeframe,
                 current_close,
                 neckline,
                 raw_target,
@@ -870,12 +900,13 @@ class PatternEngine:
     # ── Double Top (M) ───────────────────────────────────────────────────────
 
     def _detect_double_top(
-        self, df: pd.DataFrame, swings: list[SwingPoint], regime_fit: float
+        self, df: pd.DataFrame, swings: list[SwingPoint], regime_fit: float, timeframe: str | None = None
     ) -> list[PatternResult]:
         highs = [s for s in swings if s.kind == "high"]
         lows = [s for s in swings if s.kind == "low"]
         results = []
         dates = df["date"].values if "date" in df.columns else df["datetime"].values
+        profile = pattern_threshold_profile(timeframe)
 
         for i in range(len(highs) - 1):
             H1, H2 = highs[i], highs[i + 1]
@@ -886,31 +917,40 @@ class PatternEngine:
             neckline = neckline_swing.price
 
             price_sym = _symmetry_score(H1.price, H2.price)
-            if price_sym < 0.6:
+            if price_sym < profile.price_symmetry_min:
                 continue
 
             high_diff = _safe_ratio(H2.price - H1.price, H1.price)
-            if high_diff > 0.05:
+            if high_diff > abs(profile.max_second_leg_overshoot_pct):
                 continue
 
             current_close = float(df["close"].iloc[-1])
             last_dt = pd.Timestamp(dates[-1]).to_pydatetime()
             if current_close <= neckline:
                 state = "confirmed"
-            elif current_close <= neckline * 1.02:
+            elif current_close <= neckline * (1 + profile.armed_trigger_buffer_pct):
                 state = "armed"
             else:
                 state = "forming"
 
             invalidation = H2.price * 1.01
             base_height_pct = _safe_ratio(max(H1.price, H2.price) - neckline, max(H1.price, H2.price), default=0.0)
-            if base_height_pct < 0.025 or base_height_pct > 0.62:
+            if base_height_pct < profile.min_structure_height_pct or base_height_pct > profile.max_structure_height_pct:
                 continue
-            if _too_far_from_trigger(df, current_close, neckline, state, bullish=False, formation_height_pct=base_height_pct):
+            if _too_far_from_trigger(
+                df,
+                timeframe,
+                current_close,
+                neckline,
+                state,
+                bullish=False,
+                formation_height_pct=base_height_pct,
+            ):
                 continue
             raw_target = neckline - (max(H1.price, H2.price) - neckline)
             target, target_realism = _apply_realistic_target(
                 df,
+                timeframe,
                 current_close,
                 neckline,
                 raw_target,
@@ -1012,11 +1052,12 @@ class PatternEngine:
     # ── Head and Shoulders ───────────────────────────────────────────────────
 
     def _detect_head_and_shoulders(
-        self, df: pd.DataFrame, swings: list[SwingPoint], regime_fit: float
+        self, df: pd.DataFrame, swings: list[SwingPoint], regime_fit: float, timeframe: str | None = None
     ) -> list[PatternResult]:
         highs = [s for s in swings if s.kind == "high"]
         lows = [s for s in swings if s.kind == "low"]
         dates = df["date"].values if "date" in df.columns else df["datetime"].values
+        profile = pattern_threshold_profile(timeframe)
 
         for i in range(len(highs) - 2):
             LS, H, RS = highs[i], highs[i + 1], highs[i + 2]
@@ -1038,20 +1079,29 @@ class PatternEngine:
             last_dt = pd.Timestamp(dates[-1]).to_pydatetime()
             if current_close <= neckline:
                 state = "confirmed"
-            elif current_close <= neckline * 1.02:
+            elif current_close <= neckline * (1 + profile.armed_trigger_buffer_pct):
                 state = "armed"
             else:
                 state = "forming"
 
             invalidation = H.price * 1.01
             formation_height_pct = _safe_ratio(H.price - neckline, H.price, default=0.0)
-            if formation_height_pct < 0.025 or formation_height_pct > 0.62:
+            if formation_height_pct < profile.min_structure_height_pct or formation_height_pct > profile.max_structure_height_pct:
                 continue
-            if _too_far_from_trigger(df, current_close, neckline, state, bullish=False, formation_height_pct=formation_height_pct):
+            if _too_far_from_trigger(
+                df,
+                timeframe,
+                current_close,
+                neckline,
+                state,
+                bullish=False,
+                formation_height_pct=formation_height_pct,
+            ):
                 continue
             raw_target = neckline - (H.price - neckline)
             target, target_realism = _apply_realistic_target(
                 df,
+                timeframe,
                 current_close,
                 neckline,
                 raw_target,
@@ -1116,11 +1166,12 @@ class PatternEngine:
         return []
 
     def _detect_inverse_head_and_shoulders(
-        self, df: pd.DataFrame, swings: list[SwingPoint], regime_fit: float
+        self, df: pd.DataFrame, swings: list[SwingPoint], regime_fit: float, timeframe: str | None = None
     ) -> list[PatternResult]:
         lows = [s for s in swings if s.kind == "low"]
         highs = [s for s in swings if s.kind == "high"]
         dates = df["date"].values if "date" in df.columns else df["datetime"].values
+        profile = pattern_threshold_profile(timeframe)
 
         for i in range(len(lows) - 2):
             LS, H, RS = lows[i], lows[i + 1], lows[i + 2]
@@ -1142,20 +1193,29 @@ class PatternEngine:
             last_dt = pd.Timestamp(dates[-1]).to_pydatetime()
             if current_close >= neckline:
                 state = "confirmed"
-            elif current_close >= neckline * 0.98:
+            elif current_close >= neckline * (1 - profile.armed_trigger_buffer_pct):
                 state = "armed"
             else:
                 state = "forming"
 
             invalidation = H.price * 0.99
             formation_height_pct = _safe_ratio(neckline - H.price, neckline, default=0.0)
-            if formation_height_pct < 0.025 or formation_height_pct > 0.62:
+            if formation_height_pct < profile.min_structure_height_pct or formation_height_pct > profile.max_structure_height_pct:
                 continue
-            if _too_far_from_trigger(df, current_close, neckline, state, bullish=True, formation_height_pct=formation_height_pct):
+            if _too_far_from_trigger(
+                df,
+                timeframe,
+                current_close,
+                neckline,
+                state,
+                bullish=True,
+                formation_height_pct=formation_height_pct,
+            ):
                 continue
             raw_target = neckline + (neckline - H.price)
             target, target_realism = _apply_realistic_target(
                 df,
+                timeframe,
                 current_close,
                 neckline,
                 raw_target,
@@ -1215,7 +1275,7 @@ class PatternEngine:
     # ── Triangles ────────────────────────────────────────────────────────────
 
     def _detect_triangles(
-        self, df: pd.DataFrame, swings: list[SwingPoint], regime_fit: float
+        self, df: pd.DataFrame, swings: list[SwingPoint], regime_fit: float, timeframe: str | None = None
     ) -> list[PatternResult]:
         highs = [s for s in swings if s.kind == "high"]
         lows = [s for s in swings if s.kind == "low"]
@@ -1291,7 +1351,7 @@ class PatternEngine:
     # ── Rectangle (Box) ─────────────────────────────────────────────────────
 
     def _detect_vcp(
-        self, df: pd.DataFrame, swings: list[SwingPoint], regime_fit: float
+        self, df: pd.DataFrame, swings: list[SwingPoint], regime_fit: float, timeframe: str | None = None
     ) -> list[PatternResult]:
         if len(df) < 50:
             return []
@@ -1366,6 +1426,7 @@ class PatternEngine:
         raw_target = pivot + target_span
         target, target_realism = _apply_realistic_target(
             df,
+            timeframe,
             current_close,
             pivot,
             raw_target,
@@ -1426,7 +1487,7 @@ class PatternEngine:
         return [r]
 
     def _detect_rectangle(
-        self, df: pd.DataFrame, swings: list[SwingPoint], regime_fit: float
+        self, df: pd.DataFrame, swings: list[SwingPoint], regime_fit: float, timeframe: str | None = None
     ) -> list[PatternResult]:
         highs = [s for s in swings if s.kind == "high"]
         lows = [s for s in swings if s.kind == "low"]
@@ -1466,6 +1527,7 @@ class PatternEngine:
         raw_target = resistance + (resistance - support)
         target, target_realism = _apply_realistic_target(
             df,
+            timeframe,
             current_close,
             resistance,
             raw_target,

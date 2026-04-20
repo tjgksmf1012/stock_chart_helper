@@ -283,6 +283,19 @@ export interface DashboardResponse {
   generated_at: string
 }
 
+export interface DashboardOverviewResponse {
+  timeframe: Timeframe
+  timeframe_label: string
+  generated_at: string
+  long_high_probability: DashboardResponse
+  pattern_armed: DashboardResponse
+  live_intraday_candidates: DashboardResponse
+  forming_candidates: DashboardResponse
+  high_textbook_similarity: DashboardResponse
+  short_high_probability: DashboardResponse
+  watchlist_no_signal: DashboardResponse
+}
+
 export interface ScanStatusResponse {
   timeframe: Timeframe
   timeframe_label: string

@@ -60,12 +60,12 @@ _KST = ZoneInfo("Asia/Seoul")
 
 
 def _full_scan_cache_key(timeframe: str) -> str:
-    return f"scanner:v8:full_results:{timeframe}"
+    return f"scanner:v9:full_results:{timeframe}"
 
 
 def _single_scan_cache_key(timeframe: str, code: str, allow_live_intraday: bool = True) -> str:
     mode = "live" if allow_live_intraday else "budget"
-    return f"scan:v8:result:{timeframe}:{code}:{mode}"
+    return f"scan:v9:result:{timeframe}:{code}:{mode}"
 
 
 def _utc_now_iso() -> str:

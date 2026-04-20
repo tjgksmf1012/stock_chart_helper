@@ -288,6 +288,19 @@ class DashboardResponse(BaseModel):
     generated_at: str
 
 
+class DashboardOverviewResponse(BaseModel):
+    timeframe: str
+    timeframe_label: str
+    generated_at: str
+    long_high_probability: DashboardResponse
+    pattern_armed: DashboardResponse
+    live_intraday_candidates: DashboardResponse
+    forming_candidates: DashboardResponse
+    high_textbook_similarity: DashboardResponse
+    short_high_probability: DashboardResponse
+    watchlist_no_signal: DashboardResponse
+
+
 class ScanStatusResponse(BaseModel):
     timeframe: str
     timeframe_label: str

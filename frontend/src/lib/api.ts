@@ -1,7 +1,7 @@
 import axios from 'axios'
 import type {
   SymbolInfo, OHLCVBar, AnalysisResult, PriceInfo,
-  DashboardResponse, PatternLibraryEntry, ScreenerRequest, DashboardItem, ScanStatusResponse, Timeframe,
+  DashboardOverviewResponse, DashboardResponse, PatternLibraryEntry, ScreenerRequest, DashboardItem, ScanStatusResponse, Timeframe,
   IntradayCandidateWarmupRequest, IntradayWarmupJobStatus, IntradayWarmupRequest, IntradayWarmupResponse, PatternStatsResponse, RuntimeStatusResponse,
   WatchlistItem, OutcomeRecord, OutcomesSummary, OutcomeStatus,
 } from '@/types/api'
@@ -26,6 +26,7 @@ export const symbolsApi = {
 }
 
 export const dashboardApi = {
+  overview: (timeframe: Timeframe, limit = 10) => api.get<DashboardOverviewResponse>('/dashboard/overview', { params: { timeframe, limit } }).then(r => r.data),
   longHigh: (timeframe: Timeframe, limit = 10) => api.get<DashboardResponse>('/dashboard/long-high-probability', { params: { timeframe, limit } }).then(r => r.data),
   shortHigh: (timeframe: Timeframe, limit = 10) => api.get<DashboardResponse>('/dashboard/short-high-probability', { params: { timeframe, limit } }).then(r => r.data),
   highSimilarity: (timeframe: Timeframe, limit = 10) => api.get<DashboardResponse>('/dashboard/high-textbook-similarity', { params: { timeframe, limit } }).then(r => r.data),

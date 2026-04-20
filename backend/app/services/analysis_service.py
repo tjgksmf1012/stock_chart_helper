@@ -2901,7 +2901,7 @@ async def analyze_symbol_dataframe(
 
     current_close, current_high, current_low = _current_ohlc(df)
     engine = PatternEngine()
-    raw_patterns = engine.detect_all(df)
+    raw_patterns = engine.detect_all(df, timeframe=timeframe)
     if not raw_patterns:
         return build_no_signal_snapshot(symbol, timeframe, df)
 
@@ -3044,6 +3044,7 @@ async def analyze_symbol_dataframe(
 
     probability = compute_probability(
         best_pattern,
+        timeframe=timeframe,
         similar_win_rate=similar_win_rate,
         sample_size=sample_size,
         liquidity_score=liquidity,
