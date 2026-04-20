@@ -1,24 +1,24 @@
 services:
-  # ── FastAPI backend ───────────────────────────────────────────────────────────
   - type: web
     name: stock-chart-helper-api
     runtime: docker
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
-    plan: free        # upgrade to "starter" for persistent disk
+    plan: free
     healthCheckPath: /health
     envVars:
-      # Redis — point to an Upstash or Render Redis instance
-      # Leave blank to use the built-in in-memory fallback (data lost on restart)
+      # Redis
+      # Leave blank to use the in-memory fallback cache.
       - key: REDIS_URL
-        value: ""          # e.g. redis://default:password@host:6379
+        value: ""
 
-      # CORS — comma-separated list of allowed origins
-      # Add your Vercel frontend URL once it's deployed
+      # CORS
+      # Add your deployed frontend URL and keep localhost for local development.
       - key: ALLOWED_ORIGINS
-        value: "https://stock-chart-helper.vercel.app,http://localhost:5173"
+        value: "https://frontend-mu-sooty-i4662dxm4r.vercel.app,http://localhost:5173"
 
-      # KIS API (optional — leave blank to use public pykrx data only)
+      # KIS API
+      # Leave blank if you want to rely on public sources only.
       - key: KIS_APP_KEY
         value: ""
       - key: KIS_APP_SECRET

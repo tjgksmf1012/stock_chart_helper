@@ -19,12 +19,12 @@ app = FastAPI(
 
 _origins_raw = settings.allowed_origins.strip()
 _allow_all = _origins_raw == "*"
-_origin_list = ["*"] if _allow_all else [o.strip() for o in _origins_raw.split(",") if o.strip()]
+_origin_list = ["*"] if _allow_all else [origin.strip() for origin in _origins_raw.split(",") if origin.strip()]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_origin_list,
-    allow_credentials=not _allow_all,  # credentials + wildcard is invalid per CORS spec
+    allow_credentials=not _allow_all,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -47,6 +47,7 @@ def _start_scheduler() -> None:
     try:
         from apscheduler.schedulers.asyncio import AsyncIOScheduler
         from apscheduler.triggers.cron import CronTrigger
+        from apscheduler.triggers.interval import IntervalTrigger
 
         from .api.routes.system import run_scheduled_intraday_warmup
         from .services.backtest_engine import run_backtest
@@ -103,17 +104,15 @@ def _start_scheduler() -> None:
             replace_existing=True,
         )
 
-        # Keep-alive: self-ping every 14 min so Render free tier doesn't sleep
+        # Keep the free Render instance warm enough to reduce cold starts.
         import httpx as _httpx
 
         async def _keep_alive() -> None:
             try:
-                async with _httpx.AsyncClient(timeout=10) as _c:
-                    await _c.get("https://stock-chart-helper-api.onrender.com/health")
+                async with _httpx.AsyncClient(timeout=10) as client:
+                    await client.get("https://stock-chart-helper-api.onrender.com/health")
             except Exception:
-                pass  # silently ignore; not critical
-
-        from apscheduler.triggers.interval import IntervalTrigger
+                pass
 
         scheduler.add_job(
             _keep_alive,
@@ -133,6 +132,7 @@ def _start_scheduler() -> None:
                 "open_intraday_warmup",
                 "midday_intraday_warmup",
                 "closing_intraday_warmup",
+                "keep_alive",
             ],
         )
     except ImportError:
