@@ -97,6 +97,56 @@ def _update_scan_status(timeframe: str, **kwargs: Any) -> None:
     status.update(kwargs)
 
 
+def _status_snapshot(timeframe: str) -> dict[str, Any]:
+    return dict(_scan_status.get(timeframe, _status_template(timeframe)))
+
+
+def _fallback_universe_rows(universe, limit: int) -> list[tuple[str, str, str]]:
+    seen: set[str] = set()
+    ordered: list[tuple[str, str, str]] = []
+    universe_map = (
+        {
+            str(row["code"]): (
+                str(row["code"]),
+                str(row.get("name") or row["code"]),
+                str(row.get("market") or "KRX"),
+            )
+            for _, row in universe.iterrows()
+        }
+        if universe is not None and not universe.empty
+        else {}
+    )
+
+    for code, name, market in FALLBACK_CODES:
+        preferred = universe_map.get(code, (code, name, market))
+        if preferred[0] in seen:
+            continue
+        seen.add(preferred[0])
+        ordered.append(preferred)
+        if len(ordered) >= limit:
+            return ordered
+
+    if universe is None or universe.empty:
+        return ordered[:limit]
+
+    for _, row in universe.iterrows():
+        code = str(row["code"])
+        if code in seen:
+            continue
+        seen.add(code)
+        ordered.append(
+            (
+                code,
+                str(row.get("name") or code),
+                str(row.get("market") or "KRX"),
+            )
+        )
+        if len(ordered) >= limit:
+            break
+
+    return ordered[:limit]
+
+
 def _direction_score(row: dict[str, Any]) -> float:
     return float(row.get("p_up", 0.5)) - float(row.get("p_down", 0.5))
 
@@ -476,6 +526,11 @@ async def _get_cached_count(timeframe: str) -> int:
 async def get_scan_status(timeframe: str = DEFAULT_TIMEFRAME) -> dict[str, Any]:
     status = dict(_scan_status.get(timeframe) or _status_template(timeframe))
     status["cached_result_count"] = max(status.get("cached_result_count", 0), await _get_cached_count(timeframe))
+    task = _scan_tasks.get(timeframe)
+    if task and not task.done():
+        status["is_running"] = True
+        if status.get("status") in {"idle", "warming"}:
+            status["status"] = "queued"
     return status
 
 
@@ -498,11 +553,14 @@ async def _fetch_universe_codes(limit: int = 100) -> list[tuple[str, str, str]]:
         rows: list[tuple[str, str, str, float]] = []
 
         for market in ("KOSPI", "KOSDAQ"):
-            cap_df = await asyncio.to_thread(krx.get_market_cap, today, today, market=market)
+            cap_df = await asyncio.to_thread(krx.get_market_cap_by_ticker, today, market=market)
             if cap_df is None or cap_df.empty:
                 continue
+            market_cap_col = next((column for column in ("시가총액", "MarketCap", "market_cap") if column in cap_df.columns), None)
+            if market_cap_col is None:
+                raise KeyError(f"market cap column missing: {list(cap_df.columns)}")
             for code, row in cap_df.iterrows():
-                market_cap = float(row.get("시가총액", 0)) / 1e8
+                market_cap = float(row.get(market_cap_col, 0)) / 1e8
                 if market_cap < settings.min_market_cap_billion:
                     continue
                 code_str = str(code)
@@ -513,6 +571,10 @@ async def _fetch_universe_codes(limit: int = 100) -> list[tuple[str, str, str]]:
             return [(code, name, market) for code, name, market, _ in rows[:limit]]
     except Exception as exc:
         logger.warning("Bulk market-cap universe fetch failed: %s", exc)
+
+    if universe is not None and not universe.empty:
+        logger.warning("Falling back to broad universe ordering")
+        return _fallback_universe_rows(universe, limit)
 
     logger.warning("Falling back to static scanner universe")
     return FALLBACK_CODES[:limit]
@@ -985,11 +1047,15 @@ async def trigger_scan(
     _scan_tasks[timeframe] = asyncio.create_task(
         run_scan(timeframe=timeframe, limit=limit, batch_size=batch_size, force_refresh=force_refresh, source=source)
     )
+    _update_scan_status(
+        timeframe,
+        status="queued",
+        is_running=True,
+        source=source,
+        last_started_at=_utc_now_iso(),
+        last_error=None,
+    )
     status = await get_scan_status(timeframe)
-    status["status"] = "queued"
-    status["is_running"] = True
-    status["source"] = source
-    status["last_started_at"] = _utc_now_iso()
     status["trigger_accepted"] = True
     return status
 
@@ -998,8 +1064,46 @@ async def get_scan_results(timeframe: str = DEFAULT_TIMEFRAME) -> list[dict[str,
     cache_key = _full_scan_cache_key(timeframe)
     cached = await cache_get(cache_key)
     if cached:
-        _update_scan_status(timeframe, status="ready", cached_result_count=len(cached))
+        previous = _status_snapshot(timeframe)
+        candidate_source = previous.get("candidate_source")
+        candidate_count = previous.get("candidate_count")
+        universe_size = previous.get("universe_size")
+
+        if timeframe in {"1m", "15m", "30m", "60m"} and candidate_source in {None, "background_pending"}:
+            candidate_source = "cache_ready"
+            if not candidate_count:
+                candidate_count = len(cached)
+            if not universe_size:
+                universe_size = max(len(cached), candidate_count)
+
+        _update_scan_status(
+            timeframe,
+            status="ready",
+            is_running=False,
+            source=previous.get("source"),
+            candidate_source=candidate_source,
+            candidate_count=candidate_count,
+            universe_size=universe_size,
+            cached_result_count=len(cached),
+            last_error=None,
+        )
         return cached
+
+    if timeframe in {"1m", "15m", "30m", "60m"}:
+        task = _scan_tasks.get(timeframe)
+        if task and not task.done():
+            return []
+        _update_scan_status(
+            timeframe,
+            status="warming",
+            is_running=False,
+            source="fallback",
+            candidate_source="background_pending",
+            candidate_count=0,
+            cached_result_count=0,
+        )
+        await trigger_scan(timeframe=timeframe, force_refresh=True, source="background")
+        return []
 
     _update_scan_status(timeframe, status="warming", is_running=False, source="fallback")
     fallback = FALLBACK_CODES if timeframe == "1d" else FALLBACK_CODES[: min(len(FALLBACK_CODES), settings.intraday_seed_limit)]
@@ -1020,7 +1124,7 @@ async def get_scan_results(timeframe: str = DEFAULT_TIMEFRAME) -> list[dict[str,
                 name,
                 market,
                 timeframe,
-                allow_live_intraday=(code in fallback_live_codes) if timeframe in {"1m", "15m", "30m", "60m"} else True,
+                allow_live_intraday=False if timeframe in {"1m", "15m", "30m", "60m"} else True,
             )
             for code, name, market in fallback
         ],
@@ -1071,6 +1175,6 @@ async def get_scan_results(timeframe: str = DEFAULT_TIMEFRAME) -> list[dict[str,
 
     task = _scan_tasks.get(timeframe)
     if not task or task.done():
-        await trigger_scan(timeframe=timeframe, force_refresh=False, source="background")
+        await trigger_scan(timeframe=timeframe, force_refresh=True, source="background")
 
     return results

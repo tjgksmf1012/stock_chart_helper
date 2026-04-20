@@ -18,6 +18,7 @@ class IntradayStore:
         self._db_path = self._resolve_path(self._settings.intraday_storage_path)
         self._retention_days = max(7, int(self._settings.intraday_store_retention_days))
         self._init_lock = asyncio.Lock()
+        self._write_lock = asyncio.Lock()
         self._ready = False
 
     def _resolve_path(self, configured_path: str) -> Path:
@@ -37,10 +38,11 @@ class IntradayStore:
             self._ready = True
 
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self._db_path)
+        conn = sqlite3.connect(self._db_path, timeout=30.0)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA busy_timeout=30000")
         return conn
 
     def _initialize(self) -> None:
@@ -75,7 +77,8 @@ class IntradayStore:
         if df.empty:
             return
         await self.ensure_ready()
-        await asyncio.to_thread(self._upsert_bars_sync, symbol, timeframe, df, source)
+        async with self._write_lock:
+            await asyncio.to_thread(self._upsert_bars_sync, symbol, timeframe, df, source)
 
     def _upsert_bars_sync(self, symbol: str, timeframe: str, df: pd.DataFrame, source: str) -> None:
         rows: list[tuple[object, ...]] = []

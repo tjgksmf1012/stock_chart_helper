@@ -138,6 +138,10 @@ export default function DashboardPage() {
   ]
 
   const intradaySummary = intradayMode ? buildIntradaySummary(filteredSections) : null
+  const intradayEmptyMessage =
+    intradayMode && statusQ.data?.status === 'warming' && (statusQ.data?.cached_result_count ?? 0) === 0
+      ? `${timeframeLabel(timeframe)} 후보를 백그라운드에서 예열 중입니다. 잠시 후 자동으로 결과가 채워집니다.`
+      : undefined
 
   return (
     <div className="space-y-8">
@@ -405,6 +409,7 @@ export default function DashboardPage() {
         isError={longQ.isError}
         onRetry={() => longQ.refetch()}
         intradayPreset={intradayMode ? intradayPreset : undefined}
+        emptyMessage={intradayEmptyMessage}
       />
 
       <DashboardSection
@@ -415,6 +420,7 @@ export default function DashboardPage() {
         isError={armedQ.isError}
         onRetry={() => armedQ.refetch()}
         intradayPreset={intradayMode ? intradayPreset : undefined}
+        emptyMessage={intradayEmptyMessage}
       />
 
       {intradayMode && (
@@ -426,6 +432,7 @@ export default function DashboardPage() {
           isError={liveQ.isError}
           onRetry={() => liveQ.refetch()}
           intradayPreset={intradayPreset}
+          emptyMessage={intradayEmptyMessage}
         />
       )}
 
@@ -437,6 +444,7 @@ export default function DashboardPage() {
         isError={formingQ.isError}
         onRetry={() => formingQ.refetch()}
         intradayPreset={intradayMode ? intradayPreset : undefined}
+        emptyMessage={intradayEmptyMessage}
       />
 
       <DashboardSection
@@ -447,6 +455,7 @@ export default function DashboardPage() {
         isError={simQ.isError}
         onRetry={() => simQ.refetch()}
         intradayPreset={intradayMode ? intradayPreset : undefined}
+        emptyMessage={intradayEmptyMessage}
       />
 
       <DashboardSection
@@ -457,6 +466,7 @@ export default function DashboardPage() {
         isError={shortQ.isError}
         onRetry={() => shortQ.refetch()}
         intradayPreset={intradayMode ? intradayPreset : undefined}
+        emptyMessage={intradayEmptyMessage}
       />
 
       <DashboardSection
@@ -467,6 +477,7 @@ export default function DashboardPage() {
         isError={noSigQ.isError}
         onRetry={() => noSigQ.refetch()}
         intradayPreset={intradayMode ? intradayPreset : undefined}
+        emptyMessage={intradayEmptyMessage}
       />
     </div>
   )
@@ -597,6 +608,8 @@ function sourceLabel(source: string | null | undefined): string {
       return '수동 실행'
     case 'background':
       return '백그라운드'
+    case 'cache':
+      return '캐시 응답'
     case 'scheduled':
       return '예약 실행'
     case 'fallback':
@@ -644,6 +657,10 @@ function candidateSourceLabel(source: string | null | undefined): string {
   switch (source) {
     case 'daily_seed':
       return '일봉 상위 후보'
+    case 'background_pending':
+      return '백그라운드 예열 대기'
+    case 'cache_ready':
+      return '캐시 예열 결과'
     case 'krx_universe':
       return 'KRX 유니버스'
     case 'krx_universe_fallback':

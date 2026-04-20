@@ -62,8 +62,8 @@ async def search_symbols(q: str = Query(min_length=1)) -> list[SymbolInfo]:
         return []
 
     query = q.strip().lower()
-    code_match = universe["code"].astype(str).str.lower().str.contains(query, na=False)
-    name_match = universe["name"].fillna("").astype(str).str.lower().str.contains(query, na=False)
+    code_match = universe["code"].astype(str).str.lower().str.contains(query, na=False, regex=False)
+    name_match = universe["name"].fillna("").astype(str).str.lower().str.contains(query, na=False, regex=False)
 
     results = universe[code_match | name_match].copy()
     if results.empty:

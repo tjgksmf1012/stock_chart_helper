@@ -12,9 +12,10 @@ interface DashboardSectionProps {
   isError?: boolean
   onRetry?: () => void
   intradayPreset?: string
+  emptyMessage?: string
 }
 
-export function DashboardSection({ title, subtitle, data, isLoading, isError, onRetry, intradayPreset }: DashboardSectionProps) {
+export function DashboardSection({ title, subtitle, data, isLoading, isError, onRetry, intradayPreset, emptyMessage }: DashboardSectionProps) {
   return (
     <div className="space-y-3">
       <div>
@@ -29,7 +30,7 @@ export function DashboardSection({ title, subtitle, data, isLoading, isError, on
       ) : isError ? (
         <QueryError compact onRetry={onRetry} />
       ) : !data || data.items.length === 0 ? (
-        <p className="py-4 text-center text-xs text-muted-foreground">조건에 맞는 종목이 아직 없습니다.</p>
+        <p className="py-4 text-center text-xs text-muted-foreground">{emptyMessage ?? '조건에 맞는 종목이 아직 없습니다.'}</p>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {data.items.map(item => (
