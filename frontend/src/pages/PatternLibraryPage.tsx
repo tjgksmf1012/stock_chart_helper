@@ -6,6 +6,7 @@ import { Link } from 'react-router-dom'
 import { patternsApi } from '@/lib/api'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
+import { QueryError } from '@/components/ui/QueryError'
 import { DIRECTION_LABELS } from '@/lib/utils'
 import type { PatternLibraryEntry } from '@/types/api'
 
@@ -104,7 +105,7 @@ function previewPoints(patternType: string): string {
 }
 
 export default function PatternLibraryPage() {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['patterns', 'library'],
     queryFn: patternsApi.library,
     staleTime: Infinity,
@@ -157,6 +158,10 @@ export default function PatternLibraryPage() {
 
       {isLoading ? (
         <div className="py-10 text-center text-muted-foreground">불러오는 중입니다...</div>
+      ) : isError ? (
+        <Card>
+          <QueryError message="패턴 라이브러리를 불러오지 못했습니다." onRetry={() => refetch()} />
+        </Card>
       ) : (
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
           {filtered.map(entry => (
