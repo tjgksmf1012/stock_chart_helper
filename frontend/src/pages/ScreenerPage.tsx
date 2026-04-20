@@ -80,11 +80,11 @@ const FETCH_STATUS_OPTIONS = [
 
 const REENTRY_CASE_OPTIONS = [
   { value: 'box_reaccumulation', label: '박스 재축적형' },
-  { value: 'pullback_relaunch', label: '눌림 후 재가속형' },
+  { value: 'pullback_relaunch', label: '눌림 후 재상승형' },
   { value: 'failed_breakout_recovery', label: '실패 돌파 복구형' },
-  { value: 'range_reset', label: '재축적 준비형' },
+  { value: 'range_reset', label: '재정비 준비형' },
   { value: 'primary_setup', label: '신규 셋업 우선형' },
-  { value: 'avoid', label: '재진입 비선호' },
+  { value: 'avoid', label: '재진입 비선호형' },
 ]
 
 const SORT_OPTIONS: Array<{ value: NonNullable<ScreenerRequest['sort_by']>; label: string }> = [
@@ -122,15 +122,15 @@ const MARKET_CAP_OPTIONS = [
 const INTRADAY_VIEW_OPTIONS: Array<[IntradayView, string]> = [
   ['all', '전체'],
   ['live', 'live'],
-  ['stored', 'stored'],
-  ['public', 'public'],
-  ['mixed', 'mixed'],
-  ['cooldown', 'cooldown'],
+  ['stored', '저장'],
+  ['public', '공개'],
+  ['mixed', '혼합'],
+  ['cooldown', '쿨다운'],
 ]
 
 const INTRADAY_PRESET_OPTIONS: Array<[IntradayPreset, string]> = [
   ['all', '프리셋 전체'],
-  ['ready-now', '바로 볼 종목'],
+  ['ready-now', '지금 볼 종목'],
   ['watch', '관찰 후보'],
   ['recheck', '재확인 필요'],
   ['cooling', '관망 후보'],
@@ -145,7 +145,7 @@ const QUICK_PRESETS: Array<{
   {
     id: 'daily-ready',
     label: '일봉 실전형',
-    description: '지금 당장 검토할 수 있는 일봉 후보를 우선 좁힙니다.',
+    description: '지금 당장 체크할 만한 일봉 후보를 우선 좁혀줍니다.',
     build: () => ({
       ...DEFAULT_SCREENER_REQUEST,
       timeframes: ['1d'],
@@ -162,7 +162,7 @@ const QUICK_PRESETS: Array<{
   },
   {
     id: 'daily-fresh',
-    label: '일봉 신선형',
+    label: '일봉 신선도형',
     description: '이미 끝난 패턴보다 아직 살아 있는 일봉 구조를 찾습니다.',
     build: () => ({
       ...DEFAULT_SCREENER_REQUEST,
@@ -179,7 +179,7 @@ const QUICK_PRESETS: Array<{
   {
     id: 'intraday-ready',
     label: '분봉 즉시형',
-    description: 'live 성격이 강하고 지금 바로 볼 만한 분봉 후보를 우선합니다.',
+    description: 'live 적격이 강하고 지금 바로 볼 만한 분봉 후보를 우선합니다.',
     build: () => ({
       ...DEFAULT_SCREENER_REQUEST,
       timeframes: ['60m', '30m', '15m'],
@@ -196,7 +196,7 @@ const QUICK_PRESETS: Array<{
   {
     id: 'intraday-watch',
     label: '분봉 관찰형',
-    description: '형성 중이지만 흐름이 살아 있어 지켜볼 가치가 있는 분봉 후보를 봅니다.',
+    description: '형성 중이지만 흐름이 살아 있어 지켜볼 가치가 있는 분봉 후보를 고릅니다.',
     build: () => ({
       ...DEFAULT_SCREENER_REQUEST,
       timeframes: ['60m', '30m', '15m'],
@@ -212,8 +212,8 @@ const QUICK_PRESETS: Array<{
   },
   {
     id: 'reentry-focus',
-    label: '재진입 집중',
-    description: '재축적, 눌림 후 재상승, 실패 돌파 복구 같은 재진입 시나리오만 따로 봅니다.',
+    label: '재진입 집중형',
+    description: '박스 재축적, 눌림 후 재상승, 실패 돌파 복구 같은 재진입 시나리오만 따로 봅니다.',
     build: () => ({
       ...DEFAULT_SCREENER_REQUEST,
       timeframes: ['1d', '60m'],
@@ -304,8 +304,7 @@ export default function ScreenerPage() {
   const intradayMode = (req.timeframes ?? []).some(value => ['60m', '30m', '15m', '1m'].includes(value))
 
   const filteredData = useMemo(() => {
-    if (!data) return data
-    if (!intradayMode) return data
+    if (!data || !intradayMode) return data
 
     return data.filter(item => {
       const matchesView =
@@ -319,9 +318,7 @@ export default function ScreenerPage() {
         intradayPreset === 'all'
           ? true
           : intradayPreset === 'ready-now'
-            ? item.live_intraday_candidate &&
-              !item.no_signal_flag &&
-              ['confirmed', 'trigger_ready', 'breakout_watch'].includes(item.setup_stage)
+            ? item.live_intraday_candidate && !item.no_signal_flag && ['confirmed', 'trigger_ready', 'breakout_watch'].includes(item.setup_stage)
             : intradayPreset === 'watch'
               ? !item.no_signal_flag && ['late_base', 'early_trigger_watch', 'base_building'].includes(item.setup_stage)
               : intradayPreset === 'recheck'
@@ -440,8 +437,7 @@ export default function ScreenerPage() {
         <div>
           <h1 className="text-xl font-bold">스크리너</h1>
           <p className="text-xs text-muted-foreground">
-            패턴, 상태, 시장, 타임프레임뿐 아니라 거래 준비도, 진입 구간, 신선도, 재진입 구조까지 함께 걸러서 지금 실전에서
-            먼저 볼 만한 후보를 찾는 화면입니다.
+            패턴, 상태, 시장, 타임프레임뿐 아니라 거래 준비도, 진입 구간, 신선도, 재진입 구조까지 함께 걸러서 지금 실전에서 먼저 볼 후보를 찾는 화면입니다.
           </p>
         </div>
       </div>
@@ -452,8 +448,7 @@ export default function ScreenerPage() {
           빠른 시작 프리셋
         </div>
         <p className="text-xs leading-relaxed text-muted-foreground">
-          처음부터 모든 슬라이더를 만지지 않아도 되도록 자주 쓰는 실전 시나리오를 미리 묶어 두었습니다. 프리셋을 고른 뒤
-          현재 조건을 조금씩 조정하는 방식이 가장 빠릅니다.
+          처음부터 모든 슬라이더를 만지지 않아도 되도록 자주 쓰는 실전 시나리오를 미리 묶어 두었습니다. 프리셋을 고른 뒤 현재 조건만 조금씩 손보는 방식이 가장 빠릅니다.
         </p>
         <div className="grid grid-cols-1 gap-3 xl:grid-cols-5">
           {QUICK_PRESETS.map(preset => (
@@ -481,7 +476,7 @@ export default function ScreenerPage() {
           <div>
             <div className="text-sm font-semibold">현재 조건 요약</div>
             <p className="mt-1 text-xs text-muted-foreground">
-              타임프레임 {req.timeframes?.length ?? 0}개, 활성 필터 {activeFilterCount}개, 정렬 기준{' '}
+              타임프레임 {(req.timeframes?.length ?? 0)}개 · 활성 필터 {activeFilterCount}개 · 정렬 기준{' '}
               {SORT_OPTIONS.find(option => option.value === (req.sort_by ?? 'composite_score'))?.label}
             </p>
           </div>
@@ -706,7 +701,7 @@ export default function ScreenerPage() {
               </option>
             ))}
           </select>
-          <p className="text-xs text-muted-foreground">너무 작은 종목은 줄이고, 더 큰 흐름을 보는 용도로 사용합니다.</p>
+          <p className="text-xs text-muted-foreground">너무 작은 종목은 줄이고, 일정 규모 이상 흐름만 보고 싶을 때 사용합니다.</p>
         </FilterGroup>
 
         <FilterGroup label="정렬 기준">
@@ -745,7 +740,7 @@ export default function ScreenerPage() {
               onChange={event => updateReq(setReq, setActiveQuickPreset, { exclude_no_signal: event.target.checked })}
               className="accent-primary"
             />
-            <span className="text-xs text-muted-foreground">No Signal 종목을 제외합니다.</span>
+            <span className="text-xs text-muted-foreground">No Signal 종목은 기본적으로 제외합니다.</span>
           </label>
         </FilterGroup>
       </div>
@@ -767,8 +762,7 @@ export default function ScreenerPage() {
         <Card className="space-y-2">
           <div className="text-sm font-semibold">조건에 맞는 종목이 없습니다.</div>
           <p className="text-xs text-muted-foreground">
-            지금 조건이 꽤 엄격하거나 선택한 타임프레임에서 실전형 후보가 아직 적을 수 있습니다. 최소 점수 기준을 조금 낮추거나
-            다른 타임프레임도 함께 보는 편이 좋습니다.
+            지금 조건이 꽤 엄격하거나, 선택한 타임프레임에서 실전형 후보가 아직 적을 수 있습니다. 최소 점수 기준을 조금 낮추거나 다른 타임프레임도 함께 보는 편이 좋습니다.
           </p>
           <div className="flex flex-wrap gap-2 pt-1">
             <button
@@ -861,8 +855,7 @@ export default function ScreenerPage() {
                 <Card className="border-amber-500/20 bg-amber-500/5 text-amber-100">
                   <div className="text-sm font-semibold">빠른 예열 후보를 먼저 보여주는 중입니다</div>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    지금 보이는 평균 점수와 일부 후보는 임시값일 수 있습니다. 백그라운드 분봉 스캔이 끝나면 실제 패턴,
-                    준비도, 재진입 구조 기준으로 자동 교체됩니다.
+                    지금 보이는 평균 점수는 일부 임시값일 수 있습니다. 백그라운드 분봉 스캔이 끝나면 실제 패턴, 준비도, 재진입 구조 기준으로 자동 교체됩니다.
                   </p>
                 </Card>
               )}
@@ -1034,21 +1027,17 @@ function buildScreenerGuidance(items: DashboardItem[]): string {
   const liveCount = realItems.filter(item => item.live_intraday_candidate).length
   const readyCount = realItems.filter(item => (item.trade_readiness_score ?? 0) >= 0.6).length
   const avgFreshness = average(realItems.map(item => item.freshness_score ?? 0))
-  const dominantReentryCase = dominantString(
-    realItems
-      .map(item => item.reentry_case_label)
-      .filter(label => !!label && label !== '구조 없음'),
-  )
+  const dominantReentryCase = dominantString(realItems.map(item => item.reentry_case_label).filter(label => !!label && label !== '구조 없음'))
 
   if (liveCount >= Math.max(2, Math.round(realItems.length * 0.3))) {
-    return `실시간 추적 후보가 충분합니다. live 후보부터 확인하고, 그 안에서 진입 구간과 재진입 구조까지 받쳐 주는 종목을 먼저 보는 편이 좋습니다${dominantReentryCase ? `. 지금은 ${dominantReentryCase} 비중이 높습니다.` : '.'}`
+    return `실시간 추적 후보가 충분합니다. live 후보부터 먼저 보고, 그 안에서 진입 구간과 재진입 구조까지 받쳐 주는 종목을 우선 확인해 보세요${dominantReentryCase ? `. 지금은 ${dominantReentryCase} 비중이 높습니다.` : '.'}`
   }
 
   if (readyCount >= Math.max(2, Math.round(realItems.length * 0.25)) && avgFreshness >= 0.5) {
-    return `거래 준비도와 패턴 신선도가 함께 받쳐 주는 후보가 모여 있습니다. 상위 카드에서 리스크 기준, 재진입 구조, 다음 트리거를 먼저 확인해 보세요${dominantReentryCase ? `. 많이 보이는 유형은 ${dominantReentryCase}입니다.` : '.'}`
+    return `거래 준비도와 패턴 신선도가 함께 괜찮은 후보가 모여 있습니다. 상위 카드에서 리스크 기준, 재진입 구조, 다음 트리거를 먼저 확인하는 흐름이 좋습니다${dominantReentryCase ? `. 자주 보이는 유형은 ${dominantReentryCase}입니다.` : '.'}`
   }
 
-  return `아직은 형성 중이거나 재확인이 필요한 후보가 많습니다. 무리한 진입보다 목표가 선진 여부, 기준선 유지 여부, 재축적 여부를 먼저 체크하는 편이 좋습니다${dominantReentryCase ? `. 현재 주된 유형은 ${dominantReentryCase}입니다.` : '.'}`
+  return `아직은 형성 중이거나 재확인이 필요한 후보가 더 많습니다. 바로 진입하기보다 목표가 여유, 기준선 유지 여부, 재축적 여부를 먼저 체크해 보세요${dominantReentryCase ? `. 현재 주된 유형은 ${dominantReentryCase}입니다.` : '.'}`
 }
 
 function countActiveFilters(req: ScreenerRequest): number {
