@@ -119,23 +119,23 @@ function exportToCsv(items: DashboardItem[]) {
 
 export default function ScreenerPage() {
   const [req, setReq] = useState<ScreenerRequest>({
-    min_textbook_similarity: 0.3,
+    min_textbook_similarity: 0.25,
     min_p_up: 0.0,
-    min_confidence: 0.3,
-    min_sample_reliability: 0.2,
-    min_data_quality: 0.4,
-    min_trade_readiness_score: 0.35,
-    min_entry_window_score: 0.3,
-    min_freshness_score: 0.3,
-    min_reentry_score: 0.2,
-    min_reentry_compression_score: 0.2,
-    min_reentry_volume_recovery_score: 0.2,
-    min_reentry_trigger_hold_score: 0.2,
-    min_reentry_wick_absorption_score: 0.2,
-    min_reentry_failure_burden_score: 0.2,
-    min_active_setup_score: 0.25,
+    min_confidence: 0.2,
+    min_sample_reliability: 0.1,
+    min_data_quality: 0.3,
+    min_trade_readiness_score: 0.25,
+    min_entry_window_score: 0.15,
+    min_freshness_score: 0.15,
+    min_reentry_score: 0.1,
+    min_reentry_compression_score: 0.1,
+    min_reentry_volume_recovery_score: 0.1,
+    min_reentry_trigger_hold_score: 0.1,
+    min_reentry_wick_absorption_score: 0.1,
+    min_reentry_failure_burden_score: 0.1,
+    min_active_setup_score: 0.15,
     min_confluence_score: 0.0,
-    min_historical_edge_score: 0.25,
+    min_historical_edge_score: 0.15,
     exclude_no_signal: true,
     sort_by: 'composite_score',
     limit: 20,
@@ -218,6 +218,30 @@ export default function ScreenerPage() {
   const run = () => {
     setSubmitted(true)
     refetch()
+  }
+
+  const relaxAndRun = () => {
+    setReq(current => ({
+      ...current,
+      min_textbook_similarity: Math.min(current.min_textbook_similarity ?? 0.25, 0.2),
+      min_confidence: Math.min(current.min_confidence ?? 0.2, 0.15),
+      min_sample_reliability: Math.min(current.min_sample_reliability ?? 0.1, 0.05),
+      min_data_quality: Math.min(current.min_data_quality ?? 0.3, 0.25),
+      min_trade_readiness_score: Math.min(current.min_trade_readiness_score ?? 0.25, 0.2),
+      min_entry_window_score: Math.min(current.min_entry_window_score ?? 0.15, 0.1),
+      min_freshness_score: Math.min(current.min_freshness_score ?? 0.15, 0.1),
+      min_reentry_score: Math.min(current.min_reentry_score ?? 0.1, 0.05),
+      min_reentry_compression_score: Math.min(current.min_reentry_compression_score ?? 0.1, 0.05),
+      min_reentry_volume_recovery_score: Math.min(current.min_reentry_volume_recovery_score ?? 0.1, 0.05),
+      min_reentry_trigger_hold_score: Math.min(current.min_reentry_trigger_hold_score ?? 0.1, 0.05),
+      min_reentry_wick_absorption_score: Math.min(current.min_reentry_wick_absorption_score ?? 0.1, 0.05),
+      min_reentry_failure_burden_score: Math.min(current.min_reentry_failure_burden_score ?? 0.1, 0.05),
+      min_active_setup_score: Math.min(current.min_active_setup_score ?? 0.15, 0.1),
+      min_historical_edge_score: Math.min(current.min_historical_edge_score ?? 0.15, 0.1),
+      exclude_no_signal: false,
+      limit: Math.max(current.limit ?? 20, 30),
+    }))
+    setSubmitted(true)
   }
 
   const toggleMultiValue = (field: 'pattern_types' | 'states' | 'markets' | 'fetch_statuses' | 'reentry_cases', value: string) => {
@@ -465,6 +489,20 @@ export default function ScreenerPage() {
           <p className="text-xs text-muted-foreground">
             현재 필터가 꽤 엄격하거나, 선택한 타임프레임에서 실전형 후보가 아직 적을 수 있습니다. 최소 점수 조건을 조금 낮추거나 타임프레임을 넓혀 다시 확인해 보세요.
           </p>
+          <div className="flex flex-wrap gap-2 pt-1">
+            <button
+              onClick={relaxAndRun}
+              className="rounded-md border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs text-primary transition-colors hover:bg-primary/15"
+            >
+              조건 완화해서 다시 실행
+            </button>
+            <button
+              onClick={() => setReq(current => ({ ...current, timeframes: ['1d', '1wk'], limit: Math.max(current.limit ?? 20, 30) }))}
+              className="rounded-md border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            >
+              일봉 + 주봉으로 넓혀보기
+            </button>
+          </div>
         </Card>
       )}
 

@@ -24,8 +24,9 @@ export function DashboardSection({ title, subtitle, data, isLoading, isError, on
       </div>
 
       {isLoading ? (
-        <div className="flex h-24 items-center justify-center text-muted-foreground">
+        <div className="flex h-24 flex-col items-center justify-center gap-2 text-muted-foreground">
           <Loader2 size={18} className="animate-spin" />
+          <span className="text-xs">후보를 불러오는 중입니다.</span>
         </div>
       ) : isError ? (
         <QueryError compact onRetry={onRetry} />

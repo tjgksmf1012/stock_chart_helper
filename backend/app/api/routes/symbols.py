@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import date, timedelta
 
 from fastapi import APIRouter, HTTPException, Query
@@ -16,6 +17,7 @@ from ...services.timeframe_service import DEFAULT_TIMEFRAME, SUPPORTED_TIMEFRAME
 
 router = APIRouter(prefix="/symbols", tags=["symbols"])
 settings = get_settings()
+POPULAR_SEARCH_CODES = {code for code, _, _ in FALLBACK_CODES}
 
 
 def _validate_timeframe(timeframe: str) -> str:
@@ -72,8 +74,14 @@ async def search_symbols(q: str = Query(min_length=1)) -> list[SymbolInfo]:
     results["match_score"] = 0
     results.loc[results["code"].astype(str).str.lower() == query, "match_score"] += 100
     results.loc[results["code"].astype(str).str.lower().str.startswith(query), "match_score"] += 50
+    results.loc[results["name"].fillna("").astype(str).str.lower() == query, "match_score"] += 80
     results.loc[results["name"].fillna("").astype(str).str.lower().str.startswith(query), "match_score"] += 25
-    results = results.sort_values(["match_score", "market", "code"], ascending=[False, True, True]).head(20)
+    results.loc[results["name"].fillna("").astype(str).str.lower().str.contains(query, regex=False), "match_score"] += 10
+    results.loc[results["code"].astype(str).isin(POPULAR_SEARCH_CODES), "match_score"] += 15
+    results.loc[results["name"].fillna("").astype(str).str.contains("스팩", na=False), "match_score"] -= 60
+    results.loc[results["name"].fillna("").astype(str).str.endswith("우", na=False), "match_score"] -= 20
+    results["name_length"] = results["name"].fillna("").astype(str).str.len()
+    results = results.sort_values(["match_score", "name_length", "market", "code"], ascending=[False, True, True, True]).head(20)
 
     return [
         SymbolInfo(
@@ -103,7 +111,16 @@ async def get_bars(
         return [OHLCVBar(**bar) for bar in cached]
 
     fetcher = get_data_fetcher()
-    df = await fetcher.get_stock_ohlcv_by_timeframe(symbol, timeframe, lookback_days=lookback_days)
+    try:
+        if spec.intraday:
+            df = await asyncio.wait_for(
+                fetcher.get_stock_ohlcv_by_timeframe(symbol, timeframe, lookback_days=lookback_days),
+                timeout=18,
+            )
+        else:
+            df = await fetcher.get_stock_ohlcv_by_timeframe(symbol, timeframe, lookback_days=lookback_days)
+    except TimeoutError:
+        df = pd.DataFrame()
     if df.empty:
         return []
 

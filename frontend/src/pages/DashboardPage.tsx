@@ -657,6 +657,8 @@ function candidateSourceLabel(source: string | null | undefined): string {
   switch (source) {
     case 'daily_seed':
       return '일봉 상위 후보'
+    case 'fallback_seed':
+      return '즉시 fallback 후보'
     case 'background_pending':
       return '백그라운드 예열 대기'
     case 'cache_ready':

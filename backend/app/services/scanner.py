@@ -529,8 +529,7 @@ async def get_scan_status(timeframe: str = DEFAULT_TIMEFRAME) -> dict[str, Any]:
     task = _scan_tasks.get(timeframe)
     if task and not task.done():
         status["is_running"] = True
-        if status.get("status") in {"idle", "warming"}:
-            status["status"] = "queued"
+        status["status"] = "warming" if status.get("cached_result_count", 0) > 0 else "queued"
     return status
 
 
@@ -1060,52 +1059,7 @@ async def trigger_scan(
     return status
 
 
-async def get_scan_results(timeframe: str = DEFAULT_TIMEFRAME) -> list[dict[str, Any]]:
-    cache_key = _full_scan_cache_key(timeframe)
-    cached = await cache_get(cache_key)
-    if cached:
-        previous = _status_snapshot(timeframe)
-        candidate_source = previous.get("candidate_source")
-        candidate_count = previous.get("candidate_count")
-        universe_size = previous.get("universe_size")
-
-        if timeframe in {"1m", "15m", "30m", "60m"} and candidate_source in {None, "background_pending"}:
-            candidate_source = "cache_ready"
-            if not candidate_count:
-                candidate_count = len(cached)
-            if not universe_size:
-                universe_size = max(len(cached), candidate_count)
-
-        _update_scan_status(
-            timeframe,
-            status="ready",
-            is_running=False,
-            source=previous.get("source"),
-            candidate_source=candidate_source,
-            candidate_count=candidate_count,
-            universe_size=universe_size,
-            cached_result_count=len(cached),
-            last_error=None,
-        )
-        return cached
-
-    if timeframe in {"1m", "15m", "30m", "60m"}:
-        task = _scan_tasks.get(timeframe)
-        if task and not task.done():
-            return []
-        _update_scan_status(
-            timeframe,
-            status="warming",
-            is_running=False,
-            source="fallback",
-            candidate_source="background_pending",
-            candidate_count=0,
-            cached_result_count=0,
-        )
-        await trigger_scan(timeframe=timeframe, force_refresh=True, source="background")
-        return []
-
-    _update_scan_status(timeframe, status="warming", is_running=False, source="fallback")
+async def _build_quick_scan_results(timeframe: str) -> tuple[list[dict[str, Any]], list[tuple[str, str, str]], int, str]:
     fallback = FALLBACK_CODES if timeframe == "1d" else FALLBACK_CODES[: min(len(FALLBACK_CODES), settings.intraday_seed_limit)]
     intraday_live_limit, intraday_live_phase = (
         _effective_live_intraday_limit(timeframe, len(fallback))
@@ -1145,6 +1099,7 @@ async def get_scan_results(timeframe: str = DEFAULT_TIMEFRAME) -> list[dict[str,
                 else _non_live_intraday_reason(item, timeframe, intraday_live_phase, intraday_live_limit)
             )
             item["intraday_collection_mode"] = _intraday_collection_mode(item)
+
     results.sort(
         key=lambda row: (
             row.get("trade_readiness_score", 0),
@@ -1158,6 +1113,74 @@ async def get_scan_results(timeframe: str = DEFAULT_TIMEFRAME) -> list[dict[str,
         ),
         reverse=True,
     )
+    return results, fallback, intraday_live_limit, intraday_live_phase
+
+
+async def get_scan_results(timeframe: str = DEFAULT_TIMEFRAME) -> list[dict[str, Any]]:
+    cache_key = _full_scan_cache_key(timeframe)
+    cached = await cache_get(cache_key)
+    if cached:
+        previous = _status_snapshot(timeframe)
+        candidate_source = previous.get("candidate_source")
+        candidate_count = previous.get("candidate_count")
+        universe_size = previous.get("universe_size")
+
+        if timeframe in {"1m", "15m", "30m", "60m"} and candidate_source in {None, "background_pending"}:
+            candidate_source = "cache_ready"
+            if not candidate_count:
+                candidate_count = len(cached)
+            if not universe_size:
+                universe_size = max(len(cached), candidate_count)
+
+        _update_scan_status(
+            timeframe,
+            status="ready",
+            is_running=False,
+            source=previous.get("source"),
+            candidate_source=candidate_source,
+            candidate_count=candidate_count,
+            universe_size=universe_size,
+            cached_result_count=len(cached),
+            last_error=None,
+        )
+        return cached
+
+    if timeframe in {"1m", "15m", "30m", "60m"}:
+        task = _scan_tasks.get(timeframe)
+        if task and not task.done():
+            quick_cached = await cache_get(cache_key)
+            return quick_cached or []
+
+        _update_scan_status(
+            timeframe,
+            status="warming",
+            is_running=False,
+            source="fallback",
+            candidate_source="background_pending",
+            candidate_count=0,
+            cached_result_count=0,
+        )
+        results, fallback, intraday_live_limit, intraday_live_phase = await _build_quick_scan_results(timeframe)
+        if results:
+            await cache_set(cache_key, results, ttl=180)
+        _update_scan_status(
+            timeframe,
+            status="warming",
+            cached_result_count=len(results),
+            universe_size=len(fallback),
+            candidate_source="fallback_seed",
+            candidate_count=len(fallback),
+            intraday_live_candidate_limit=intraday_live_limit,
+            intraday_live_candidate_count=intraday_live_limit,
+            intraday_live_phase=intraday_live_phase,
+            last_finished_at=_utc_now_iso(),
+            source="fallback",
+        )
+        await trigger_scan(timeframe=timeframe, force_refresh=True, source="background")
+        return results
+
+    _update_scan_status(timeframe, status="warming", is_running=False, source="fallback")
+    results, fallback, intraday_live_limit, intraday_live_phase = await _build_quick_scan_results(timeframe)
     await cache_set(cache_key, results, ttl=300)
     _update_scan_status(
         timeframe,

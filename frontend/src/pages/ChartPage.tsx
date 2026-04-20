@@ -28,6 +28,7 @@ export default function ChartPage() {
     queryFn: () => symbolsApi.getBars(symbol!, timeframe, getChartLookbackDays(timeframe)),
     enabled: !!symbol,
     staleTime: 60_000,
+    retry: ['1m', '15m', '30m', '60m'].includes(timeframe) ? 0 : 1,
   })
 
   const analysisQ = useQuery({
@@ -35,6 +36,7 @@ export default function ChartPage() {
     queryFn: () => symbolsApi.getAnalysis(symbol!, timeframe),
     enabled: !!symbol,
     staleTime: 180_000,
+    retry: 1,
   })
 
   const contextTimeframes = getContextTimeframes(timeframe)
@@ -67,6 +69,10 @@ export default function ChartPage() {
   }
 
   const analysis = analysisQ.data
+  const hasBars = (barsQ.data?.length ?? 0) > 0
+  const isPrimaryLoading = Boolean(symbol) && !analysis && analysisQ.isLoading
+  const isChartLoading = Boolean(symbol) && !hasBars && barsQ.isLoading
+  const isChartError = Boolean(symbol) && !hasBars && barsQ.isError
   const contextAnalyses = contextQueries.flatMap(query => (query.data ? [query.data] : []))
   const contextSummary = summarizeContext(analysis, contextAnalyses)
   const qualityTone = (analysis?.data_quality ?? 0) >= 0.8 ? 'bullish' : (analysis?.data_quality ?? 0) >= 0.6 ? 'neutral' : 'warning'
@@ -261,28 +267,57 @@ export default function ChartPage() {
         </Card>
       )}
 
-      {(barsQ.isLoading || analysisQ.isLoading) && (
+      {isPrimaryLoading && (
         <Card className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 size={16} className="animate-spin" />
-          차트와 분석을 불러오는 중입니다.
+          분석을 불러오는 중입니다.
         </Card>
       )}
 
-      {(barsQ.isError || analysisQ.isError) && !barsQ.isLoading && !analysisQ.isLoading && (
+      {analysisQ.isError && !analysisQ.isLoading && !analysis && (
         <Card>
           <QueryError
-            message={barsQ.isError ? '차트 데이터를 불러오지 못했습니다.' : '분석 데이터를 불러오지 못했습니다.'}
-            onRetry={() => { barsQ.refetch(); analysisQ.refetch() }}
+            message="분석 데이터를 불러오지 못했습니다."
+            onRetry={() => {
+              analysisQ.refetch()
+              barsQ.refetch()
+            }}
           />
         </Card>
       )}
 
-      {barsQ.data && barsQ.data.length > 0 && (
+      {symbol && (analysis || hasBars || isChartLoading || isChartError) && (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
           <Card>
-            <CandleChart bars={barsQ.data} analysis={analysis} height={520} />
+            {hasBars && barsQ.data ? (
+              <CandleChart bars={barsQ.data} analysis={analysis} height={520} />
+            ) : isChartLoading ? (
+              <div className="flex h-[520px] flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
+                <Loader2 size={18} className="animate-spin" />
+                <p>차트를 불러오는 중입니다.</p>
+                <p className="text-xs text-muted-foreground/80">분봉은 데이터 상태에 따라 조금 더 오래 걸릴 수 있습니다.</p>
+              </div>
+            ) : isChartError ? (
+              <div className="flex h-[520px] items-center justify-center p-4">
+                <QueryError
+                  message="차트 데이터를 불러오지 못했습니다. 분석 결과는 먼저 확인할 수 있습니다."
+                  onRetry={() => barsQ.refetch()}
+                />
+              </div>
+            ) : (
+              <div className="flex h-[520px] flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
+                <p>표시할 차트 데이터가 아직 없습니다.</p>
+                <p className="text-xs text-muted-foreground/80">분봉 데이터가 부족하거나 백그라운드 예열이 아직 끝나지 않았을 수 있습니다.</p>
+              </div>
+            )}
           </Card>
-          {analysis && <AnalysisPanel analysis={analysis} />}
+          {analysis ? (
+            <AnalysisPanel analysis={analysis} />
+          ) : (
+            <Card className="flex items-center justify-center text-sm text-muted-foreground">
+              분석 결과가 준비되면 이 영역에 상세 해석이 표시됩니다.
+            </Card>
+          )}
         </div>
       )}
     </div>
