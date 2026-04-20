@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
-import { useState } from 'react'
-import { Activity, Clock3, Database, DatabaseZap, KeyRound, RefreshCw, ServerCog, ShieldCheck } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Activity, Clock3, Database, DatabaseZap, KeyRound, RefreshCw, ServerCog, ShieldAlert, ShieldCheck } from 'lucide-react'
 
 import { Badge } from '@/components/ui/Badge'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
@@ -9,7 +9,7 @@ import { QueryError } from '@/components/ui/QueryError'
 import { StatRow } from '@/components/ui/StatRow'
 import { systemApi } from '@/lib/api'
 import { fmtDateTime } from '@/lib/utils'
-import type { IntradayWarmupJobStatus, Timeframe } from '@/types/api'
+import type { IntradayWarmupJobStatus, RuntimeStatusResponse, Timeframe } from '@/types/api'
 
 const INTRADAY_TIMEFRAMES = ['15m', '30m', '60m']
 
@@ -67,6 +67,7 @@ export default function SystemStatusPage() {
   const data = statusQ.data
   const warmupStatus = warmupStatusQ.data
   const isWarming = manualWarmup.isPending || candidateWarmup.isPending || Boolean(warmupStatus?.is_running)
+  const readiness = useMemo(() => (data ? buildReadiness(data) : null), [data])
 
   return (
     <div className="space-y-5">
@@ -74,7 +75,7 @@ export default function SystemStatusPage() {
         <div>
           <h1 className="text-xl font-bold">운영 상태</h1>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            KIS 토큰, 캐시 백엔드, 분봉 저장소 현황, 후보 분봉 예열 상태를 한 화면에서 확인합니다.
+            KIS 토큰, 캐시 방식, 분봉 저장소, 자동 예열 상태를 한눈에 보고 지금 실전용으로 얼마나 준비됐는지 판단할 수 있습니다.
           </p>
         </div>
         <button
@@ -99,13 +100,44 @@ export default function SystemStatusPage() {
         </Card>
       )}
 
-      {data && (
+      {data && readiness && (
         <>
+          <Card className={`space-y-4 ${readiness.bannerClass}`}>
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  {readiness.level === 'ready' ? <ShieldCheck size={16} /> : <ShieldAlert size={16} />}
+                  실전 준비도
+                </div>
+                <div className="mt-1 text-lg font-bold">{readiness.title}</div>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{readiness.summary}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Badge variant={readiness.level === 'ready' ? 'bullish' : readiness.level === 'usable' ? 'neutral' : 'warning'}>
+                  통과 {readiness.okCount}/{readiness.items.length}
+                </Badge>
+                <Badge variant="muted">생성 시각 {fmtDateTime(data.generated_at)}</Badge>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
+              {readiness.items.map(item => (
+                <div key={item.label} className="rounded-lg border border-border bg-background/60 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-xs font-semibold">{item.label}</div>
+                    <Badge variant={item.ok ? 'bullish' : 'warning'}>{item.ok ? '준비됨' : '보완 필요'}</Badge>
+                  </div>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{item.detail}</p>
+                </div>
+              ))}
+            </div>
+          </Card>
+
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
             <StatusSummary
               icon={<KeyRound size={15} />}
               label="KIS 설정"
-              value={data.kis.configured ? '설정됨' : '미설정'}
+              value={data.kis.configured ? '연결됨' : '미설정'}
               tone={data.kis.configured ? 'bullish' : 'warning'}
             />
             <StatusSummary
@@ -140,8 +172,8 @@ export default function SystemStatusPage() {
                 <StatRow label="환경" value={data.kis.environment} />
                 <StatRow label="토큰 캐시" value={data.kis.token_cached ? '있음' : '없음'} />
                 <StatRow label="토큰 만료 시각" value={data.kis.token_expires_at ? fmtDateTime(data.kis.token_expires_at) : '-'} />
-                <StatRow label="토큰 남은 시간" value={formatDuration(data.kis.token_expires_in_seconds)} />
-                <StatRow label="Base URL" value={data.kis.resolved_base_url ?? '-'} />
+                <StatRow label="토큰 잔여 시간" value={formatDuration(data.kis.token_expires_in_seconds)} />
+                <StatRow label="Resolved Base URL" value={data.kis.resolved_base_url ?? '-'} />
                 <StatRow label="동시 요청 제한" value={`${data.kis.max_concurrent_requests}개`} />
                 <StatRow label="요청 간격" value={`${data.kis.request_spacing_ms}ms`} />
                 <StatRow label="토큰 캐시 파일" value={data.kis.token_cache_path} />
@@ -160,7 +192,7 @@ export default function SystemStatusPage() {
                 <StatRow label="Redis 연결" value={data.cache.redis_available ? '정상' : '메모리 fallback'} />
                 <StatRow label="메모리 fallback 항목" value={`${data.cache.memory_fallback_entries}개`} />
                 <StatRow label="분봉 저장 종목" value={`${data.intraday_store.symbol_count}개`} />
-                <StatRow label="분봉 저장 행 수" value={`${data.intraday_store.total_rows.toLocaleString('ko-KR')}개`} />
+                <StatRow label="분봉 저장 바 수" value={`${data.intraday_store.total_rows.toLocaleString('ko-KR')}개`} />
                 <StatRow label="분봉 최신 수집" value={data.intraday_store.latest_fetched_at ? fmtDateTime(data.intraday_store.latest_fetched_at) : '-'} />
                 <StatRow label="생성 시각" value={fmtDateTime(data.generated_at)} />
                 {data.intraday_store.timeframes.length > 0 && (
@@ -188,8 +220,8 @@ export default function SystemStatusPage() {
               분봉 캐시 예열
             </div>
             <p className="text-xs leading-relaxed text-muted-foreground">
-              대시보드 상위 후보와 직접 입력한 종목의 15분, 30분, 60분 데이터를 미리 모아 둡니다. 기본은 저장/공개 데이터를
-              우선 쓰고, 최신성이 아주 중요할 때만 KIS 포함 버튼을 쓰는 편이 좋습니다.
+              대시보드 상위 후보나 직접 입력한 종목의 15분, 30분, 60분 데이터를 미리 모아 둡니다. 기본은 저장·공개 데이터 우선이며,
+              최신성이 특히 중요할 때만 KIS 포함 예열을 쓰는 편이 좋습니다.
             </p>
 
             <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
@@ -218,7 +250,7 @@ export default function SystemStatusPage() {
                     disabled={isWarming}
                     className="rounded-md border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground disabled:opacity-60"
                   >
-                    저장·공개 예열
+                    저장 우선 예열
                   </button>
                   <button
                     onClick={() => candidateWarmup.mutate(true)}
@@ -244,7 +276,7 @@ export default function SystemStatusPage() {
                     disabled={isWarming || parseSymbols(manualSymbols).length === 0}
                     className="rounded-md border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground disabled:opacity-60"
                   >
-                    저장·공개 예열
+                    저장 우선 예열
                   </button>
                   <button
                     onClick={() => manualWarmup.mutate(true)}
@@ -270,8 +302,8 @@ export default function SystemStatusPage() {
                 자동 예열 스케줄
               </div>
               <p className="text-xs leading-relaxed text-muted-foreground">
-                장중에는 후보군을 다시 뽑아 분봉 캐시를 자동으로 채웁니다. 기본은 KIS 호출을 절약하는 저장/공개 우선 방식이고,
-                필요할 때만 수동으로 KIS 포함 예열을 돌리면 됩니다.
+                장중에는 상위 후보군을 다시 뽑아 분봉 캐시를 자동으로 채웁니다. 기본은 KIS 호출을 아끼는 저장·공개 데이터 우선 방식이고,
+                필요할 때만 수동으로 KIS 포함 예열을 추가하면 됩니다.
               </p>
               <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
                 {data.scheduled_warmups.map(plan => (
@@ -330,6 +362,7 @@ export default function SystemStatusPage() {
 
 function WarmupJobStatusCard({ status }: { status: IntradayWarmupJobStatus }) {
   const progress = status.total_requests > 0 ? status.completed_count / status.total_requests : 0
+
   return (
     <div className="rounded-lg border border-border bg-background/60 p-3">
       <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -340,23 +373,32 @@ function WarmupJobStatusCard({ status }: { status: IntradayWarmupJobStatus }) {
           성공 {status.success_count}/{status.total_requests}
         </Badge>
         <Badge variant={status.allow_live ? 'bullish' : 'muted'}>
-          {status.allow_live ? 'KIS 포함' : '저장·공개 우선'}
+          {status.allow_live ? 'KIS 포함' : '저장 우선'}
         </Badge>
         <span className="text-muted-foreground">
           {status.symbols.length}종목 / {status.timeframes.join(', ')}
         </span>
       </div>
+
       <div className="mt-3 h-2 overflow-hidden rounded-full bg-background">
         <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.round(progress * 100)}%` }} />
       </div>
+
       <div className="mt-1 flex justify-between text-[11px] text-muted-foreground">
-        <span>{status.completed_count}/{status.total_requests} 완료</span>
+        <span>
+          {status.completed_count}/{status.total_requests} 완료
+        </span>
         <span>{Math.round(progress * 100)}%</span>
       </div>
+
       {status.last_error && <p className="mt-2 text-xs text-red-300">{status.last_error}</p>}
+
       <div className="mt-2 grid grid-cols-1 gap-1.5 md:grid-cols-2 xl:grid-cols-3">
         {status.results.slice(-9).map(item => (
-          <div key={`${item.symbol}-${item.timeframe}`} className="flex items-center justify-between gap-2 rounded-md border border-border bg-card px-2 py-1.5 text-xs">
+          <div
+            key={`${item.symbol}-${item.timeframe}`}
+            className="flex items-center justify-between gap-2 rounded-md border border-border bg-card px-2 py-1.5 text-xs"
+          >
             <span>
               {item.symbol} {item.timeframe}
             </span>
@@ -370,6 +412,7 @@ function WarmupJobStatusCard({ status }: { status: IntradayWarmupJobStatus }) {
 
 function warmupJobLabel(status: string): string {
   if (status === 'running') return '진행 중'
+  if (status === 'queued') return '대기 중'
   if (status === 'ready') return '완료'
   if (status === 'error') return '오류'
   return '대기'
@@ -413,4 +456,61 @@ function formatDuration(seconds: number | null): string {
   const minutes = Math.floor((seconds % 3600) / 60)
   if (hours <= 0) return `${minutes}분`
   return `${hours}시간 ${minutes}분`
+}
+
+function buildReadiness(data: RuntimeStatusResponse) {
+  const items = [
+    {
+      label: 'KIS 연결',
+      ok: data.kis.configured,
+      detail: data.kis.configured ? '실시간 분봉용 KIS 자격 증명이 연결되어 있습니다.' : 'KIS가 비어 있어 분봉은 공개/저장 데이터 의존도가 높습니다.',
+    },
+    {
+      label: '토큰 준비',
+      ok: data.kis.token_cached,
+      detail: data.kis.token_cached
+        ? `현재 토큰이 캐시되어 있고 만료 예정은 ${data.kis.token_expires_at ? fmtDateTime(data.kis.token_expires_at) : '확인 불가'}입니다.`
+        : '실시간 요청 시 첫 토큰 발급이 필요합니다.',
+    },
+    {
+      label: '분봉 저장소',
+      ok: data.intraday_store.symbol_count > 0 && data.intraday_store.total_rows > 0,
+      detail:
+        data.intraday_store.symbol_count > 0
+          ? `${data.intraday_store.symbol_count}종목, ${data.intraday_store.total_rows.toLocaleString('ko-KR')}개 바가 저장되어 있습니다.`
+          : '아직 저장된 분봉 풀이 거의 없어 초기 분봉 품질이 흔들릴 수 있습니다.',
+    },
+    {
+      label: '캐시 안정성',
+      ok: data.cache.redis_available,
+      detail: data.cache.redis_available ? 'Redis가 연결되어 재시작 후에도 캐시 운용이 안정적입니다.' : '지금은 메모리 fallback이라 재시작 시 캐시가 비워질 수 있습니다.',
+    },
+    {
+      label: '자동 예열',
+      ok: data.scheduler_enabled && data.scheduled_warmups.length > 0,
+      detail: data.scheduler_enabled ? `${data.scheduled_warmups.length}개의 자동 예열 스케줄이 켜져 있습니다.` : '자동 예열이 꺼져 있어 장중 분봉 후보가 느리게 채워질 수 있습니다.',
+    },
+  ]
+
+  const okCount = items.filter(item => item.ok).length
+  const level = okCount >= 4 ? 'ready' : okCount >= 2 ? 'usable' : 'limited'
+
+  return {
+    items,
+    okCount,
+    level,
+    title: level === 'ready' ? '실전 운용 준비가 꽤 잘 되어 있습니다' : level === 'usable' ? '운용 가능하지만 아직 보완할 부분이 있습니다' : '테스트용에 가깝고 실전 운용 전 보완이 필요합니다',
+    summary:
+      level === 'ready'
+        ? 'KIS, 토큰, 저장 분봉, 예열 구조가 대부분 준비되어 있어 분봉 품질과 응답 안정성이 이전보다 훨씬 낫습니다.'
+        : level === 'usable'
+          ? '기본 운용은 가능하지만, 저장 분봉이나 Redis 같은 운영 기반이 약하면 장중 품질이 흔들릴 수 있습니다.'
+          : '지금 상태로도 실행은 되지만 분봉 정확도와 안정성을 기대하기 어렵습니다. 먼저 운영 기반을 보강하는 편이 좋습니다.',
+    bannerClass:
+      level === 'ready'
+        ? 'border-emerald-500/20 bg-emerald-500/5'
+        : level === 'usable'
+          ? 'border-amber-500/20 bg-amber-500/5'
+          : 'border-red-500/20 bg-red-500/5',
+  }
 }

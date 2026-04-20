@@ -1,11 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-
-import asyncio
 
 from fastapi import APIRouter, HTTPException
 
@@ -48,6 +47,7 @@ _warmup_status: dict[str, Any] = {
     "trigger_accepted": None,
     "results": [],
 }
+
 SCHEDULED_INTRADAY_WARMUP_PLANS: list[dict[str, Any]] = [
     {
         "id": "open_candidate_cache",
@@ -60,7 +60,7 @@ SCHEDULED_INTRADAY_WARMUP_PLANS: list[dict[str, Any]] = [
     },
     {
         "id": "midday_candidate_cache",
-        "label": "오후 후보 분봉 캐시",
+        "label": "장중 후보 분봉 캐시",
         "source_timeframe": "1d",
         "limit": 20,
         "timeframes": ["15m", "30m", "60m"],
@@ -119,16 +119,16 @@ def _read_token_cache_status(path_text: str) -> dict[str, Any]:
 def _kis_guidance(configured: bool, token_cached: bool, token_remaining: int | None) -> list[str]:
     guidance: list[str] = []
     if not configured:
-        guidance.append("KIS App Key/App Secret이 설정되지 않아 분봉은 저장/공개 데이터 위주로 동작합니다.")
+        guidance.append("KIS App Key/App Secret이 설정되지 않아 분봉은 저장·공개 데이터 위주로 동작합니다.")
     elif not token_cached:
-        guidance.append("현재 저장된 KIS 토큰이 없습니다. 첫 실시간 요청 때 토큰을 1회 발급합니다.")
+        guidance.append("아직 활성 KIS 토큰이 없습니다. 첫 실시간 요청 시 토큰이 발급됩니다.")
     elif token_remaining is not None and token_remaining < 60 * 60:
-        guidance.append("KIS 토큰 만료가 1시간 이내입니다. 만료 후 다음 실시간 요청에서 새 토큰을 발급합니다.")
+        guidance.append("KIS 토큰 만료가 1시간 이내입니다. 만료 후 다음 실시간 요청에서 새 토큰이 발급됩니다.")
     else:
-        guidance.append("KIS 토큰 캐시가 살아 있어 불필요한 재발급 없이 재사용할 수 있습니다.")
+        guidance.append("KIS 토큰이 캐시되어 있어 잦은 재발급 없이 분봉 요청을 처리할 수 있습니다.")
 
-    guidance.append("KIS 토큰은 파일/Redis 캐시를 먼저 확인하므로 24시간 내 잦은 재발급을 피하도록 설계되어 있습니다.")
-    guidance.append("분봉 정확도는 실시간 KIS 데이터와 로컬 분봉 저장 캐시가 쌓일수록 좋아집니다.")
+    guidance.append("KIS 토큰은 파일과 Redis 캐시를 먼저 확인하므로 24시간 내 불필요한 재발급을 줄이도록 설계되어 있습니다.")
+    guidance.append("분봉 정확도는 실시간 KIS 데이터와 로컬 분봉 저장 캐시가 쌓일수록 더 좋아집니다.")
     return guidance
 
 
@@ -163,9 +163,9 @@ async def get_runtime_status() -> RuntimeStatusResponse:
         scheduler_enabled=True,
         scheduled_warmups=SCHEDULED_INTRADAY_WARMUP_PLANS,
         data_notes=[
-            "일봉/주봉/월봉은 KRX 일봉을 기준으로 재샘플링합니다.",
-            "분봉은 KIS 당일 분봉, Yahoo 공개 분봉, 로컬 저장 캐시를 조합합니다.",
-            "스캐너는 KIS 호출을 아끼기 위해 모든 분봉 후보에 live 요청을 하지 않고 우선순위가 높은 후보부터 사용합니다.",
+            "월봉·주봉·일봉은 KRX 일봉 데이터를 기준으로 집계합니다.",
+            "분봉은 KIS 당일 분봉, Yahoo 공개 분봉, 로컬 저장 캐시를 조합해 사용합니다.",
+            "운영 중에는 모든 분봉 후보를 실시간 호출하지 않고, 우선순위가 높은 후보부터 예열하는 방식으로 비용과 호출 수를 관리합니다.",
         ],
     )
 
