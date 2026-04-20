@@ -37,7 +37,7 @@ export function DashboardSection({
 
       {isPlaceholderOnly && (
         <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-100">
-          빠른 예열 후보를 먼저 보여주고 있습니다. 현재 카드의 확률, 준비도, 패턴 정보는 임시값일 수 있으며
+          빠른 예열 후보를 먼저 보여주고 있습니다. 지금 카드의 확률, 준비도, 우선순위 정보는 임시값일 수 있으며,
           백그라운드 스캔이 끝나면 실제 분석 결과로 자동 교체됩니다.
         </div>
       )}

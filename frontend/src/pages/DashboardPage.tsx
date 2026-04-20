@@ -13,6 +13,23 @@ import type { DashboardItem, DashboardResponse, ScanStatusResponse, Timeframe } 
 type IntradayView = 'all' | 'live' | 'stored' | 'public' | 'mixed' | 'cooldown'
 type IntradayPreset = 'all' | 'ready-now' | 'watch' | 'recheck' | 'cooling'
 
+const INTRADAY_VIEW_OPTIONS: Array<[IntradayView, string]> = [
+  ['all', '전체'],
+  ['live', 'live'],
+  ['stored', 'stored'],
+  ['public', 'public'],
+  ['mixed', 'mixed'],
+  ['cooldown', 'cooldown'],
+]
+
+const INTRADAY_PRESET_OPTIONS: Array<[IntradayPreset, string]> = [
+  ['all', '프리셋 전체'],
+  ['ready-now', '지금 볼 종목'],
+  ['watch', '지켜볼 후보'],
+  ['recheck', '재확인 필요'],
+  ['cooling', '관망 / 정리'],
+]
+
 export default function DashboardPage() {
   const { selectedTimeframe, setTimeframe } = useAppStore()
   const timeframe = selectedTimeframe ?? DEFAULT_TIMEFRAME
@@ -147,13 +164,13 @@ export default function DashboardPage() {
   const intradaySummary = intradayMode ? buildIntradaySummary(filteredSections) : null
   const intradayEmptyMessage =
     intradayMode && statusQ.data?.status === 'warming' && (statusQ.data?.cached_result_count ?? 0) === 0
-      ? `${timeframeLabel(timeframe)} 후보를 백그라운드에서 예열 중입니다. 잠시 후 자동으로 결과가 채워집니다.`
+      ? `${timeframeLabel(timeframe)} 후보를 백그라운드에서 예열 중입니다. 잠시 후 카드가 자동으로 채워집니다.`
       : undefined
   const intradayFallbackMessage =
     intradayMode && ['fallback_seed', 'placeholder_seed'].includes(statusQ.data?.candidate_source ?? '')
       ? statusQ.data?.candidate_source === 'placeholder_seed'
         ? `지금은 ${timeframeLabel(timeframe)} 빠른 예열 후보를 먼저 보여주고 있습니다. 백그라운드 분봉 스캔이 끝나면 실제 패턴 계산 결과로 자동 교체됩니다.`
-        : `지금은 ${timeframeLabel(timeframe)} 즉시 fallback 후보를 먼저 보여주고 있습니다. 백그라운드 정리가 끝나면 카드가 더 정확하게 재정렬됩니다.`
+        : `지금은 ${timeframeLabel(timeframe)} 즉시 fallback 후보를 먼저 보여주고 있습니다. 백그라운드 정리가 끝나면 카드가 더 정확한 결과로 바뀝니다.`
       : null
   const liveEmptyMessage = getLiveSectionEmptyMessage(statusQ.data, timeframe) ?? intradayEmptyMessage
   const sectionEmptyMessage = getDefaultSectionEmptyMessage(statusQ.data, timeframe) ?? intradayEmptyMessage
@@ -164,8 +181,8 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-xl font-bold">대시보드</h1>
           <p className="mt-0.5 max-w-3xl text-xs text-muted-foreground">
-            KRX 기준 타임프레임별로 확률, 패턴 완성도, 거래 준비도, 데이터 품질을 같이 보면서 지금 바로 볼 후보와
-            조금 더 지켜볼 후보를 나누는 메인 화면입니다.
+            KRX 기준으로 타임프레임별 패턴, 거래 준비도, 데이터 품질을 한 번에 살펴보는 메인 화면입니다. 지금 바로 볼 후보와
+            조금 더 지켜볼 후보를 분리해서 보는 용도로 맞춰 두었습니다.
           </p>
         </div>
 
@@ -189,10 +206,10 @@ export default function DashboardPage() {
       <Card className="flex items-start gap-3 border-primary/20 bg-primary/5 p-4">
         <Layers3 size={16} className="mt-0.5 text-primary" />
         <div className="space-y-1">
-          <div className="text-sm font-semibold">완성 신호와 형성 후보를 분리해서 봅니다</div>
+          <div className="text-sm font-semibold">완성 신호와 형성 중 후보를 분리해서 봅니다</div>
           <p className="text-xs leading-relaxed text-muted-foreground">
-            이제 카드 정렬은 단순 확률만이 아니라 거래 준비도, 상위 타임프레임 정렬, 데이터 품질까지 함께 반영합니다.
-            이미 끝난 패턴과 아직 베이스를 만들고 있는 후보를 같은 강도로 보지 않도록 설계했습니다.
+            카드 정렬은 단순 상승 확률만이 아니라 거래 준비도, 상위 타임프레임 정렬, 데이터 품질까지 같이 반영합니다. 이미
+            끝난 패턴과 아직 베이스를 만드는 후보를 같은 강도로 보지 않도록 설계해 두었습니다.
           </p>
         </div>
       </Card>
@@ -203,8 +220,9 @@ export default function DashboardPage() {
           <div className="space-y-1">
             <div className="text-sm font-semibold text-yellow-300">분봉 후보 해석은 보수적으로 읽습니다</div>
             <p className="text-xs leading-relaxed text-muted-foreground">
-              {timeframeLabel(timeframe)} 대시보드는 먼저 빠른 후보를 수집한 뒤 들어갑니다. 분봉은 KIS, 저장 캐시, 공개
-              소스 품질 차이가 크기 때문에 데이터 상태가 낮으면 자동으로 관망/No Signal 쪽으로 밀리게 되어 있습니다.
+              {timeframeLabel(timeframe)} 대시보드는 먼저 빠른 후보를 수집한 뒤 분봉 해석을 붙입니다. 분봉은 KIS, 저장 캐시,
+              공개 소스의 품질 차이가 있기 때문에 데이터 상태가 약하면 자동으로 관망 또는 No Signal 쪽으로 기울게 해
+              두었습니다.
             </p>
           </div>
         </Card>
@@ -214,10 +232,10 @@ export default function DashboardPage() {
         <Card className="flex items-start gap-3 border-sky-500/20 bg-sky-500/5 p-4">
           <Activity size={16} className="mt-0.5 text-sky-300" />
           <div className="space-y-1">
-            <div className="text-sm font-semibold text-sky-200">Live KIS 후보는 시간대와 중요도 기준으로만 좁힙니다</div>
+            <div className="text-sm font-semibold text-sky-200">Live KIS 후보는 시간대가 중요할 때만 우선합니다</div>
             <p className="text-xs leading-relaxed text-muted-foreground">
-              시초가와 마감 전에는 live 후보를 더 넓게 보고, 점심시간과 장외에서는 저장 분봉과 공개 소스를 우선합니다.
-              후보 안에서도 진입 적합도, 패턴 완성 임박도, 최근성이 높은 종목을 먼저 live 분봉으로 확인합니다.
+              시초가와 마감 직전에는 live 후보를 더 적극적으로 보고, 점심시간과 장외 시간대에서는 저장 분봉과 공개 소스를
+              우선합니다. 후보 중에서도 진입 적합도와 패턴 완성 임박, 최근성이 높은 종목만 먼저 live 분봉으로 확인합니다.
             </p>
           </div>
         </Card>
@@ -235,14 +253,7 @@ export default function DashboardPage() {
 
       {intradayMode && (
         <div className="flex flex-wrap gap-2">
-          {([
-            ['all', '전체'],
-            ['live', 'live'],
-            ['stored', 'stored'],
-            ['public', 'public'],
-            ['mixed', 'mixed'],
-            ['cooldown', 'cooldown'],
-          ] as Array<[IntradayView, string]>).map(([value, label]) => (
+          {INTRADAY_VIEW_OPTIONS.map(([value, label]) => (
             <button
               key={value}
               onClick={() => setIntradayView(value)}
@@ -260,13 +271,7 @@ export default function DashboardPage() {
 
       {intradayMode && (
         <div className="flex flex-wrap gap-2">
-          {([
-            ['all', '프리셋 전체'],
-            ['ready-now', '지금 볼 종목'],
-            ['watch', '지켜볼 후보'],
-            ['recheck', '재확인 필요'],
-            ['cooling', '관망/정리'],
-          ] as Array<[IntradayPreset, string]>).map(([value, label]) => (
+          {INTRADAY_PRESET_OPTIONS.map(([value, label]) => (
             <button
               key={value}
               onClick={() => setIntradayPreset(value)}
@@ -287,7 +292,7 @@ export default function DashboardPage() {
           <div>
             <div className="text-sm font-semibold">프리셋 요약</div>
             <p className="mt-1 text-xs text-muted-foreground">
-              현재 필터로 남은 후보를 빠르게 훑을 수 있도록 핵심 숫자만 따로 모았습니다.
+              현재 필터로 잡힌 후보를 빠르게 읽을 수 있도록 핵심 숫자만 모아 둔 영역입니다.
             </p>
           </div>
 
@@ -297,9 +302,12 @@ export default function DashboardPage() {
             <StatusCell label="임시 후보" value={`${intradaySummary.placeholderCount}개`} />
             <StatusCell label="live 추적" value={`${intradaySummary.liveCount}개`} />
             <StatusCell label="confirmed" value={`${intradaySummary.confirmedCount}개`} />
-            <StatusCell label="관망/No Signal" value={`${intradaySummary.noSignalCount}개`} />
+            <StatusCell label="관망 / No Signal" value={`${intradaySummary.noSignalCount}개`} />
             <StatusCell label="평균 품질" value={intradaySummary.isProvisionalOnly ? '임시값' : `${Math.round(intradaySummary.avgQuality * 100)}%`} />
-            <StatusCell label="평균 진입 적합도" value={intradaySummary.isProvisionalOnly ? '임시값' : `${Math.round(intradaySummary.avgEntry * 100)}%`} />
+            <StatusCell
+              label="평균 진입 적합도"
+              value={intradaySummary.isProvisionalOnly ? '임시값' : `${Math.round(intradaySummary.avgEntry * 100)}%`}
+            />
           </div>
         </Card>
       )}
@@ -309,15 +317,15 @@ export default function DashboardPage() {
           <div>
             <div className="text-sm font-semibold">프리셋 컨텍스트</div>
             <p className="mt-1 text-xs text-muted-foreground">
-              현재 프리셋 기준으로 데이터 품질과 셋업 분포를 함께 읽을 수 있는 보조 요약입니다.
+              현재 프리셋 기준으로 데이터 품질과 셋업 분포를 같이 읽을 수 있게 만든 보조 요약입니다.
             </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             <StatusCell label="평균 edge" value={intradaySummary.isProvisionalOnly ? '임시값' : `${Math.round(intradaySummary.avgEdge * 100)}%`} />
             <StatusCell label="평균 손익비" value={intradaySummary.isProvisionalOnly ? '임시값' : intradaySummary.avgRewardRisk.toFixed(2)} />
-            <StatusCell label="우세 수집 모드" value={intradaySummary.dominantMode} />
-            <StatusCell label="우세 셋업 단계" value={intradaySummary.dominantStage} />
+            <StatusCell label="우세한 수집 모드" value={intradaySummary.dominantMode} />
+            <StatusCell label="우세한 셋업 단계" value={intradaySummary.dominantStage} />
           </div>
 
           <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 p-3 text-xs text-cyan-100">
@@ -344,19 +352,19 @@ export default function DashboardPage() {
               onClick={() => setIntradayPreset('ready-now')}
               className="rounded-md border border-sky-500/30 bg-sky-500/10 px-2.5 py-1.5 text-xs text-sky-100 transition-colors hover:bg-sky-500/15"
             >
-              confirmed/즉시 확인
+              confirmed / 즉시 확인
             </button>
             <button
               onClick={() => setIntradayPreset('watch')}
               className="rounded-md border border-violet-500/30 bg-violet-500/10 px-2.5 py-1.5 text-xs text-violet-100 transition-colors hover:bg-violet-500/15"
             >
-              forming/watch
+              forming / watch
             </button>
             <button
               onClick={() => setIntradayPreset('cooling')}
               className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-100 transition-colors hover:bg-amber-500/15"
             >
-              관망·정리
+              관망 / 정리
             </button>
           </div>
         </Card>
@@ -401,7 +409,7 @@ export default function DashboardPage() {
         </div>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <StatusCell label="후보 선정" value={candidateSourceLabel(statusQ.data?.candidate_source)} />
+          <StatusCell label="후보 선정 방식" value={candidateSourceLabel(statusQ.data?.candidate_source)} />
           <StatusCell label="후보 개수" value={statusQ.data?.candidate_count ? `${statusQ.data.candidate_count}개` : '-'} />
           <StatusCell label="실행 주체" value={sourceLabel(statusQ.data?.source)} />
           <StatusCell label="소요 시간" value={statusQ.data?.duration_ms ? `${(statusQ.data.duration_ms / 1000).toFixed(1)}초` : '-'} />
@@ -430,15 +438,15 @@ export default function DashboardPage() {
 
         {statusQ.isError && !statusQ.isLoading && (
           <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-100">
-            스캔 상태를 불러오지 못했습니다. 카드 자체는 마지막 캐시를 보여줄 수 있지만, 현재 예열 진행 여부는 다시
-            확인이 필요합니다.
+            스캔 상태를 불러오지 못했습니다. 카드 자체는 마지막 캐시를 보여줄 수 있지만, 현재 예열이 진행 중인지 여부는 다시
+            확인할 필요가 있습니다.
           </div>
         )}
       </Card>
 
       <DashboardSection
         title="상승 확률 상위"
-        subtitle="상승 확률, 거래 준비도, 상위 타임프레임 정렬이 함께 좋은 종목입니다."
+        subtitle="상승 확률, 거래 준비도, 상위 타임프레임 정렬까지 함께 좋은 종목입니다."
         data={filterDashboard(longQ.data)}
         isLoading={longQ.isLoading}
         isError={longQ.isError}
@@ -461,7 +469,7 @@ export default function DashboardPage() {
       {intradayMode && (
         <DashboardSection
           title="Live 분봉 후보"
-          subtitle="지금 실제 live KIS 분봉까지 연결해 확인 중인 후보입니다. 저장 분봉이나 공개 소스 기반 후보보다 우선 관찰할 묶음입니다."
+          subtitle="실제 live KIS 분봉까지 연결해 확인 중인 후보입니다. 저장 분봉이나 공개 소스 기반 후보보다 우선 관찰할 묶음입니다."
           data={filterDashboard(liveQ.data)}
           isLoading={liveQ.isLoading}
           isError={liveQ.isError}
@@ -484,7 +492,7 @@ export default function DashboardPage() {
 
       <DashboardSection
         title="교과서 유사형"
-        subtitle="교과서 구조와 유사도가 높은 후보입니다. 다만 신선도와 최근성은 별도로 같이 봐야 합니다."
+        subtitle="교과서 구조와 유사도가 높은 후보입니다. 다만 우선순위는 최근성과 데이터 품질을 같이 봐야 합니다."
         data={filterDashboard(simQ.data)}
         isLoading={simQ.isLoading}
         isError={simQ.isError}
@@ -495,7 +503,7 @@ export default function DashboardPage() {
 
       <DashboardSection
         title="하락 확률 상위"
-        subtitle="약세 패턴과 하락 방향 정렬이 함께 들어온 종목입니다."
+        subtitle="약세 패턴과 하락 방향 정렬까지 함께 들어온 종목입니다."
         data={filterDashboard(shortQ.data)}
         isLoading={shortQ.isLoading}
         isError={shortQ.isError}
@@ -506,7 +514,7 @@ export default function DashboardPage() {
 
       <DashboardSection
         title="No Signal / 관망"
-        subtitle="데이터 품질, 구조, 손익비, 완성 과정 중 하나 이상이 부족해서 보수적으로 관망 처리한 종목입니다."
+        subtitle="데이터 품질, 구조, 손익비, 완성 과정 중 하나 이상이 부족해 보수적으로 관망 처리한 종목입니다."
         data={filterDashboard(noSigQ.data)}
         isLoading={noSigQ.isLoading}
         isError={noSigQ.isError}
@@ -555,7 +563,7 @@ function buildIntradaySummary(sections: Array<DashboardResponse | undefined>) {
       avgRewardRisk: 0,
       dominantMode: '-',
       dominantStage: '-',
-      guidance: '현재 프리셋에 맞는 후보가 많지 않습니다. 조건을 조금 완화하거나 다른 타임프레임을 함께 보는 편이 좋습니다.',
+      guidance: '현재 프리셋에 맞는 후보가 많지 않습니다. 조건을 조금 완화하거나 다른 타임프레임도 함께 보는 편이 좋습니다.',
     }
   }
 
@@ -609,22 +617,23 @@ function buildIntradaySummary(sections: Array<DashboardResponse | undefined>) {
     avgEntry: metricTotals.entrySum / metricItems.length,
     avgEdge: metricTotals.edgeSum / metricItems.length,
     avgRewardRisk: metricTotals.rewardRiskSum / metricItems.length,
-    dominantMode: dominantLabel(totals.modeCounts),
-    dominantStage: dominantLabel(totals.stageCounts),
+    dominantMode: dominantLabel(totals.modeCounts, modeLabel),
+    dominantStage: dominantLabel(totals.stageCounts, setupStageLabel),
     guidance: buildSummaryGuidance(items),
   }
 }
 
-function dominantLabel(counts: Record<string, number>): string {
+function dominantLabel(counts: Record<string, number>, formatter?: (value: string) => string): string {
   const entries = Object.entries(counts)
   if (entries.length === 0) return '-'
-  return entries.sort((a, b) => b[1] - a[1])[0][0]
+  const winner = entries.sort((a, b) => b[1] - a[1])[0][0]
+  return formatter ? formatter(winner) : winner
 }
 
 function buildSummaryGuidance(items: DashboardItem[]): string {
   const realItems = items.filter(item => !isPlaceholderItem(item))
   if (realItems.length === 0 && items.length > 0) {
-    return '지금은 빠른 예열 후보만 먼저 보여주고 있습니다. 평균 점수보다 후보 대강과 섹션 분포만 가볍게 보고, 실제 분봉 스캔 완료 후 다시 판단하세요.'
+    return '지금은 빠른 예열 후보만 먼저 보여주고 있습니다. 평균 점수보다는 후보 대강과 섹션 분포만 가볍게 보고, 실제 분봉 스캔 완료 뒤 다시 판단하는 편이 좋습니다.'
   }
 
   const metricItems = realItems.length > 0 ? realItems : items
@@ -638,10 +647,10 @@ function buildSummaryGuidance(items: DashboardItem[]): string {
   }
 
   if (avgEdge >= 0.58 && avgRewardRisk >= 1.4) {
-    return '평균 edge와 손익비는 무난한 편입니다. 많이 보기보다는 상위 후보 몇 개에 집중하는 방식이 좋습니다.'
+    return '평균 edge와 손익비는 무난한 편입니다. 많이 보기보다 상위 후보 몇 개에 집중하는 방식이 좋습니다.'
   }
 
-  return '확인 단계보다 후보가 더 많은 상태입니다. 진입보다 트리거 확인과 데이터 회복 여부를 우선 보는 편이 좋습니다.'
+  return '확인 단계보다 후보가 더 많은 상태입니다. 진입보다 트리거 확인과 데이터 보강 여부를 먼저 보는 편이 좋습니다.'
 }
 
 function isPlaceholderItem(item: DashboardItem): boolean {
@@ -685,11 +694,11 @@ function sourceLabel(source: string | null | undefined): string {
 function livePhaseLabel(phase: string | null | undefined): string {
   switch (phase) {
     case 'open_drive':
-      return '시초가 집중'
+      return '시초가 직후'
     case 'regular_session':
       return '정규장'
     case 'midday':
-      return '점심 축소'
+      return '점심시간 축소'
     case 'closing_drive':
       return '마감 전 집중'
     case 'off_hours':
@@ -702,11 +711,11 @@ function livePhaseLabel(phase: string | null | undefined): string {
 function livePhaseNote(phase: string | null | undefined): string {
   switch (phase) {
     case 'open_drive':
-      return '초기 추세 확인 구간이라 live 후보를 넓게 봅니다.'
+      return '초기 추세 확인 구간이라 live 후보를 더 적극적으로 봅니다.'
     case 'regular_session':
-      return '핵심 후보만 live로 확인하고 나머지는 절약 모드로 둡니다.'
+      return '강한 후보만 live로 확인하고 나머지는 절약 모드로 둡니다.'
     case 'midday':
-      return '노이즈가 많은 시간대라 live 사용 수를 줄입니다.'
+      return '노이즈가 많은 시간대라 live 사용 한도를 줄였습니다.'
     case 'closing_drive':
       return '마감 전 돌파 확인을 위해 live 후보를 다시 늘립니다.'
     case 'off_hours':
@@ -742,7 +751,7 @@ function candidateSourceLabel(source: string | null | undefined): string {
 function getDefaultSectionEmptyMessage(status: ScanStatusResponse | undefined, timeframe: Timeframe): string | undefined {
   if (!status) return undefined
   if (status.status === 'warming' && (status.cached_result_count ?? 0) === 0) {
-    return `${timeframeLabel(timeframe)} 후보를 백그라운드에서 예열 중입니다. 잠시 후 자동으로 결과가 채워집니다.`
+    return `${timeframeLabel(timeframe)} 후보를 백그라운드에서 예열 중입니다. 잠시 후 카드가 자동으로 채워집니다.`
   }
   if (status.candidate_source === 'placeholder_seed') {
     return `지금은 ${timeframeLabel(timeframe)} 빠른 예열 후보를 먼저 보여주는 단계입니다. 실제 분석 카드가 곧 자동으로 교체됩니다.`
@@ -765,10 +774,50 @@ function getLiveSectionEmptyMessage(status: ScanStatusResponse | undefined, time
     return '지금은 장외 절약 모드라 live 분봉 후보를 비워둘 수 있습니다. forming/watch 후보를 먼저 확인해 보세요.'
   }
   if ((status.intraday_live_candidate_limit ?? 0) === 0) {
-    return '현재 시간대와 중요도 기준에서 live 분봉까지 볼 후보가 아직 없습니다.'
+    return '현재 시간대에서는 중요도 기준에서 live 분봉까지 볼 후보가 아직 없습니다.'
   }
   if (status.candidate_source === 'fallback_seed') {
     return `지금은 ${timeframeLabel(timeframe)} 빠른 fallback 후보를 먼저 보여주고 있어 live 후보가 잠시 비어 있을 수 있습니다.`
   }
-  return '현재 조건을 동시에 만족하는 live 분봉 후보가 없습니다.'
+  return '현재 조건에서 동시에 만족하는 live 분봉 후보가 없습니다.'
+}
+
+function modeLabel(mode: string): string {
+  switch (mode) {
+    case 'live':
+      return 'live'
+    case 'stored':
+      return '저장 캐시'
+    case 'public':
+      return '공개 소스'
+    case 'mixed':
+      return '혼합'
+    case 'cooldown':
+      return '쿨다운'
+    case 'budget':
+      return '절약 모드'
+    default:
+      return mode || '-'
+  }
+}
+
+function setupStageLabel(stage: string): string {
+  switch (stage) {
+    case 'confirmed':
+      return '확인 완료'
+    case 'trigger_ready':
+      return '트리거 대기'
+    case 'breakout_watch':
+      return '돌파 감시'
+    case 'late_base':
+      return '후반 베이스'
+    case 'early_trigger_watch':
+      return '초기 트리거 감시'
+    case 'base_building':
+      return '베이스 형성'
+    case 'no_signal':
+      return '관망'
+    default:
+      return stage || '-'
+  }
 }

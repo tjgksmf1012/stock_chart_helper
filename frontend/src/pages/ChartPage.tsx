@@ -29,7 +29,7 @@ import {
 } from '@/lib/timeframes'
 import { cn, fmtDateTime, fmtNumber, fmtPct, fmtPrice } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
-import type { AnalysisResult } from '@/types/api'
+import type { AnalysisResult, Timeframe } from '@/types/api'
 
 export default function ChartPage() {
   const { symbol } = useParams<{ symbol: string }>()
@@ -306,6 +306,7 @@ export default function ChartPage() {
           </div>
 
           <ExecutiveSummaryCard analysis={analysis} />
+          <DataReadinessCard analysis={analysis} timeframe={timeframe} />
         </div>
       )}
 
@@ -437,11 +438,97 @@ function ExecutiveSummaryCard({ analysis }: { analysis: AnalysisResult }) {
       </div>
       {analysis.is_provisional && (
         <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-100">
-          이 결과는 잠정 상태입니다. 분봉/실시간 데이터가 더 들어오면 점수와 패턴 해석이 바뀔 수 있습니다.
+          이 결과는 잠정 상태입니다. 분봉이나 실시간 데이터가 더 들어오면 점수와 패턴 해석이 바뀔 수 있습니다.
         </div>
       )}
     </Card>
   )
+}
+
+function DataReadinessCard({ analysis, timeframe }: { analysis: AnalysisResult; timeframe: string }) {
+  const blockers = buildDataBlockers(analysis, timeframe)
+
+  return (
+    <Card className="space-y-4">
+      <div className="flex items-center gap-2 text-sm font-semibold">
+        <AlertTriangle size={15} className="text-amber-300" />
+        데이터 준비도와 해석 제한
+      </div>
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+        <MetricCell label="수집 상태" value={analysis.fetch_status_label || '-'} />
+        <MetricCell label="사용 바 수" value={`${analysis.available_bars ?? 0}개`} />
+        <MetricCell label="데이터 품질" value={fmtPct(analysis.data_quality ?? 0, 0)} />
+        <MetricCell label="표본 수" value={`${analysis.sample_size ?? 0}건`} />
+        <MetricCell label="통계 기준" value={analysis.stats_timeframe || '-'} />
+      </div>
+      <div className="rounded-lg border border-border bg-background/60 p-3 text-xs leading-relaxed text-muted-foreground">
+        <span className="font-medium text-foreground">해석 메모:</span> {buildDataReadinessSummary(analysis, blockers)}
+      </div>
+      <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+        {blockers.map(blocker => (
+          <div key={blocker} className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-100">
+            {blocker}
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
+function buildDataBlockers(analysis: AnalysisResult, timeframe: string): string[] {
+  const blockers: string[] = []
+
+  if (analysis.is_provisional) {
+    blockers.push('아직 잠정 결과라서 장중 데이터가 더 들어오면 점수와 패턴 판정이 바뀔 수 있습니다.')
+  }
+  if (analysis.no_signal_flag && analysis.no_signal_reason) {
+    blockers.push(`현재는 관망 우선입니다. 이유: ${analysis.no_signal_reason}`)
+  }
+  if ((analysis.available_bars ?? 0) < minimumBarsForTimeframe(timeframe)) {
+    blockers.push(`${timeframeLabel(timeframe as Timeframe)} 기준 분석 바 수가 부족해서 구조 해석 신뢰도가 떨어질 수 있습니다.`)
+  }
+  if ((analysis.data_quality ?? 0) < 0.6) {
+    blockers.push('데이터 품질 점수가 낮아 분봉 품질이나 표본 기반 통계는 보수적으로 해석하는 편이 안전합니다.')
+  }
+  if ((analysis.sample_reliability ?? 0) < 0.45) {
+    blockers.push('유사 패턴 표본 신뢰도가 낮아 승률보다 구조와 리스크 관리 쪽 비중을 더 크게 두는 편이 좋습니다.')
+  }
+  if (analysis.fetch_message && blockers.length < 4) {
+    blockers.push(analysis.fetch_message)
+  }
+
+  return blockers.slice(0, 4)
+}
+
+function buildDataReadinessSummary(analysis: AnalysisResult, blockers: string[]): string {
+  if (blockers.length === 0) {
+    return '현재 타임프레임 기준으로는 데이터 상태가 비교적 안정적입니다. 점수와 패턴 해석을 기본 판단 재료로 써도 무리가 적습니다.'
+  }
+  if ((analysis.trade_readiness_score ?? 0) >= 0.65 && (analysis.data_quality ?? 0) >= 0.7 && !analysis.is_provisional) {
+    return '진입 판단 점수는 괜찮지만 몇 가지 제한 요소가 남아 있습니다. 바로 추격하기보다 다음 트리거 확인과 리스크 기준 점검을 같이 보는 편이 좋습니다.'
+  }
+  return '지금 화면의 숫자는 참고는 되지만 확정 신호로 보기엔 이른 상태입니다. 우선은 구조 확인과 데이터 안정화 여부를 먼저 체크하는 편이 안전합니다.'
+}
+
+function minimumBarsForTimeframe(timeframe: string): number {
+  switch (timeframe) {
+    case '1m':
+      return 180
+    case '15m':
+      return 120
+    case '30m':
+      return 100
+    case '60m':
+      return 80
+    case '1d':
+      return 160
+    case '1wk':
+      return 90
+    case '1mo':
+      return 36
+    default:
+      return 80
+  }
 }
 
 function QuickPoint({
