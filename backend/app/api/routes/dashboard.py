@@ -126,6 +126,26 @@ def _timeframe_query(timeframe: str) -> str:
     return timeframe or DEFAULT_TIMEFRAME
 
 
+def _placeholder_rows(data: list[dict], limit: int) -> list[dict]:
+    placeholders = [row for row in data if row.get("fetch_status") == "placeholder_pending"]
+    placeholders.sort(
+        key=lambda row: (
+            row.get("composite_score", 0.0),
+            row.get("data_quality", 0.0),
+            row.get("liquidity_score", 0.0),
+            row.get("symbol_rank_hint", 0.0),
+        ),
+        reverse=True,
+    )
+    return placeholders[:limit]
+
+
+def _resolve_ranked_rows(ranked: list[dict], data: list[dict], limit: int, *, allow_placeholder: bool = False) -> list[dict]:
+    if ranked or not allow_placeholder:
+        return ranked[:limit]
+    return _placeholder_rows(data, limit)
+
+
 @router.get("/scan-status", response_model=ScanStatusResponse)
 async def dashboard_scan_status(timeframe: str = Query(default=DEFAULT_TIMEFRAME)) -> ScanStatusResponse:
     return ScanStatusResponse(**(await get_scan_status(_timeframe_query(timeframe))))
@@ -158,7 +178,8 @@ async def dashboard_long(
         ),
         reverse=True,
     )
-    items = [_make_item(index + 1, row) for index, row in enumerate(ranked[:limit])]
+    ranked = _resolve_ranked_rows(ranked, data, limit, allow_placeholder=timeframe in {"1m", "15m", "30m", "60m"})
+    items = [_make_item(index + 1, row) for index, row in enumerate(ranked)]
     return _response("long_high_probability", timeframe, items)
 
 
@@ -184,7 +205,8 @@ async def dashboard_short(
         ),
         reverse=True,
     )
-    items = [_make_item(index + 1, row) for index, row in enumerate(ranked[:limit])]
+    ranked = _resolve_ranked_rows(ranked, data, limit, allow_placeholder=timeframe in {"1m", "15m", "30m", "60m"})
+    items = [_make_item(index + 1, row) for index, row in enumerate(ranked)]
     return _response("short_high_probability", timeframe, items)
 
 
@@ -210,7 +232,8 @@ async def dashboard_similarity(
         ),
         reverse=True,
     )
-    items = [_make_item(index + 1, row) for index, row in enumerate(ranked[:limit])]
+    ranked = _resolve_ranked_rows(ranked, data, limit, allow_placeholder=timeframe in {"1m", "15m", "30m", "60m"})
+    items = [_make_item(index + 1, row) for index, row in enumerate(ranked)]
     return _response("high_textbook_similarity", timeframe, items)
 
 
@@ -252,7 +275,8 @@ async def dashboard_armed(
         ),
         reverse=True,
     )
-    items = [_make_item(index + 1, row) for index, row in enumerate(ranked[:limit])]
+    ranked = _resolve_ranked_rows(ranked, data, limit, allow_placeholder=timeframe in {"1m", "15m", "30m", "60m"})
+    items = [_make_item(index + 1, row) for index, row in enumerate(ranked)]
     return _response("pattern_armed", timeframe, items)
 
 
@@ -285,7 +309,8 @@ async def dashboard_forming(
         ),
         reverse=True,
     )
-    items = [_make_item(index + 1, row) for index, row in enumerate(ranked[:limit])]
+    ranked = _resolve_ranked_rows(ranked, data, limit, allow_placeholder=timeframe in {"1m", "15m", "30m", "60m"})
+    items = [_make_item(index + 1, row) for index, row in enumerate(ranked)]
     return _response("forming_candidates", timeframe, items)
 
 
