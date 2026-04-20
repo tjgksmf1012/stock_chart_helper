@@ -3181,26 +3181,33 @@ async def analyze_symbol_dataframe(
         invalidated_at=best_invalidated_at,
         bars_since_signal=bars_since_signal,
     )
-    projection_label, projection_summary, projection_caution, projected_path, projection_scenarios = _build_projection(
-        df,
-        timeframe,
-        best_pattern,
-        current_close,
-        reentry,
-        best_target_hit_at,
-        best_invalidated_at,
-        probability.p_up,
-        probability.p_down,
-        probability.confidence,
-        readiness["trade_readiness_score"],
-        entry_window["entry_window_score"],
-        freshness["freshness_score"],
-        active_setup["active_setup_score"],
-        probability.headroom_score,
-        probability.reward_risk_ratio,
-        profile["data_quality"],
-        probability.sample_reliability,
-    )
+    if probability.no_signal_flag:
+        projection_label = "관망 시나리오"
+        projection_summary = "활성 매매 신호가 부족해 미래 가격선을 그리지 않고 핵심 기준선 재확인만 권장합니다."
+        projection_caution = "No Signal 상태에서는 예상 경로가 매수/매도 판단을 과도하게 유도할 수 있어 차트 표시를 생략했습니다."
+        projected_path: list[ProjectionPoint] = []
+        projection_scenarios: list[ProjectionScenario] = []
+    else:
+        projection_label, projection_summary, projection_caution, projected_path, projection_scenarios = _build_projection(
+            df,
+            timeframe,
+            best_pattern,
+            current_close,
+            reentry,
+            best_target_hit_at,
+            best_invalidated_at,
+            probability.p_up,
+            probability.p_down,
+            probability.confidence,
+            readiness["trade_readiness_score"],
+            entry_window["entry_window_score"],
+            freshness["freshness_score"],
+            active_setup["active_setup_score"],
+            probability.headroom_score,
+            probability.reward_risk_ratio,
+            profile["data_quality"],
+            probability.sample_reliability,
+        )
 
     return AnalysisResult(
         symbol=symbol,

@@ -155,6 +155,101 @@ def _safe_ratio(numerator: float, denominator: float, default: float = 0.0) -> f
     return numerator / denominator
 
 
+def _recent_true_range_pct(df: pd.DataFrame, lookback: int = 60) -> float:
+    window = df.tail(lookback).copy()
+    if window.empty or not {"high", "low", "close"}.issubset(window.columns):
+        return 0.025
+
+    highs = pd.to_numeric(window["high"], errors="coerce")
+    lows = pd.to_numeric(window["low"], errors="coerce")
+    closes = pd.to_numeric(window["close"], errors="coerce")
+    prev_close = closes.shift(1)
+    true_range = pd.concat(
+        [
+            highs - lows,
+            (highs - prev_close).abs(),
+            (lows - prev_close).abs(),
+        ],
+        axis=1,
+    ).max(axis=1)
+    range_pct = (true_range / closes.replace(0, np.nan)).replace([np.inf, -np.inf], np.nan).dropna()
+    abs_return = closes.pct_change().abs().replace([np.inf, -np.inf], np.nan).dropna()
+
+    candidates: list[float] = []
+    if not range_pct.empty:
+        candidates.append(float(range_pct.median()))
+        candidates.append(float(range_pct.quantile(0.75)) * 0.72)
+    if not abs_return.empty:
+        candidates.append(float(abs_return.quantile(0.75)) * 1.35)
+    if not candidates:
+        return 0.025
+    return float(np.clip(max(candidates), 0.008, 0.08))
+
+
+def _target_distance_cap_pct(df: pd.DataFrame, state: str, formation_height_pct: float) -> float:
+    recent_range = _recent_true_range_pct(df)
+    cap = float(np.clip(recent_range * 6.0, 0.08, 0.30))
+    if state == "forming":
+        cap = min(cap, 0.22)
+    elif state == "armed":
+        cap = min(cap, 0.26)
+    if formation_height_pct > 0:
+        cap = min(cap, max(0.08, formation_height_pct * 1.15))
+    return float(np.clip(cap, 0.06, 0.30))
+
+
+def _too_far_from_trigger(
+    df: pd.DataFrame,
+    current_close: float,
+    trigger_level: float,
+    state: str,
+    bullish: bool,
+    formation_height_pct: float,
+) -> bool:
+    if state != "forming" or current_close <= 0 or trigger_level <= 0:
+        return False
+    if bullish and current_close >= trigger_level:
+        return False
+    if not bullish and current_close <= trigger_level:
+        return False
+
+    distance_pct = abs(trigger_level - current_close) / current_close
+    adaptive_limit = float(np.clip(_recent_true_range_pct(df) * 4.5, 0.055, 0.18))
+    if formation_height_pct > 0:
+        adaptive_limit = min(adaptive_limit, max(0.075, formation_height_pct * 0.65))
+    return distance_pct > adaptive_limit
+
+
+def _apply_realistic_target(
+    df: pd.DataFrame,
+    current_close: float,
+    trigger_level: float,
+    raw_target: float,
+    state: str,
+    bullish: bool,
+    formation_height_pct: float,
+) -> tuple[float, float]:
+    if current_close <= 0 or trigger_level <= 0 or raw_target <= 0:
+        return raw_target, 0.55
+
+    raw_distance_pct = abs(raw_target - current_close) / current_close
+    cap_pct = _target_distance_cap_pct(df, state, formation_height_pct)
+    if raw_distance_pct <= cap_pct:
+        return raw_target, 1.0
+
+    if bullish:
+        capped_by_close = current_close * (1.0 + cap_pct)
+        minimum_after_trigger = trigger_level * 1.012
+        capped_target = max(minimum_after_trigger, min(raw_target, capped_by_close))
+    else:
+        capped_by_close = current_close * (1.0 - cap_pct)
+        maximum_after_trigger = trigger_level * 0.988
+        capped_target = min(maximum_after_trigger, max(raw_target, capped_by_close))
+
+    realism = float(np.clip(cap_pct / max(raw_distance_pct, 1e-6), 0.35, 1.0))
+    return float(capped_target), realism
+
+
 def _time_symmetry_score(span_a: int, span_b: int) -> float:
     if span_a <= 0 or span_b <= 0:
         return 0.35
@@ -666,7 +761,21 @@ class PatternEngine:
                 state = "forming"
 
             invalidation = L2.price * 0.99
-            target = neckline + (neckline - min(L1.price, L2.price))
+            base_height_pct = _safe_ratio(neckline - min(L1.price, L2.price), neckline, default=0.0)
+            if base_height_pct < 0.025 or base_height_pct > 0.62:
+                continue
+            if _too_far_from_trigger(df, current_close, neckline, state, bullish=True, formation_height_pct=base_height_pct):
+                continue
+            raw_target = neckline + (neckline - min(L1.price, L2.price))
+            target, target_realism = _apply_realistic_target(
+                df,
+                current_close,
+                neckline,
+                raw_target,
+                state,
+                bullish=True,
+                formation_height_pct=base_height_pct,
+            )
 
             vol_score = _volume_context_score(df, L1.index, L2.index)
             volat_score = _volatility_context_score(df, L1.index, L2.index)
@@ -708,6 +817,7 @@ class PatternEngine:
                 str(second_shape["shape"]),
                 bullish=True,
             )
+            variant_fit = round(float(np.clip(variant_fit * (0.72 + 0.28 * target_realism), 0.0, 1.0)), 3)
             geom_fit = (
                 price_sym * 0.38
                 + max(0, 1 - abs(low_diff) * 10) * 0.20
@@ -715,6 +825,7 @@ class PatternEngine:
                 + reversal_energy * 0.16
                 + variant_fit * 0.08
             )
+            geom_fit = float(np.clip(geom_fit * (0.84 + 0.16 * target_realism), 0.0, 1.0))
             breakout_quality = _breakout_quality_score(df, breakout_idx, neckline, bullish=True)
             retest_quality = _retest_quality_score(df, breakout_idx, neckline, bullish=True)
             state = _normalize_state(state, breakout_quality, retest_quality)
@@ -792,7 +903,21 @@ class PatternEngine:
                 state = "forming"
 
             invalidation = H2.price * 1.01
-            target = neckline - (max(H1.price, H2.price) - neckline)
+            base_height_pct = _safe_ratio(max(H1.price, H2.price) - neckline, max(H1.price, H2.price), default=0.0)
+            if base_height_pct < 0.025 or base_height_pct > 0.62:
+                continue
+            if _too_far_from_trigger(df, current_close, neckline, state, bullish=False, formation_height_pct=base_height_pct):
+                continue
+            raw_target = neckline - (max(H1.price, H2.price) - neckline)
+            target, target_realism = _apply_realistic_target(
+                df,
+                current_close,
+                neckline,
+                raw_target,
+                state,
+                bullish=False,
+                formation_height_pct=base_height_pct,
+            )
 
             vol_score = _volume_context_score(df, H1.index, H2.index)
             volat_score = _volatility_context_score(df, H1.index, H2.index)
@@ -834,6 +959,7 @@ class PatternEngine:
                 str(second_shape["shape"]),
                 bullish=False,
             )
+            variant_fit = round(float(np.clip(variant_fit * (0.72 + 0.28 * target_realism), 0.0, 1.0)), 3)
             geom_fit = (
                 price_sym * 0.38
                 + max(0, 1 - abs(high_diff) * 10) * 0.20
@@ -841,6 +967,7 @@ class PatternEngine:
                 + reversal_energy * 0.16
                 + variant_fit * 0.08
             )
+            geom_fit = float(np.clip(geom_fit * (0.84 + 0.16 * target_realism), 0.0, 1.0))
             breakout_quality = _breakout_quality_score(df, breakout_idx, neckline, bullish=False)
             retest_quality = _retest_quality_score(df, breakout_idx, neckline, bullish=False)
             state = _normalize_state(state, breakout_quality, retest_quality)
@@ -917,7 +1044,21 @@ class PatternEngine:
                 state = "forming"
 
             invalidation = H.price * 1.01
-            target = neckline - (H.price - neckline)
+            formation_height_pct = _safe_ratio(H.price - neckline, H.price, default=0.0)
+            if formation_height_pct < 0.025 or formation_height_pct > 0.62:
+                continue
+            if _too_far_from_trigger(df, current_close, neckline, state, bullish=False, formation_height_pct=formation_height_pct):
+                continue
+            raw_target = neckline - (H.price - neckline)
+            target, target_realism = _apply_realistic_target(
+                df,
+                current_close,
+                neckline,
+                raw_target,
+                state,
+                bullish=False,
+                formation_height_pct=formation_height_pct,
+            )
 
             vol_score = _volume_context_score(df, LS.index, RS.index)
             volat_score = _volatility_context_score(df, LS.index, RS.index)
@@ -934,6 +1075,7 @@ class PatternEngine:
                 1.0,
                 _safe_ratio(H.price - max(LS.price, RS.price), H.price) * 10,
             ) * 0.5
+            geom_fit = float(np.clip(geom_fit * (0.84 + 0.16 * target_realism), 0.0, 1.0))
             breakout_quality = _breakout_quality_score(df, breakout_idx, neckline, bullish=False)
             retest_quality = _retest_quality_score(df, breakout_idx, neckline, bullish=False)
             state = _normalize_state(state, breakout_quality, retest_quality)
@@ -1006,7 +1148,21 @@ class PatternEngine:
                 state = "forming"
 
             invalidation = H.price * 0.99
-            target = neckline + (neckline - H.price)
+            formation_height_pct = _safe_ratio(neckline - H.price, neckline, default=0.0)
+            if formation_height_pct < 0.025 or formation_height_pct > 0.62:
+                continue
+            if _too_far_from_trigger(df, current_close, neckline, state, bullish=True, formation_height_pct=formation_height_pct):
+                continue
+            raw_target = neckline + (neckline - H.price)
+            target, target_realism = _apply_realistic_target(
+                df,
+                current_close,
+                neckline,
+                raw_target,
+                state,
+                bullish=True,
+                formation_height_pct=formation_height_pct,
+            )
             vol_score = _volume_context_score(df, LS.index, RS.index)
             volat_score = _volatility_context_score(df, LS.index, RS.index)
             leg_balance = _leg_balance_score(LS.price, RS.price, H.index - LS.index, RS.index - H.index)
@@ -1022,6 +1178,7 @@ class PatternEngine:
                 1.0,
                 _safe_ratio(min(LS.price, RS.price) - H.price, H.price) * 10,
             ) * 0.5
+            geom_fit = float(np.clip(geom_fit * (0.84 + 0.16 * target_realism), 0.0, 1.0))
             breakout_quality = _breakout_quality_score(df, breakout_idx, neckline, bullish=True)
             retest_quality = _retest_quality_score(df, breakout_idx, neckline, bullish=True)
             state = _normalize_state(state, breakout_quality, retest_quality)
@@ -1206,7 +1363,16 @@ class PatternEngine:
 
         invalidation = latest_low.price * 0.99
         target_span = max(pivot - latest_low.price, pivot * 0.08)
-        target = pivot + target_span
+        raw_target = pivot + target_span
+        target, target_realism = _apply_realistic_target(
+            df,
+            current_close,
+            pivot,
+            raw_target,
+            state,
+            bullish=True,
+            formation_height_pct=_safe_ratio(target_span, pivot, default=0.0),
+        )
         geometry_fit = round(
             float(
                 np.clip(
@@ -1218,6 +1384,7 @@ class PatternEngine:
                     0.0,
                     1.0,
                 )
+                * (0.88 + 0.12 * target_realism)
             ),
             3,
         )
@@ -1296,6 +1463,17 @@ class PatternEngine:
         volat_score = _volatility_context_score(df, min(h_series[0].index, l_series[0].index), len(df) - 1)
         state = _normalize_state(state, breakout_quality, retest_quality)
         grade = _grade_from_quality(max(0.0, 1 - (h_std + l_std) * 10), breakout_quality, retest_quality, vol_score)
+        raw_target = resistance + (resistance - support)
+        target, target_realism = _apply_realistic_target(
+            df,
+            current_close,
+            resistance,
+            raw_target,
+            state,
+            bullish=True,
+            formation_height_pct=_safe_ratio(resistance - support, resistance, default=0.0),
+        )
+        geometry_fit = round(float(np.clip((1 - (h_std + l_std) * 10) * (0.88 + 0.12 * target_realism), 0.0, 1.0)), 3)
 
         r = PatternResult(
             pattern_type="rectangle",
@@ -1304,8 +1482,8 @@ class PatternEngine:
             end_dt=last_dt if state == "confirmed" else None,
             neckline=resistance,
             invalidation_level=support * 0.99,
-            target_level=resistance + (resistance - support),
-            geometry_fit=round(1 - (h_std + l_std) * 10, 3),
+            target_level=target,
+            geometry_fit=geometry_fit,
             swing_structure_fit=0.7,
             volume_context_fit=round(vol_score, 3),
             volatility_context_fit=round(volat_score, 3),

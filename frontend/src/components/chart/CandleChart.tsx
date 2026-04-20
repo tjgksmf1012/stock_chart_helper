@@ -12,7 +12,7 @@ import {
   type Time,
 } from 'lightweight-charts'
 
-import type { AnalysisResult, OHLCVBar, ProjectionScenario } from '@/types/api'
+import type { AnalysisResult, OHLCVBar, PatternInfo, ProjectionScenario } from '@/types/api'
 
 interface CandleChartProps {
   bars: OHLCVBar[]
@@ -143,14 +143,16 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
     overlayRef.current = []
     candleSeries.setMarkers([])
 
-    if (!analysis || analysis.patterns.length === 0) return
+    if (!analysis) return
 
     const sortedBars = [...bars].sort((left, right) => compareBarDates(left.date, right.date))
     const firstTime = toChartTime(sortedBars[0].date)
     const lastBar = sortedBars[sortedBars.length - 1]
     const lastTime = toChartTime(lastBar.date)
     const lastClose = lastBar.close
-    const best = analysis.patterns[0]
+    const best = getChartPattern(analysis)
+    const projectionScenarios = getProjectionScenarios(analysis, best)
+    if (!best && projectionScenarios.length === 0) return
 
     const addHorizontalLine = (price: number, color: string, style: LineStyle) => {
       const series = chart.addLineSeries({
@@ -171,28 +173,28 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
       overlayRef.current.push(series)
     }
 
-    if (best.neckline) addHorizontalLine(best.neckline, OVERLAY_COLORS.neckline, LineStyle.Dashed)
-    if (best.target_level) addHorizontalLine(best.target_level, OVERLAY_COLORS.target, LineStyle.Dotted)
-    if (best.invalidation_level) addHorizontalLine(best.invalidation_level, OVERLAY_COLORS.invalidation, LineStyle.Dotted)
+    if (best) {
+      if (best.neckline) addHorizontalLine(best.neckline, OVERLAY_COLORS.neckline, LineStyle.Dashed)
+      if (best.target_level) addHorizontalLine(best.target_level, OVERLAY_COLORS.target, LineStyle.Dotted)
+      if (best.invalidation_level) addHorizontalLine(best.invalidation_level, OVERLAY_COLORS.invalidation, LineStyle.Dotted)
 
-    const markers: SeriesMarker<Time>[] = best.key_points
-      .filter((point): point is { dt: string; price: number; type: string } => Boolean(point.dt))
-      .sort((left, right) => compareBarDates(left.dt, right.dt))
-      .map(point => ({
-        time: toChartTime(point.dt),
-        position: point.type.includes('low') || point.type === 'head' ? 'belowBar' : 'aboveBar',
-        color: point.type.includes('neckline')
-          ? OVERLAY_COLORS.neckline
-          : point.type.includes('low')
-            ? OVERLAY_COLORS.target
-            : OVERLAY_COLORS.invalidation,
-        shape: 'circle',
-        text: markerLabel(point.type),
-      }))
+      const markers: SeriesMarker<Time>[] = best.key_points
+        .filter((point): point is { dt: string; price: number; type: string } => Boolean(point.dt))
+        .sort((left, right) => compareBarDates(left.dt, right.dt))
+        .map(point => ({
+          time: toChartTime(point.dt),
+          position: point.type.includes('low') || point.type === 'head' ? 'belowBar' : 'aboveBar',
+          color: point.type.includes('neckline')
+            ? OVERLAY_COLORS.neckline
+            : point.type.includes('low')
+              ? OVERLAY_COLORS.target
+              : OVERLAY_COLORS.invalidation,
+          shape: 'circle',
+          text: markerLabel(point.type),
+        }))
 
-    candleSeries.setMarkers(markers)
-
-    const projectionScenarios = getProjectionScenarios(analysis)
+      candleSeries.setMarkers(markers)
+    }
     projectionScenarios.slice(0, 3).forEach((scenario, index) => {
       const projectionSeries = chart.addLineSeries({
         color: scenarioColor(scenario),
@@ -217,14 +219,17 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
     chart.timeScale().fitContent()
   }, [analysis, bars])
 
-  const projectionScenarios = analysis ? getProjectionScenarios(analysis) : []
+  const chartPattern = analysis ? getChartPattern(analysis) : null
+  const projectionScenarios = analysis ? getProjectionScenarios(analysis, chartPattern) : []
 
   return (
     <div className="space-y-1">
       <div ref={containerRef} className="chart-container w-full rounded-lg" style={{ height }} />
-      {analysis && analysis.patterns.length > 0 && (
+      {analysis && (chartPattern || projectionScenarios.length > 0 || analysis.no_signal_flag) && (
         <div className="space-y-2 px-2 text-xs text-muted-foreground">
           <div className="flex flex-wrap items-center gap-4">
+          {chartPattern && (
+            <>
           <span className="flex items-center gap-1">
             <span className="inline-block h-px w-3 bg-amber-400" style={{ borderTop: '1px dashed' }} /> 목선
           </span>
@@ -234,6 +239,8 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
           <span className="flex items-center gap-1">
             <span className="inline-block h-px w-3 bg-red-400" style={{ borderTop: '1px dotted' }} /> 무효화 기준
           </span>
+            </>
+          )}
           {projectionScenarios.length > 0 && (
             <>
               <span className="flex items-center gap-1">
@@ -267,7 +274,24 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
   )
 }
 
-function getProjectionScenarios(analysis: AnalysisResult): ProjectionScenario[] {
+function getChartPattern(analysis: AnalysisResult): PatternInfo | null {
+  return analysis.patterns.find(pattern => isActivePattern(pattern)) ?? null
+}
+
+function isActivePattern(pattern: PatternInfo): boolean {
+  return (
+    pattern.state !== 'played_out' &&
+    pattern.state !== 'invalidated' &&
+    !pattern.target_hit_at &&
+    !pattern.invalidated_at
+  )
+}
+
+function getProjectionScenarios(analysis: AnalysisResult, chartPattern: PatternInfo | null): ProjectionScenario[] {
+  if (analysis.no_signal_flag || !chartPattern) {
+    return []
+  }
+
   if (analysis.projection_scenarios.length > 0) {
     return analysis.projection_scenarios
   }
