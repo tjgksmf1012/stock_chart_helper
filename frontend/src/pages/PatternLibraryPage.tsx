@@ -126,10 +126,10 @@ export default function PatternLibraryPage() {
       </div>
 
       <Card className="space-y-3 border-primary/20 bg-primary/5">
-        <div className="text-sm font-semibold">활용 팁</div>
+        <div className="text-sm font-semibold">쓰는 법</div>
         <p className="text-xs leading-relaxed text-muted-foreground">
-          이 화면은 “이 패턴이 원래 어떻게 생겼는지”를 확인하는 용도입니다. 실제 매매에서는 차트 화면의 신선도, 거래 준비도,
-          진입 구간, 재진입 구조를 함께 봐야 하며, 교과서 유사도만 높다고 바로 강한 종목은 아닙니다.
+          이 화면은 각 패턴이 원래 어떻게 생겼는지 확인하는 용도입니다. 실제 매매에서는 차트 화면의 신선도, 거래 준비도, 진입 구간, 재진입 구조를 함께 봐야 하고,
+          교과서와 비슷하다고 해서 바로 강한 종목이 되는 건 아닙니다.
         </p>
       </Card>
 
@@ -156,7 +156,7 @@ export default function PatternLibraryPage() {
       </div>
 
       {isLoading ? (
-        <div className="py-10 text-center text-muted-foreground">불러오는 중...</div>
+        <div className="py-10 text-center text-muted-foreground">불러오는 중입니다...</div>
       ) : (
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
           {filtered.map(entry => (
