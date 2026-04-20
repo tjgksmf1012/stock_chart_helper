@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     intraday_seed_multiplier: int = 4
     intraday_live_candidate_limit: int = 12
     kis_failure_cooldown_seconds: int = 900
+    yahoo_failure_cooldown_seconds: int = 600
 
     # Universe filters
     min_market_cap_billion: float = 500.0   # 5,000억 원

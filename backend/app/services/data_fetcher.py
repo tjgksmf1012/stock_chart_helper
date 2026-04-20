@@ -24,6 +24,8 @@ from .timeframe_service import get_timeframe_spec, is_intraday_timeframe
 logger = logging.getLogger(__name__)
 settings = get_settings()
 UNIVERSE_CACHE_KEY = "symbols:universe"
+MARKET_CAP_CACHE_PREFIX = "symbols:market-cap:v1"
+YAHOO_INTRADAY_COOLDOWN_PREFIX = "yahoo:intraday:cooldown"
 
 KRX_OHLCV_COLUMNS = {
     "\uc2dc\uac00": "open",
@@ -111,6 +113,9 @@ class KRXDataFetcher:
     def _kis_cooldown_key(self, code: str, timeframe: str) -> str:
         return f"kis:cooldown:{code}:{timeframe}"
 
+    def _yahoo_cooldown_key(self, timeframe: str) -> str:
+        return f"{YAHOO_INTRADAY_COOLDOWN_PREFIX}:{timeframe}"
+
     async def _kis_is_in_cooldown(self, code: str, timeframe: str) -> bool:
         return bool(await cache_get(self._kis_cooldown_key(code, timeframe)))
 
@@ -119,6 +124,16 @@ class KRXDataFetcher:
             self._kis_cooldown_key(code, timeframe),
             {"reason": reason, "at": datetime.utcnow().isoformat()},
             ttl=max(60, int(settings.kis_failure_cooldown_seconds)),
+        )
+
+    async def _yahoo_is_in_cooldown(self, timeframe: str) -> bool:
+        return bool(await cache_get(self._yahoo_cooldown_key(timeframe)))
+
+    async def _mark_yahoo_cooldown(self, timeframe: str, reason: str) -> None:
+        await cache_set(
+            self._yahoo_cooldown_key(timeframe),
+            {"reason": reason, "at": datetime.utcnow().isoformat()},
+            ttl=max(60, int(settings.yahoo_failure_cooldown_seconds)),
         )
 
     async def get_stock_ohlcv(self, code: str, start: date, end: date, adjusted: bool = True) -> pd.DataFrame:
@@ -271,6 +286,13 @@ class KRXDataFetcher:
         )
 
     async def _get_yahoo_intraday_ohlcv(self, code: str, timeframe: str, period_days: int) -> pd.DataFrame:
+        if await self._yahoo_is_in_cooldown(timeframe):
+            return self._empty_frame(
+                data_source="yahoo_fallback",
+                fetch_status="yahoo_rate_limited",
+                fetch_message=FETCH_STATUS_MESSAGES["intraday_rate_limited"],
+            )
+
         candidates = await self._get_yahoo_symbol_candidates(code)
         if not candidates:
             return self._empty_frame(
@@ -303,6 +325,7 @@ class KRXDataFetcher:
                 except Exception as exc:
                     exc_str = str(exc)
                     if "Too Many Requests" in exc_str or "Rate limit" in exc_str.lower():
+                        await self._mark_yahoo_cooldown(timeframe, exc_str)
                         logger.warning("yfinance rate-limited for %s; intraday unavailable", code)
                         return self._empty_frame(
                             data_source="yahoo_fallback",
@@ -533,7 +556,11 @@ class KRXDataFetcher:
                 df["market"] = df["Market"].map(lambda m: "KOSDAQ" if "KOSDAQ" in m else "KOSPI")
                 df["code"] = df["Code"].astype(str).str.zfill(6)
                 df["name"] = df["Name"].fillna(df["code"])
-                return df[["code", "market", "name"]].reset_index(drop=True)
+                if "Marcap" in df.columns:
+                    df["market_cap"] = pd.to_numeric(df["Marcap"], errors="coerce") / 1e8
+                else:
+                    df["market_cap"] = None
+                return df[["code", "market", "name", "market_cap"]].reset_index(drop=True)
 
             result = await asyncio.to_thread(_fetch)
             if not result.empty:
@@ -541,18 +568,37 @@ class KRXDataFetcher:
             return result
         except Exception as exc:
             logger.error("FDR universe fallback failed: %s", exc)
-            return pd.DataFrame(columns=["code", "market", "name"])
+            return pd.DataFrame(columns=["code", "market", "name", "market_cap"])
 
     async def get_market_cap(self, code: str) -> float | None:
+        cache_key = f"{MARKET_CAP_CACHE_PREFIX}:{code}"
+        cached = await cache_get(cache_key)
+        if isinstance(cached, dict) and "market_cap" in cached:
+            value = cached["market_cap"]
+            return float(value) if value is not None else None
+
+        universe = await self.get_universe()
+        if not universe.empty and "market_cap" in universe.columns:
+            matched = universe.loc[universe["code"] == code]
+            if not matched.empty:
+                value = matched.iloc[0].get("market_cap")
+                market_cap = float(value) if pd.notna(value) else None
+                await cache_set(cache_key, {"market_cap": market_cap}, ttl=3600)
+                return market_cap
+
         try:
             from pykrx import stock as krx
 
             today = datetime.today().strftime("%Y%m%d")
             df = await asyncio.to_thread(krx.get_market_cap, today, today, code)
             if df.empty:
+                await cache_set(cache_key, {"market_cap": None}, ttl=900)
                 return None
-            return float(df["\uc2dc\uac00\ucd1d\uc561"].iloc[0] / 1e8)
+            market_cap = float(df["\uc2dc\uac00\ucd1d\uc561"].iloc[0] / 1e8)
+            await cache_set(cache_key, {"market_cap": market_cap}, ttl=3600)
+            return market_cap
         except Exception:
+            await cache_set(cache_key, {"market_cap": None}, ttl=900)
             return None
 
     async def get_stock_name(self, code: str) -> str:
