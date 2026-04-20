@@ -1,4 +1,4 @@
-﻿import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Database, Layers3, Loader2, Search, Star, TrendingDown, TrendingUp } from 'lucide-react'
@@ -21,6 +21,7 @@ export default function ChartPage() {
   const timeframe = selectedTimeframe ?? DEFAULT_TIMEFRAME
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<Array<{ code: string; name: string; market: string }>>([])
+  const searchRequestRef = useRef(0)
   const watched = symbol ? isWatched(symbol) : false
 
   const barsQ = useQuery({
@@ -57,16 +58,35 @@ export default function ChartPage() {
     refetchInterval: 120_000,
   })
 
-  const handleSearch = async (query: string) => {
-    setSearchQuery(query)
-    if (query.trim().length < 1) {
+  useEffect(() => {
+    const query = searchQuery.trim()
+    const requestId = ++searchRequestRef.current
+
+    if (query.length < 1) {
       setSearchResults([])
       return
     }
 
-    const results = await symbolsApi.search(query)
-    setSearchResults(results)
-  }
+    const timer = window.setTimeout(async () => {
+      try {
+        const results = await symbolsApi.search(query)
+        if (searchRequestRef.current === requestId) {
+          setSearchResults(results)
+        }
+      } catch {
+        if (searchRequestRef.current === requestId) {
+          setSearchResults([])
+        }
+      }
+    }, 180)
+
+    return () => window.clearTimeout(timer)
+  }, [searchQuery])
+
+  useEffect(() => {
+    setSearchQuery('')
+    setSearchResults([])
+  }, [symbol])
 
   const analysis = analysisQ.data
   const hasBars = (barsQ.data?.length ?? 0) > 0
@@ -90,7 +110,18 @@ export default function ChartPage() {
             className="w-full rounded-lg border border-border bg-card py-2 pl-8 pr-3 text-sm focus:border-primary/60 focus:outline-none"
             placeholder="종목 코드 또는 이름 검색"
             value={searchQuery}
-            onChange={event => handleSearch(event.target.value)}
+            onChange={event => setSearchQuery(event.target.value)}
+            onKeyDown={event => {
+              if (event.key === 'Escape') {
+                setSearchResults([])
+                return
+              }
+              if (event.key === 'Enter' && searchResults.length > 0) {
+                nav(`/chart/${searchResults[0].code}`)
+                setSearchQuery('')
+                setSearchResults([])
+              }
+            }}
           />
           {searchResults.length > 0 && (
             <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-48 overflow-y-auto rounded-lg border border-border bg-card shadow-xl">

@@ -32,6 +32,11 @@ export default function SystemStatusPage() {
     refetchInterval: query => (query.state.data?.is_running ? 2_000 : 15_000),
   })
 
+  const refreshAll = () => {
+    statusQ.refetch()
+    warmupStatusQ.refetch()
+  }
+
   const manualWarmup = useMutation({
     mutationFn: (allowLive: boolean) =>
       systemApi.warmupIntradayBackground({
@@ -73,10 +78,10 @@ export default function SystemStatusPage() {
           </p>
         </div>
         <button
-          onClick={() => statusQ.refetch()}
+          onClick={refreshAll}
           className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
         >
-          <RefreshCw size={13} className={statusQ.isFetching ? 'animate-spin' : ''} />
+          <RefreshCw size={13} className={statusQ.isFetching || warmupStatusQ.isFetching ? 'animate-spin' : ''} />
           새로고침
         </button>
       </div>
@@ -90,7 +95,7 @@ export default function SystemStatusPage() {
 
       {statusQ.isError && !statusQ.isLoading && (
         <Card>
-          <QueryError message="운영 상태를 불러오지 못했습니다." onRetry={() => statusQ.refetch()} />
+          <QueryError message="운영 상태를 불러오지 못했습니다." onRetry={refreshAll} />
         </Card>
       )}
 
