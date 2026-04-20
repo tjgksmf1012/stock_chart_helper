@@ -42,8 +42,8 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
             <div className="space-y-2">
               <h1 className="text-lg font-semibold">화면을 불러오는 중 문제가 발생했습니다</h1>
               <p className="text-sm leading-relaxed text-muted-foreground">
-                배포 직후 청크가 꼬였거나 일시적인 네트워크 오류일 수 있습니다. 새로고침으로 복구되는 경우가 많고,
-                계속 반복되면 운영 상태 화면이나 브라우저 콘솔을 함께 확인하는 편이 좋습니다.
+                배포 직후 캐시가 꼬였거나 일시적인 스크립트 오류일 수 있습니다. 새로고침으로 복구되는 경우가 많고, 계속 반복되면 운영
+                상태 화면이나 브라우저 콘솔을 함께 확인하는 편이 좋습니다.
               </p>
               {this.state.message && (
                 <div className="rounded-lg border border-border bg-background/70 px-3 py-2 font-mono text-xs text-muted-foreground">

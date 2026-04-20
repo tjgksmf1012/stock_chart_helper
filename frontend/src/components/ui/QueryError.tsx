@@ -6,7 +6,6 @@ interface QueryErrorProps {
   compact?: boolean
 }
 
-/** Drop-in error state for useQuery failures. */
 export function QueryError({ message = '데이터를 불러오지 못했습니다.', onRetry, compact = false }: QueryErrorProps) {
   if (compact) {
     return (

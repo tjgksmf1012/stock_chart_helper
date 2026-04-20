@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { BarChart2, BookOpen, LayoutDashboard, ServerCog, SlidersHorizontal, Star, TrendingUp } from 'lucide-react'
 
@@ -15,17 +16,22 @@ const NAV_ITEMS = [
 ]
 
 export function Layout() {
-  const { watchlist } = useAppStore()
+  const { watchlist, syncFromServer } = useAppStore()
+
+  useEffect(() => {
+    syncFromServer().catch(() => {})
+  }, [syncFromServer])
 
   return (
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur">
-        <div className="mx-auto flex h-12 max-w-screen-2xl items-center justify-between px-4">
+        <div className="mx-auto flex h-12 max-w-screen-2xl items-center justify-between gap-4 px-4">
           <div className="flex items-center gap-2">
             <BarChart2 size={18} className="text-primary" />
             <span className="text-sm font-bold tracking-tight">Stock Chart Helper</span>
           </div>
-          <nav className="flex items-center gap-1">
+
+          <nav className="flex items-center gap-1 overflow-x-auto pb-1 md:pb-0">
             {NAV_ITEMS.map(item => (
               <NavLink
                 key={item.to}
@@ -33,7 +39,7 @@ export function Layout() {
                 end={item.end}
                 className={({ isActive }) =>
                   cn(
-                    'relative flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs transition-colors',
+                    'relative flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-xs transition-colors',
                     isActive
                       ? 'bg-primary/15 text-primary'
                       : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
@@ -58,7 +64,7 @@ export function Layout() {
       </main>
 
       <footer className="border-t border-border px-4 py-3 text-center text-xs text-muted-foreground">
-        Stock Chart Helper는 차트 분석을 돕는 보조 도구이며, 투자 권유 서비스가 아닙니다.
+        Stock Chart Helper의 차트 분석은 보조 도구이며, 투자 권유 서비스가 아닙니다.
       </footer>
     </div>
   )
