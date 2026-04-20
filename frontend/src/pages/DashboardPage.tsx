@@ -22,6 +22,7 @@ export default function DashboardPage() {
   const [intradayView, setIntradayView] = useState<IntradayView>('all')
   const [intradayPreset, setIntradayPreset] = useState<IntradayPreset>('all')
   const lastFinishedAtRef = useRef<string | null>(null)
+  const lastStatusRef = useRef<string | null>(null)
 
   const longQ = useQuery({ queryKey: ['dashboard', timeframe, 'long'], queryFn: () => dashboardApi.longHigh(timeframe), ...opts })
   const shortQ = useQuery({ queryKey: ['dashboard', timeframe, 'short'], queryFn: () => dashboardApi.shortHigh(timeframe), ...opts })
@@ -39,7 +40,10 @@ export default function DashboardPage() {
     queryKey: ['dashboard', timeframe, 'scan-status'],
     queryFn: () => dashboardApi.scanStatus(timeframe),
     staleTime: 5_000,
-    refetchInterval: 15_000,
+    refetchInterval: query => {
+      const current = query.state.data as ScanStatusResponse | undefined
+      return current?.is_running ? 5_000 : 15_000
+    },
   })
 
   const isRefreshing =
@@ -76,22 +80,25 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const lastFinishedAt = statusQ.data?.last_finished_at
-    if (!lastFinishedAt) return
+    const status = statusQ.data?.status ?? null
+    const previousFinishedAt = lastFinishedAtRef.current
+    const previousStatus = lastStatusRef.current
 
-    if (!lastFinishedAtRef.current) {
-      lastFinishedAtRef.current = lastFinishedAt
-      return
-    }
-
-    if (lastFinishedAtRef.current !== lastFinishedAt && statusQ.data?.status === 'ready') {
-      lastFinishedAtRef.current = lastFinishedAt
+    if (status === 'ready' && lastFinishedAt && (previousFinishedAt !== lastFinishedAt || previousStatus !== 'ready')) {
       refreshBoards()
     }
+
+    if (lastFinishedAt) {
+      lastFinishedAtRef.current = lastFinishedAt
+    }
+    lastStatusRef.current = status
   }, [statusQ.data?.last_finished_at, statusQ.data?.status])
 
   useEffect(() => {
     setIntradayView('all')
     setIntradayPreset('all')
+    lastFinishedAtRef.current = null
+    lastStatusRef.current = null
   }, [timeframe])
 
   const filterDashboard = (data: DashboardResponse | undefined): DashboardResponse | undefined => {

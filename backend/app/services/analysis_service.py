@@ -1466,7 +1466,7 @@ def _data_profile(df: pd.DataFrame, timeframe: str) -> dict[str, Any]:
         note = "KIS가 설정되지 않아 공개 분봉만 수집됩니다."
 
     if stored_source:
-        note = f"{note} ??嶺????裕? {stored_source}."
+        note = f"{note} 저장 소스: {stored_source}."
 
     quality = max(0.2, min(0.98, quality))
     return {
@@ -2769,7 +2769,7 @@ async def analyze_symbol_dataframe(
         )
 
     if probability.no_signal_flag and not probability.no_signal_reason:
-        probability.no_signal_reason = "??類ｊ텥 ??ル뱴?? ??ル쪇源?嶺뚣끉裕??? ??⑥щ턄?????깆떨???リ옇???곸궡瑗룩굢?亦껋꼶梨????곕????덈펲."
+        probability.no_signal_reason = "데이터 품질 또는 표본 신뢰도가 부족해 현재는 관망으로 보는 편이 더 적절합니다."
 
     action_plan = _action_plan_profile(
         timeframe,
