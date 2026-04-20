@@ -359,7 +359,9 @@ export default function ChartPage() {
               <div className="flex h-[520px] flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
                 <Loader2 size={18} className="animate-spin" />
                 <p>차트를 불러오는 중입니다.</p>
-                <p className="text-xs text-muted-foreground/80">분봉은 데이터 상황에 따라 조금 더 오래 걸릴 수 있습니다.</p>
+                <p className="text-xs text-center text-muted-foreground/80">
+                  분봉은 데이터 상태와 예열 상황에 따라 조금 더 오래 걸릴 수 있습니다.
+                </p>
               </div>
             ) : isChartError ? (
               <div className="flex h-[520px] items-center justify-center p-4">
@@ -369,28 +371,12 @@ export default function ChartPage() {
                 />
               </div>
             ) : (
-              <div className="flex h-[520px] flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
-                <p>{analysis?.fetch_status_label || '표시할 차트 데이터가 아직 없습니다.'}</p>
-                <p className="max-w-md text-center text-xs text-muted-foreground/80">
-                  {analysis?.fetch_message || '분봉 데이터가 부족하거나 백그라운드 예열이 아직 끝나지 않았을 수 있습니다.'}
-                </p>
-                <div className="flex flex-wrap justify-center gap-2 pt-1">
-                  <button
-                    onClick={() => barsQ.refetch()}
-                    className="rounded-md border border-border bg-card px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
-                  >
-                    다시 시도
-                  </button>
-                  {['1m', '15m', '30m', '60m'].includes(timeframe) && (
-                    <button
-                      onClick={() => setTimeframe('1d')}
-                      className="rounded-md border border-sky-500/30 bg-sky-500/10 px-2.5 py-1.5 text-xs text-sky-100 transition-colors hover:bg-sky-500/15"
-                    >
-                      일봉으로 보기
-                    </button>
-                  )}
-                </div>
-              </div>
+              <EmptyChartState
+                analysis={analysis ?? null}
+                timeframe={timeframe}
+                onRetry={() => barsQ.refetch()}
+                onFallbackDaily={() => setTimeframe('1d')}
+              />
             )}
           </Card>
           {analysis ? (
@@ -402,6 +388,51 @@ export default function ChartPage() {
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+function EmptyChartState({
+  analysis,
+  timeframe,
+  onRetry,
+  onFallbackDaily,
+}: {
+  analysis: AnalysisResult | null
+  timeframe: Timeframe
+  onRetry: () => void
+  onFallbackDaily: () => void
+}) {
+  const isIntraday = ['1m', '15m', '30m', '60m'].includes(timeframe)
+  const title =
+    analysis?.fetch_status_label ||
+    (isIntraday ? '분봉 데이터를 아직 준비하지 못했습니다.' : '차트 데이터를 아직 준비하지 못했습니다.')
+  const body =
+    analysis?.fetch_message ||
+    (isIntraday
+      ? '장중 분봉 데이터가 부족하거나 백그라운드 예열이 아직 끝나지 않았습니다.'
+      : '데이터 공급 상태에 따라 일시적으로 차트가 비어 있을 수 있습니다.')
+
+  return (
+    <div className="flex h-[520px] flex-col items-center justify-center gap-2 px-6 text-sm text-muted-foreground">
+      <p className="font-medium text-foreground">{title}</p>
+      <p className="max-w-md text-center text-xs text-muted-foreground/80">{body}</p>
+      <div className="flex flex-wrap justify-center gap-2 pt-1">
+        <button
+          onClick={onRetry}
+          className="rounded-md border border-border bg-card px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+        >
+          다시 시도
+        </button>
+        {isIntraday && (
+          <button
+            onClick={onFallbackDaily}
+            className="rounded-md border border-sky-500/30 bg-sky-500/10 px-2.5 py-1.5 text-xs text-sky-100 transition-colors hover:bg-sky-500/15"
+          >
+            일봉 먼저 보기
+          </button>
+        )}
+      </div>
     </div>
   )
 }
@@ -445,7 +476,7 @@ function ExecutiveSummaryCard({ analysis }: { analysis: AnalysisResult }) {
   )
 }
 
-function DataReadinessCard({ analysis, timeframe }: { analysis: AnalysisResult; timeframe: string }) {
+function DataReadinessCard({ analysis, timeframe }: { analysis: AnalysisResult; timeframe: Timeframe }) {
   const blockers = buildDataBlockers(analysis, timeframe)
 
   return (
@@ -475,23 +506,23 @@ function DataReadinessCard({ analysis, timeframe }: { analysis: AnalysisResult; 
   )
 }
 
-function buildDataBlockers(analysis: AnalysisResult, timeframe: string): string[] {
+function buildDataBlockers(analysis: AnalysisResult, timeframe: Timeframe): string[] {
   const blockers: string[] = []
 
   if (analysis.is_provisional) {
-    blockers.push('아직 잠정 결과라서 장중 데이터가 더 들어오면 점수와 패턴 판정이 바뀔 수 있습니다.')
+    blockers.push('아직 잠정 결과라서 이후 데이터가 더 들어오면 점수와 패턴 해석이 달라질 수 있습니다.')
   }
   if (analysis.no_signal_flag && analysis.no_signal_reason) {
-    blockers.push(`현재는 관망 우선입니다. 이유: ${analysis.no_signal_reason}`)
+    blockers.push(`현재는 관망 우선 구간입니다. 이유: ${analysis.no_signal_reason}`)
   }
   if ((analysis.available_bars ?? 0) < minimumBarsForTimeframe(timeframe)) {
-    blockers.push(`${timeframeLabel(timeframe as Timeframe)} 기준 분석 바 수가 부족해서 구조 해석 신뢰도가 떨어질 수 있습니다.`)
+    blockers.push(`${timeframeLabel(timeframe)} 기준으로 해석하기에 바 수가 아직 부족해 구조 점수의 신뢰도가 낮습니다.`)
   }
   if ((analysis.data_quality ?? 0) < 0.6) {
-    blockers.push('데이터 품질 점수가 낮아 분봉 품질이나 표본 기반 통계는 보수적으로 해석하는 편이 안전합니다.')
+    blockers.push('데이터 품질 점수가 낮아 분봉 해석과 통계 기반 수치를 보수적으로 읽는 편이 안전합니다.')
   }
   if ((analysis.sample_reliability ?? 0) < 0.45) {
-    blockers.push('유사 패턴 표본 신뢰도가 낮아 승률보다 구조와 리스크 관리 쪽 비중을 더 크게 두는 편이 좋습니다.')
+    blockers.push('유사 패턴 표본 신뢰도가 낮아 승률보다 구조와 리스크 관리 비중을 더 높게 두는 편이 좋습니다.')
   }
   if (analysis.fetch_message && blockers.length < 4) {
     blockers.push(analysis.fetch_message)
@@ -502,15 +533,15 @@ function buildDataBlockers(analysis: AnalysisResult, timeframe: string): string[
 
 function buildDataReadinessSummary(analysis: AnalysisResult, blockers: string[]): string {
   if (blockers.length === 0) {
-    return '현재 타임프레임 기준으로는 데이터 상태가 비교적 안정적입니다. 점수와 패턴 해석을 기본 판단 재료로 써도 무리가 적습니다.'
+    return '현재 타임프레임 기준으로는 데이터 상태가 비교적 안정적입니다. 점수와 패턴 해석을 기본 판단 재료로 써도 무리가 크지 않습니다.'
   }
   if ((analysis.trade_readiness_score ?? 0) >= 0.65 && (analysis.data_quality ?? 0) >= 0.7 && !analysis.is_provisional) {
-    return '진입 판단 점수는 괜찮지만 몇 가지 제한 요소가 남아 있습니다. 바로 추격하기보다 다음 트리거 확인과 리스크 기준 점검을 같이 보는 편이 좋습니다.'
+    return '진입 점수는 괜찮지만 몇 가지 제한 요소가 남아 있습니다. 바로 추격하기보다 다음 트리거와 리스크 기준을 같이 보는 편이 좋습니다.'
   }
-  return '지금 화면의 숫자는 참고는 되지만 확정 신호로 보기엔 이른 상태입니다. 우선은 구조 확인과 데이터 안정화 여부를 먼저 체크하는 편이 안전합니다.'
+  return '지금 화면의 숫자는 참고용으로는 쓸 수 있지만, 확정 신호처럼 받아들이기에는 이른 상태입니다. 구조 확인과 데이터 안정성을 먼저 체크해 주세요.'
 }
 
-function minimumBarsForTimeframe(timeframe: string): number {
+function minimumBarsForTimeframe(timeframe: Timeframe): number {
   switch (timeframe) {
     case '1m':
       return 180
@@ -571,7 +602,7 @@ function ContextCard({
   if (isLoading) {
     return (
       <Card>
-        <div className="text-xs text-muted-foreground">불러오는 중...</div>
+        <div className="text-xs text-muted-foreground">불러오는 중입니다...</div>
       </Card>
     )
   }
@@ -579,7 +610,7 @@ function ContextCard({
   if (!analysis) {
     return (
       <Card>
-        <div className="text-xs text-muted-foreground">컨텍스트 데이터 없음</div>
+        <div className="text-xs text-muted-foreground">컨텍스트 데이터가 아직 없습니다.</div>
       </Card>
     )
   }
@@ -633,13 +664,13 @@ function MetricCell({ label, value, tone }: { label: string; value: string; tone
 
 function summarizeContext(primary: AnalysisResult | undefined, contexts: AnalysisResult[]): string {
   if (!primary) return '현재 분석 결과가 아직 없습니다.'
-  if (contexts.length === 0) return `${primary.timeframe_label} 기준 분석입니다.`
+  if (contexts.length === 0) return `${primary.timeframe_label} 기준 단일 해석만 준비된 상태입니다.`
 
   const strongest = [...contexts].sort(
     (left, right) => (right.trade_readiness_score ?? 0) + right.p_up - ((left.trade_readiness_score ?? 0) + left.p_up),
   )[0]
 
-  return `${primary.timeframe_label} 기준 현재 판단은 ${primary.action_plan_label}입니다. 보조 타임프레임 중에서는 ${strongest.timeframe_label}가 가장 강하며 준비도 ${fmtPct(strongest.trade_readiness_score ?? 0, 0)}, 신선도 ${fmtPct(strongest.freshness_score ?? 0, 0)}, 재진입 구조 ${fmtPct(strongest.reentry_score ?? 0, 0)} (${strongest.reentry_case_label || strongest.reentry_label})로 읽힙니다.`
+  return `${primary.timeframe_label} 기준 현재 판단은 ${primary.action_plan_label}입니다. 보조 타임프레임 중에서는 ${strongest.timeframe_label} 쪽이 가장 강하고, 준비도 ${fmtPct(strongest.trade_readiness_score ?? 0, 0)}, 신선도 ${fmtPct(strongest.freshness_score ?? 0, 0)}, 재진입 구조 ${fmtPct(strongest.reentry_score ?? 0, 0)}(${strongest.reentry_case_label || strongest.reentry_label})로 읽힙니다.`
 }
 
 function actionPlanVariant(plan: string): 'bullish' | 'warning' | 'muted' | 'neutral' {

@@ -54,6 +54,9 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
             </div>
             <p>{analysis.no_signal_reason}</p>
             <p>{analysis.reason_summary}</p>
+            <div className="rounded-lg border border-amber-400/15 bg-amber-400/5 p-2.5 text-xs leading-relaxed text-amber-100">
+              <span className="font-medium">다음 액션:</span> {buildNoSignalAction(analysis)}
+            </div>
           </div>
         ) : (
           <div className="space-y-3">
@@ -466,4 +469,17 @@ function scoreVariant(score: number): 'bullish' | 'warning' | 'muted' | 'neutral
   if (score >= 0.56) return 'neutral'
   if (score >= 0.4) return 'warning'
   return 'muted'
+}
+
+function buildNoSignalAction(analysis: AnalysisResult): string {
+  if ((analysis.available_bars ?? 0) < 80) {
+    return '현재 타임프레임은 바 수가 부족할 수 있습니다. 일봉이나 주봉으로 먼저 구조를 확인한 뒤 다시 보는 편이 안전합니다.'
+  }
+  if ((analysis.data_quality ?? 0) < 0.6) {
+    return '데이터 품질이 낮아 점수를 확정값처럼 보기 어렵습니다. 분봉 예열이나 저장 데이터가 더 쌓인 뒤 재확인해 보세요.'
+  }
+  if (analysis.next_trigger) {
+    return `바로 진입하기보다 다음 트리거인 "${analysis.next_trigger}"가 나오는지 먼저 확인하는 흐름이 좋습니다.`
+  }
+  return '현재는 억지로 패턴을 붙이기보다 관망 우선 구간으로 보고, 신선도와 거래 준비도가 더 살아나는지 기다리는 편이 좋습니다.'
 }
