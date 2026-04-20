@@ -180,6 +180,84 @@ def _summary(
     )
 
 
+def _probability_cap(
+    pattern: PatternResult,
+    no_signal: bool,
+    reward_risk_ratio: float,
+    headroom_score: float,
+    target_distance_pct: float,
+    avg_mfe_pct: float,
+    edge_score: float,
+    confidence: float,
+    sample_reliability: float,
+) -> float:
+    cap = 0.78
+    if pattern.state == "forming":
+        cap = min(cap, 0.60)
+    elif pattern.state == "armed":
+        cap = min(cap, 0.67)
+    elif pattern.state == "confirmed":
+        cap = min(cap, 0.72)
+
+    if no_signal:
+        cap = min(cap, 0.56)
+    if pattern.textbook_similarity < 0.55:
+        cap = min(cap, 0.59)
+    if pattern.variant_fit < 0.52 or _formation_quality(pattern) < 0.46:
+        cap = min(cap, 0.58)
+    if reward_risk_ratio < 1.15 or headroom_score < 0.18:
+        cap = min(cap, 0.57)
+    if edge_score < 0.34 or confidence < 0.45 or sample_reliability < 0.22:
+        cap = min(cap, 0.60)
+
+    if target_distance_pct >= 0.35:
+        cap = min(cap, 0.58 if pattern.state == "forming" else 0.62)
+    elif target_distance_pct >= 0.24 and pattern.state == "forming":
+        cap = min(cap, 0.59)
+
+    if avg_mfe_pct > 0 and target_distance_pct > max(0.18, avg_mfe_pct * 2.8):
+        cap = min(cap, 0.59)
+    if avg_mfe_pct > 0 and target_distance_pct > max(0.24, avg_mfe_pct * 4.0):
+        cap = min(cap, 0.56)
+
+    return max(0.51, min(0.78, cap))
+
+
+def _readable_summary(
+    pattern: PatternResult,
+    completion_proximity: float,
+    recency_score: float,
+    sample_text: str,
+    reward_risk_ratio: float,
+    target_distance_pct: float,
+    avg_mfe_pct: float,
+    avg_mae_pct: float,
+    avg_bars_to_outcome: float,
+    edge_score: float,
+    posterior_success_rate: float,
+    sample_reliability: float,
+    confidence: float,
+) -> str:
+    return (
+        f"{pattern.pattern_type} pattern / textbook similarity {pattern.textbook_similarity:.0%} / "
+        f"state {pattern.state} / completion {completion_proximity:.0%} / "
+        f"signal freshness {recency_score:.0%} / sample {sample_text} / "
+        f"reward-risk {reward_risk_ratio:.2f} / target distance {target_distance_pct:.1%} / "
+        f"avg MFE {avg_mfe_pct:.1%} / avg MAE {avg_mae_pct:.1%} / "
+        f"avg bars to outcome {avg_bars_to_outcome:.1f} / backtest edge {edge_score:.0%} / "
+        f"calibrated win rate {posterior_success_rate:.0%} / sample reliability {sample_reliability:.0%} / "
+        f"confidence {confidence:.0%}"
+    )
+
+
+def _apply_directional_cap(p_up: float, p_down: float, cap: float) -> tuple[float, float]:
+    if p_up >= p_down and p_up > cap:
+        return cap, 1 - cap
+    if p_down > p_up and p_down > cap:
+        return 1 - cap, cap
+    return p_up, p_down
+
+
 def compute_probability(
     pattern: PatternResult,
     similar_win_rate: float = 0.55,
@@ -328,7 +406,7 @@ def compute_probability(
     entry_score = max(0.0, min(1.0, entry_score))
 
     wins_text = f"{wins}/{total}" if wins is not None and total is not None and total > 0 else str(sample_size)
-    summary = _summary(
+    summary = _readable_summary(
         pattern=pattern,
         completion_proximity=completion_proximity,
         recency_score=recency_score,
@@ -344,6 +422,10 @@ def compute_probability(
         confidence=confidence,
     )
 
+    unrealistic_target = (
+        target_distance_pct >= 0.35
+        or (avg_mfe_pct > 0 and target_distance_pct > max(0.20, avg_mfe_pct * 3.2))
+    )
     no_signal = (
         confidence < 0.32
         or pattern.textbook_similarity < 0.40
@@ -355,12 +437,29 @@ def compute_probability(
         or edge_score < 0.22
         or formation_quality < 0.34
         or pattern.variant_fit < 0.42
+        or (pattern.state == "forming" and pattern.textbook_similarity < 0.58 and completion_proximity < 0.56)
+        or (unrealistic_target and pattern.state in {"forming", "armed"} and confidence < 0.82)
     )
     no_signal_reason = (
         ""
         if not no_signal
         else "패턴 품질, 목표까지 남은 여지, 데이터 품질, 백테스트 edge 중 하나 이상이 기준에 못 미쳐 보수적으로 No Signal로 분류했습니다."
     )
+
+    if no_signal:
+        no_signal_reason = "패턴 품질, 목표까지 남은 거리, 데이터 신뢰도, 백테스트 edge 중 하나 이상이 기준을 못 채워 보수적으로 No Signal로 분류했습니다."
+    cap = _probability_cap(
+        pattern=pattern,
+        no_signal=no_signal,
+        reward_risk_ratio=reward_risk_ratio,
+        headroom_score=headroom_score,
+        target_distance_pct=target_distance_pct,
+        avg_mfe_pct=avg_mfe_pct,
+        edge_score=edge_score,
+        confidence=confidence,
+        sample_reliability=sample_reliability,
+    )
+    p_up, p_down = _apply_directional_cap(p_up, p_down, cap)
 
     return ProbabilityOutput(
         p_up=round(p_up, 3),
