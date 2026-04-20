@@ -223,7 +223,8 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
     <div className="space-y-1">
       <div ref={containerRef} className="chart-container w-full rounded-lg" style={{ height }} />
       {analysis && analysis.patterns.length > 0 && (
-        <div className="flex flex-wrap items-center gap-4 px-2 text-xs text-muted-foreground">
+        <div className="space-y-2 px-2 text-xs text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-4">
           <span className="flex items-center gap-1">
             <span className="inline-block h-px w-3 bg-amber-400" style={{ borderTop: '1px dashed' }} /> 목선
           </span>
@@ -252,6 +253,13 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
                 </span>
               )}
             </>
+          )}
+          </div>
+          {projectionScenarios.length > 0 && (
+            <p className="leading-relaxed text-muted-foreground/90">
+              예상선은 확정 예측이 아니라 최근 변동성과 현재 준비도를 반영한 조건부 경로입니다. 주 시나리오만 보지 말고 횡보/리스크
+              대안도 함께 확인하세요.
+            </p>
           )}
         </div>
       )}

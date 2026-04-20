@@ -79,9 +79,9 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
 
       <Card>
         <CardHeader>
-          <CardTitle>예상 시나리오</CardTitle>
+          <CardTitle>조건부 예상 시나리오</CardTitle>
         </CardHeader>
-        <div className="space-y-2 text-xs text-muted-foreground">
+        <div className="space-y-3 text-xs text-muted-foreground">
           <div className="font-medium text-foreground">{analysis.projection_label || '중립 시나리오'}</div>
           <p>{analysis.projection_summary}</p>
           {analysis.projection_caution && (
@@ -114,6 +114,10 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
               ))}
             </div>
           )}
+          <div className="rounded-lg border border-orange-400/15 bg-orange-400/5 p-2.5 text-[11px] leading-relaxed text-orange-100">
+            차트의 점선은 매수·매도 가격 예측이 아니라 조건이 충족될 때 가능한 흐름의 범위입니다. 실제 판단은 거래 준비도,
+            진입 구간, 무효화 기준, 거래대금 확인을 우선으로 봐야 합니다.
+          </div>
         </div>
       </Card>
 

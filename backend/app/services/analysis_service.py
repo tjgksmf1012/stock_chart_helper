@@ -2271,6 +2271,83 @@ def _projection_base_cap_pct(timeframe: str) -> float:
     }.get(timeframe, 0.02)
 
 
+def _projection_volatility_profile(df: pd.DataFrame, timeframe: str) -> dict[str, float | str]:
+    base_cap_pct = _projection_base_cap_pct(timeframe)
+    if df.empty or "close" not in df.columns:
+        return {
+            "single_bar_pct": base_cap_pct * 0.22,
+            "horizon_cap_pct": base_cap_pct * 0.82,
+            "step_cap_pct": base_cap_pct * 0.24,
+            "label": "변동성 보정 부족",
+        }
+
+    recent = df.tail(90).copy()
+    close = recent["close"].astype(float).replace(0, pd.NA).ffill()
+    abs_returns = close.pct_change().abs().dropna()
+    range_parts: list[pd.Series] = []
+    if {"high", "low"}.issubset(recent.columns):
+        high = recent["high"].astype(float)
+        low = recent["low"].astype(float)
+        prev_close = close.shift(1)
+        true_range = pd.concat(
+            [
+                (high - low).abs(),
+                (high - prev_close).abs(),
+                (low - prev_close).abs(),
+            ],
+            axis=1,
+        ).max(axis=1)
+        range_parts.append((true_range / close).replace([float("inf"), float("-inf")], pd.NA).dropna())
+
+    range_pct = pd.concat(range_parts, axis=0) if range_parts else pd.Series(dtype=float)
+    median_range = float(range_pct.tail(40).median()) if not range_pct.empty else 0.0
+    q80_return = float(abs_returns.tail(50).quantile(0.80)) if not abs_returns.empty else 0.0
+    q60_return = float(abs_returns.tail(50).quantile(0.60)) if not abs_returns.empty else 0.0
+    raw_single_bar = max(median_range * 0.72, q80_return, q60_return * 1.25, base_cap_pct * 0.08)
+
+    floor_pct = {
+        "1mo": 0.035,
+        "1wk": 0.026,
+        "1d": 0.012,
+        "60m": 0.006,
+        "30m": 0.005,
+        "15m": 0.004,
+    }.get(timeframe, 0.003)
+    ceiling_pct = {
+        "1mo": 0.18,
+        "1wk": 0.12,
+        "1d": 0.07,
+        "60m": 0.035,
+        "30m": 0.028,
+        "15m": 0.022,
+    }.get(timeframe, 0.016)
+    single_bar_pct = max(floor_pct, min(ceiling_pct, raw_single_bar))
+
+    horizon_steps = max(1, _projection_horizon(timeframe)[-1])
+    if timeframe in {"1mo", "1wk"}:
+        horizon_factor = 1.35
+    elif timeframe == "1d":
+        horizon_factor = min(3.0, max(1.35, horizon_steps ** 0.42))
+    else:
+        horizon_factor = min(2.25, max(1.15, horizon_steps ** 0.34))
+    horizon_cap_pct = min(base_cap_pct * 0.95, max(base_cap_pct * 0.30, single_bar_pct * horizon_factor))
+    step_cap_pct = min(base_cap_pct * 0.34, max(single_bar_pct * 0.62, floor_pct * 1.15))
+
+    if single_bar_pct >= ceiling_pct * 0.82:
+        label = "고변동성 보정"
+    elif single_bar_pct <= floor_pct * 1.25:
+        label = "저변동성 보정"
+    else:
+        label = "최근 변동성 보정"
+
+    return {
+        "single_bar_pct": round(single_bar_pct, 5),
+        "horizon_cap_pct": round(horizon_cap_pct, 5),
+        "step_cap_pct": round(step_cap_pct, 5),
+        "label": label,
+    }
+
+
 def _stabilize_projection_prices(
     timeframe: str,
     pattern_state: str,
@@ -2289,6 +2366,7 @@ def _stabilize_projection_prices(
     headroom_score: float,
     reward_risk_ratio: float,
     data_quality: float,
+    volatility_profile: dict[str, float | str],
 ) -> list[tuple[int, float, str]]:
     base_cap_pct = _projection_base_cap_pct(timeframe)
     direction_cap = current_close * base_cap_pct * (0.76 + 0.72 * strength)
@@ -2300,6 +2378,8 @@ def _stabilize_projection_prices(
     direction_cap *= 0.82 + 0.18 * min(1.0, max(0.0, data_quality))
     direction_cap *= 0.78 + 0.22 * min(1.0, max(0.0, headroom_score))
     direction_cap *= 0.80 + 0.20 * min(1.0, max(0.0, reward_risk_ratio / 2.2))
+    volatility_horizon_cap = current_close * float(volatility_profile.get("horizon_cap_pct", base_cap_pct * 0.82))
+    direction_cap = min(direction_cap, volatility_horizon_cap * (0.82 + 0.28 * strength))
 
     target_distance = abs(target - current_close)
     if (bullish and target > current_close) or ((not bullish) and target < current_close):
@@ -2311,6 +2391,8 @@ def _stabilize_projection_prices(
     step_cap = current_close * base_cap_pct * (0.18 + 0.20 * strength)
     step_cap *= 0.88 + 0.12 * min(1.0, max(0.0, trade_readiness_score))
     step_cap *= 0.90 + 0.10 * min(1.0, max(0.0, active_setup_score))
+    volatility_step_cap = current_close * float(volatility_profile.get("step_cap_pct", base_cap_pct * 0.24))
+    step_cap = min(step_cap, volatility_step_cap * (0.92 + 0.22 * strength))
 
     downside_cap = max(
         current_close * base_cap_pct * (0.26 + 0.16 * uncertainty),
@@ -2420,6 +2502,7 @@ def _build_projection(
     steps = _projection_horizon(timeframe)
     reentry_case = str((reentry or {}).get("reentry_case") or "")
     reentry_case_label = str((reentry or {}).get("reentry_case_label") or "")
+    volatility_profile = _projection_volatility_profile(df, timeframe)
     strength = max(
         0.12,
         min(
@@ -2584,6 +2667,7 @@ def _build_projection(
         headroom_score=headroom_score,
         reward_risk_ratio=reward_risk_ratio,
         data_quality=data_quality,
+        volatility_profile=volatility_profile,
     )
     range_prices = _stabilize_projection_prices(
         timeframe=timeframe,
@@ -2603,6 +2687,7 @@ def _build_projection(
         headroom_score=headroom_score,
         reward_risk_ratio=reward_risk_ratio,
         data_quality=data_quality,
+        volatility_profile=volatility_profile,
     )
     risk_prices = _stabilize_projection_prices(
         timeframe=timeframe,
@@ -2622,6 +2707,7 @@ def _build_projection(
         headroom_score=headroom_score,
         reward_risk_ratio=reward_risk_ratio,
         data_quality=data_quality,
+        volatility_profile=volatility_profile,
     )
 
     primary_weight, range_weight, risk_weight = _normalize_projection_weights(
@@ -2637,6 +2723,7 @@ def _build_projection(
     caution = (
         f"예상 경로는 가격 예언이 아니라 조건부 시나리오입니다. "
         f"현재 점수 기준 주 시나리오 비중은 {round(primary_weight * 100)}% 수준이며, "
+        f"{volatility_profile.get('label', '변동성 보정')}을 적용해 최근 가격 움직임보다 과한 급등·급락선은 줄였습니다. "
         "직선 급등·급락보다 재테스트, 횡보, 실패 가능성을 함께 확인해야 합니다."
     )
     scenarios = [
