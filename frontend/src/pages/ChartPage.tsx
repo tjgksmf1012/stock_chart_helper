@@ -7,6 +7,7 @@ import { AnalysisPanel } from '@/components/chart/AnalysisPanel'
 import { CandleChart } from '@/components/chart/CandleChart'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
+import { QueryError } from '@/components/ui/QueryError'
 import { symbolsApi } from '@/lib/api'
 import { DEFAULT_TIMEFRAME, getChartLookbackDays, getContextTimeframes, TIMEFRAME_OPTIONS, timeframeLabel } from '@/lib/timeframes'
 import { cn, fmtDateTime, fmtNumber, fmtPct, fmtPrice } from '@/lib/utils'
@@ -260,16 +261,19 @@ export default function ChartPage() {
         </Card>
       )}
 
-      {barsQ.isLoading || analysisQ.isLoading ? (
+      {(barsQ.isLoading || analysisQ.isLoading) && (
         <Card className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 size={16} className="animate-spin" />
           차트와 분석을 불러오는 중입니다.
         </Card>
-      ) : null}
+      )}
 
-      {barsQ.error && (
+      {(barsQ.isError || analysisQ.isError) && !barsQ.isLoading && !analysisQ.isLoading && (
         <Card>
-          <p className="text-sm text-red-300">차트 데이터를 불러오지 못했습니다.</p>
+          <QueryError
+            message={barsQ.isError ? '차트 데이터를 불러오지 못했습니다.' : '분석 데이터를 불러오지 못했습니다.'}
+            onRetry={() => { barsQ.refetch(); analysisQ.refetch() }}
+          />
         </Card>
       )}
 

@@ -5,6 +5,7 @@ import { Activity, Clock3, Database, DatabaseZap, KeyRound, RefreshCw, ServerCog
 
 import { Badge } from '@/components/ui/Badge'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
+import { QueryError } from '@/components/ui/QueryError'
 import { StatRow } from '@/components/ui/StatRow'
 import { systemApi } from '@/lib/api'
 import { fmtDateTime } from '@/lib/utils'
@@ -84,6 +85,12 @@ export default function SystemStatusPage() {
         <Card className="flex items-center gap-2 text-sm text-muted-foreground">
           <RefreshCw size={14} className="animate-spin" />
           운영 상태를 불러오는 중입니다.
+        </Card>
+      )}
+
+      {statusQ.isError && !statusQ.isLoading && (
+        <Card>
+          <QueryError message="운영 상태를 불러오지 못했습니다." onRetry={() => statusQ.refetch()} />
         </Card>
       )}
 

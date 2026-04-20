@@ -39,6 +39,7 @@ yarn-error.log*
 .idea/
 *.swp
 *.swo
+.claude/scheduled_tasks.lock
 
 # OS
 .DS_Store

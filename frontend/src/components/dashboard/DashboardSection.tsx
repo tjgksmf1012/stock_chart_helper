@@ -1,6 +1,7 @@
 import { Loader2 } from 'lucide-react'
 
 import type { DashboardResponse } from '@/types/api'
+import { QueryError } from '@/components/ui/QueryError'
 import { DashboardCard } from './DashboardCard'
 
 interface DashboardSectionProps {
@@ -8,10 +9,12 @@ interface DashboardSectionProps {
   subtitle: string
   data: DashboardResponse | undefined
   isLoading: boolean
+  isError?: boolean
+  onRetry?: () => void
   intradayPreset?: string
 }
 
-export function DashboardSection({ title, subtitle, data, isLoading, intradayPreset }: DashboardSectionProps) {
+export function DashboardSection({ title, subtitle, data, isLoading, isError, onRetry, intradayPreset }: DashboardSectionProps) {
   return (
     <div className="space-y-3">
       <div>
@@ -23,6 +26,8 @@ export function DashboardSection({ title, subtitle, data, isLoading, intradayPre
         <div className="flex h-24 items-center justify-center text-muted-foreground">
           <Loader2 size={18} className="animate-spin" />
         </div>
+      ) : isError ? (
+        <QueryError compact onRetry={onRetry} />
       ) : !data || data.items.length === 0 ? (
         <p className="py-4 text-center text-xs text-muted-foreground">조건에 맞는 종목이 아직 없습니다.</p>
       ) : (

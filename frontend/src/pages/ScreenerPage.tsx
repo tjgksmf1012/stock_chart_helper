@@ -1,9 +1,10 @@
 ﻿import { useMemo, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Download, Search, SlidersHorizontal } from 'lucide-react'
+import { Download, Loader2, Search, SlidersHorizontal } from 'lucide-react'
 
 import { DashboardCard } from '@/components/dashboard/DashboardCard'
 import { Card } from '@/components/ui/Card'
+import { QueryError } from '@/components/ui/QueryError'
 import { screenerApi } from '@/lib/api'
 import { TIMEFRAME_OPTIONS } from '@/lib/timeframes'
 import type { DashboardItem, ScreenerRequest, Timeframe } from '@/types/api'
@@ -144,7 +145,7 @@ export default function ScreenerPage() {
   const [intradayView, setIntradayView] = useState<IntradayView>('all')
   const [intradayPreset, setIntradayPreset] = useState<IntradayPreset>('all')
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['screener', req],
     queryFn: () => screenerApi.run(req),
     enabled: submitted,
@@ -179,6 +180,8 @@ export default function ScreenerPage() {
       return matchesView && matchesPreset
     })
   }, [data, intradayMode, intradayPreset, intradayView])
+
+  const results = filteredData ?? data ?? []
 
   const stats = useMemo(() => {
     if (!filteredData?.length) return null
@@ -431,9 +434,9 @@ export default function ScreenerPage() {
           <Search size={14} />
           스크리너 실행
         </button>
-        {(filteredData ?? data) && (
+        {results.length > 0 && (
           <button
-            onClick={() => exportToCsv(filteredData ?? data ?? [])}
+            onClick={() => exportToCsv(results)}
             className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
             title="검색 결과를 CSV로 내보내기"
           >
@@ -443,9 +446,29 @@ export default function ScreenerPage() {
         )}
       </div>
 
-      {isLoading && <p className="text-xs text-muted-foreground">분석 중...</p>}
+      {isLoading && (
+        <Card className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 size={16} className="animate-spin" />
+          스크리너 분석을 실행하는 중입니다.
+        </Card>
+      )}
 
-      {data && (
+      {isError && !isLoading && (
+        <Card>
+          <QueryError message="스크리너 결과를 불러오지 못했습니다." onRetry={() => refetch()} />
+        </Card>
+      )}
+
+      {!isLoading && !isError && submitted && data && results.length === 0 && (
+        <Card className="space-y-2">
+          <div className="text-sm font-semibold">조건에 맞는 종목이 없습니다.</div>
+          <p className="text-xs text-muted-foreground">
+            현재 필터가 꽤 엄격하거나, 선택한 타임프레임에서 실전형 후보가 아직 적을 수 있습니다. 최소 점수 조건을 조금 낮추거나 타임프레임을 넓혀 다시 확인해 보세요.
+          </p>
+        </Card>
+      )}
+
+      {!isLoading && !isError && data && results.length > 0 && (
         <div className="space-y-4">
           {intradayMode && (
             <>
@@ -497,7 +520,7 @@ export default function ScreenerPage() {
           )}
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-7">
-            <SummaryStat label="검색 결과" value={`${filteredData?.length ?? 0}개`} />
+            <SummaryStat label="검색 결과" value={`${results.length}개`} />
             <SummaryStat label="시장 분포" value={`KOSPI ${stats?.kospi ?? 0} / KOSDAQ ${stats?.kosdaq ?? 0}`} />
             <SummaryStat label="평균 표본 신뢰도" value={`${((stats?.avgReliability ?? 0) * 100).toFixed(0)}%`} />
             <SummaryStat label="평균 거래 준비도" value={`${((stats?.avgReadiness ?? 0) * 100).toFixed(0)}%`} />
@@ -517,7 +540,7 @@ export default function ScreenerPage() {
 
               <Card className="space-y-3">
                 <div className="text-sm font-semibold">스크리너 컨텍스트</div>
-                <p className="text-xs text-muted-foreground">{buildScreenerGuidance(filteredData ?? [])}</p>
+                <p className="text-xs text-muted-foreground">{buildScreenerGuidance(results)}</p>
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={() => {
@@ -546,7 +569,7 @@ export default function ScreenerPage() {
           )}
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {(filteredData ?? data).map(item => (
+            {results.map(item => (
               <DashboardCard
                 key={`${item.timeframe}-${item.symbol.code}`}
                 item={item}

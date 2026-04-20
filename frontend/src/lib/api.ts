@@ -13,7 +13,7 @@ const _base = import.meta.env.VITE_API_BASE_URL
   ? `${String(import.meta.env.VITE_API_BASE_URL).replace(/\/$/, '')}/api/v1`
   : '/api/v1'
 
-const api = axios.create({ baseURL: _base })
+const api = axios.create({ baseURL: _base, timeout: 30_000 })
 
 export const symbolsApi = {
   search: (q: string) => api.get<SymbolInfo[]>('/symbols/search', { params: { q } }).then(r => r.data),
