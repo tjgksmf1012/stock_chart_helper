@@ -5,10 +5,13 @@ from functools import lru_cache
 class Settings(BaseSettings):
     app_name: str = "Stock Chart Helper"
     debug: bool = False
+    deployment_platform: str = "local"
 
     database_url: str = "postgresql+asyncpg://sch_user:sch_pass@localhost:5432/stock_chart_helper"
     redis_url: str = "redis://localhost:6379/0"
     secret_key: str = "change-me-in-production"
+    self_healthcheck_url: str = ""
+    enable_platform_keepalive: bool = False
 
     # KIS API (optional, for real-time data)
     kis_app_key: str = ""

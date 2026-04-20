@@ -104,37 +104,38 @@ def _start_scheduler() -> None:
             replace_existing=True,
         )
 
-        # Keep the free Render instance warm enough to reduce cold starts.
-        import httpx as _httpx
+        keep_alive_enabled = settings.enable_platform_keepalive and bool(settings.self_healthcheck_url.strip())
+        if keep_alive_enabled:
+            import httpx as _httpx
 
-        async def _keep_alive() -> None:
-            try:
-                async with _httpx.AsyncClient(timeout=10) as client:
-                    await client.get("https://stock-chart-helper-api.onrender.com/health")
-            except Exception:
-                pass
+            async def _keep_alive() -> None:
+                try:
+                    async with _httpx.AsyncClient(timeout=10) as client:
+                        await client.get(settings.self_healthcheck_url.strip())
+                except Exception:
+                    pass
 
-        scheduler.add_job(
-            _keep_alive,
-            IntervalTrigger(minutes=14),
-            id="keep_alive",
-            replace_existing=True,
-        )
+            scheduler.add_job(
+                _keep_alive,
+                IntervalTrigger(minutes=14),
+                id="keep_alive",
+                replace_existing=True,
+            )
 
         scheduler.start()
-        logger.info(
-            "APScheduler started",
-            jobs=[
-                "morning_scan",
-                "midday_scan",
-                "close_scan",
-                "weekly_backtest",
-                "open_intraday_warmup",
-                "midday_intraday_warmup",
-                "closing_intraday_warmup",
-                "keep_alive",
-            ],
-        )
+        jobs = [
+            "morning_scan",
+            "midday_scan",
+            "close_scan",
+            "weekly_backtest",
+            "open_intraday_warmup",
+            "midday_intraday_warmup",
+            "closing_intraday_warmup",
+        ]
+        if keep_alive_enabled:
+            jobs.append("keep_alive")
+
+        logger.info("APScheduler started", jobs=jobs, deployment_platform=settings.deployment_platform)
     except ImportError:
         logger.warning("APScheduler not installed; scheduled scans are disabled")
     except Exception as exc:
