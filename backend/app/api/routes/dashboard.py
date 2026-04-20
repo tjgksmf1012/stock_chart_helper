@@ -324,12 +324,16 @@ async def dashboard_live_intraday(
     if timeframe in {"1m", "15m", "30m", "60m"} and (status.get("cached_result_count") or 0) == 0:
         if not status.get("is_running"):
             await trigger_scan(timeframe=timeframe, force_refresh=False, source="background")
-        return _response("live_intraday_candidates", timeframe, [])
+        data = await get_scan_results(timeframe)
+        placeholders = _placeholder_rows(data, limit)
+        items = [_make_item(index + 1, row) for index, row in enumerate(placeholders)]
+        return _response("live_intraday_candidates", timeframe, items)
     data = await get_scan_results(timeframe)
     ranked = [
         row for row in data
         if row.get("fetch_status") in {"live_ok", "live_augmented_by_store"}
     ]
+    ranked = _resolve_ranked_rows(ranked, data, limit, allow_placeholder=timeframe in {"1m", "15m", "30m", "60m"})
     ranked.sort(
         key=lambda row: (
             row.get("trade_readiness_score", 0.0),
