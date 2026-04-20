@@ -58,7 +58,7 @@ export function Layout() {
       </main>
 
       <footer className="border-t border-border px-4 py-3 text-center text-xs text-muted-foreground">
-        Stock Chart Helper는 차트 분석 보조 도구이며 투자 권유 서비스가 아닙니다.
+        Stock Chart Helper는 차트 분석을 돕는 보조 도구이며, 투자 권유 서비스가 아닙니다.
       </footer>
     </div>
   )

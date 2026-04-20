@@ -2,8 +2,8 @@ import { useMemo, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Activity, BarChart2, Clock3, RefreshCw, ShieldCheck, Target } from 'lucide-react'
 
-import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
+import { Card } from '@/components/ui/Card'
 import { patternsApi } from '@/lib/api'
 import { fmtPct, PATTERN_NAMES } from '@/lib/utils'
 import type { PatternStatsEntry } from '@/types/api'
@@ -60,7 +60,7 @@ export default function PatternPerformancePage() {
         <div>
           <h1 className="text-xl font-bold">패턴 성과 리포트</h1>
           <p className="text-xs text-muted-foreground">
-            패턴별 백테스트 승률, 표본 수, 평균 MFE/MAE, 평균 결과 바 수를 타임프레임별로 읽는 화면입니다.
+            패턴별 백테스트 승률, 표본 수, 평균 MFE/MAE, 평균 결과 봉 수를 타임프레임별로 확인하는 화면입니다.
           </p>
         </div>
       </div>
@@ -88,13 +88,13 @@ export default function PatternPerformancePage() {
             className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background/60 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
           >
             <RefreshCw size={13} className={refreshMutation.isPending ? 'animate-spin' : ''} />
-            {refreshMutation.isPending ? '재계산 요청 중' : '백테스트 재계산'}
+            {refreshMutation.isPending ? '집계 요청 중' : '백테스트 통계 새로고침'}
           </button>
         </div>
 
         {refreshMutation.isSuccess && (
           <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
-            백테스트 재계산을 백그라운드로 시작했습니다. 잠시 후 리포트가 새 통계로 갱신됩니다.
+            백테스트 집계를 백그라운드로 시작했습니다. 잠시 뒤 리포트가 새 통계로 갱신됩니다.
           </div>
         )}
 
@@ -108,7 +108,7 @@ export default function PatternPerformancePage() {
       </Card>
 
       {isLoading ? (
-        <div className="py-10 text-center text-muted-foreground">리포트를 불러오는 중..</div>
+        <div className="py-10 text-center text-muted-foreground">리포트를 불러오는 중...</div>
       ) : (
         <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
           {filtered.map((item, index) => (
@@ -157,7 +157,7 @@ function PatternStatCard({ item, rank }: { item: PatternStatsEntry; rank: number
         <span className="text-right">평균 MAE {fmtPct(item.avg_mae_pct)}</span>
         <span className="flex items-center gap-1">
           <Clock3 size={12} />
-          평균 결과 바 수 {item.avg_bars_to_outcome.toFixed(1)}
+          평균 결과 봉 수 {item.avg_bars_to_outcome.toFixed(1)}
         </span>
         <span className="text-right">wins/total {item.wins}/{item.total}</span>
       </div>

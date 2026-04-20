@@ -56,7 +56,7 @@ function WatchlistRow({ code, name, market }: { code: string; name: string; mark
             <span className="text-xs text-muted-foreground">분석 중...</span>
           </div>
         ) : (
-          <span className="mt-0.5 block text-xs text-muted-foreground">뚜렷한 패턴 없음</span>
+          <span className="mt-0.5 block text-xs text-muted-foreground">선명한 패턴 없음</span>
         )}
         {analysis?.next_trigger && <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">{analysis.next_trigger}</p>}
       </div>
@@ -127,7 +127,7 @@ export default function WatchlistPage() {
         <Star size={40} className="opacity-20" />
         <div className="text-center">
           <p className="font-medium">관심종목이 없습니다</p>
-          <p className="mt-1 text-xs">대시보드나 차트에서 별 버튼을 눌러 추가해 주세요.</p>
+          <p className="mt-1 text-xs">대시보드나 차트 화면에서 별 버튼을 눌러 추가해 주세요.</p>
         </div>
         <button onClick={() => nav('/')} className="mt-2 text-xs text-primary hover:underline">
           대시보드로 돌아가기
@@ -153,7 +153,7 @@ export default function WatchlistPage() {
             className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
           >
             <DatabaseZap size={13} className={warmupMutation.isPending ? 'animate-pulse' : ''} />
-            저장/공개 분봉 갱신
+            저장·공개 분봉 갱신
           </button>
           <button
             onClick={() => warmupMutation.mutate(true)}
@@ -172,8 +172,8 @@ export default function WatchlistPage() {
           관심종목 분봉 캐시
         </div>
         <p className="text-xs leading-relaxed text-muted-foreground">
-          관심종목의 15분, 30분, 60분 데이터를 미리 저장해두면 차트 분석과 분봉 스캐너가 더 안정적으로 동작합니다.
-          기본 갱신은 KIS 호출을 아끼고, 장중 최신성이 중요할 때만 KIS 포함 갱신을 사용하세요.
+          관심종목의 15분, 30분, 60분 데이터를 미리 모아두면 차트 분석과 분봉 대시보드가 더 빠르고 안정적으로
+          열립니다. 기본 갱신은 KIS 호출을 아끼는 쪽이고, 최신성이 특히 중요할 때만 KIS 포함 갱신을 쓰는 편이 좋습니다.
         </p>
         {warmupMutation.data && (
           <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -181,17 +181,19 @@ export default function WatchlistPage() {
               성공 {warmupMutation.data.success_count}/{warmupMutation.data.total_requests}
             </Badge>
             <Badge variant={warmupMutation.data.allow_live ? 'bullish' : 'muted'}>
-              {warmupMutation.data.allow_live ? 'KIS 포함' : '저장/공개 우선'}
+              {warmupMutation.data.allow_live ? 'KIS 포함' : '저장·공개 우선'}
             </Badge>
             {warmupMutation.data.results.slice(0, 4).map(result => (
               <span key={`${result.symbol}-${result.timeframe}`} className="text-muted-foreground">
-                {result.symbol} {result.timeframe} {result.bars}봉
+                {result.symbol} {result.timeframe} {result.bars}개
               </span>
             ))}
           </div>
         )}
         {warmupMutation.isError && (
-          <div className="text-xs text-red-300">분봉 캐시 갱신 중 오류가 발생했습니다. 운영 상태 페이지와 백엔드 로그를 확인해 주세요.</div>
+          <div className="text-xs text-red-300">
+            분봉 캐시 갱신 중 오류가 발생했습니다. 운영 상태 페이지나 백엔드 로그를 함께 확인해 주세요.
+          </div>
         )}
       </Card>
 

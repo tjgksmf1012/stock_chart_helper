@@ -11,11 +11,7 @@ import type { PatternLibraryEntry } from '@/types/api'
 
 function PatternCard({ entry }: { entry: PatternLibraryEntry }) {
   const [expanded, setExpanded] = useState(false)
-  const badgeVariant = entry.direction === 'bullish'
-    ? 'bullish'
-    : entry.direction === 'bearish'
-      ? 'bearish'
-      : 'neutral'
+  const badgeVariant = entry.direction === 'bullish' ? 'bullish' : entry.direction === 'bearish' ? 'bearish' : 'neutral'
 
   return (
     <Card className="space-y-3">
@@ -60,7 +56,7 @@ function Section({ title, items, color }: { title: string; items: string[]; colo
       <ul className="space-y-0.5">
         {items.map((item, index) => (
           <li key={index} className="flex gap-1.5 text-xs text-muted-foreground">
-            <span className="mt-0.5 flex-shrink-0">•</span>
+            <span className="mt-0.5 flex-shrink-0">-</span>
             {item}
           </li>
         ))}
@@ -85,14 +81,7 @@ function PatternPreview({ patternType }: { patternType: string }) {
         {[16, 36, 56].map(y => (
           <line key={y} x1="0" y1={y} x2="160" y2={y} stroke="rgba(148,163,184,0.15)" strokeWidth="1" />
         ))}
-        <polyline
-          fill="none"
-          stroke="url(#patternLine)"
-          strokeWidth="3"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          points={points}
-        />
+        <polyline fill="none" stroke="url(#patternLine)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" points={points} />
       </svg>
     </div>
   )
@@ -131,7 +120,7 @@ export default function PatternLibraryPage() {
         <div>
           <h1 className="text-xl font-bold">차트 패턴 라이브러리</h1>
           <p className="text-xs text-muted-foreground">
-            교과서형 패턴의 정의, 구조 조건, 확인 조건, 무효화 기준을 한 번에 정리해 둔 페이지입니다.
+            교과서형 패턴의 정의, 구조 조건, 확인 조건, 무효화 기준을 한 번에 정리해 둔 참고 화면입니다.
           </p>
         </div>
       </div>

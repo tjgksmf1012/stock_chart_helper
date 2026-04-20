@@ -153,7 +153,7 @@ export default function DashboardPage() {
     intradayMode && ['fallback_seed', 'placeholder_seed'].includes(statusQ.data?.candidate_source ?? '')
       ? statusQ.data?.candidate_source === 'placeholder_seed'
         ? `지금은 ${timeframeLabel(timeframe)} 빠른 예열 후보를 먼저 보여주고 있습니다. 백그라운드 분봉 스캔이 끝나면 실제 패턴 계산 결과로 자동 교체됩니다.`
-        : `지금은 ${timeframeLabel(timeframe)} 즉시 fallback 후보를 먼저 보여주고 있습니다. 백그라운드 정밀 스캔이 끝나면 카드가 자동으로 더 정확하게 정렬됩니다.`
+        : `지금은 ${timeframeLabel(timeframe)} 즉시 fallback 후보를 먼저 보여주고 있습니다. 백그라운드 정리가 끝나면 카드가 더 정확하게 재정렬됩니다.`
       : null
   const liveEmptyMessage = getLiveSectionEmptyMessage(statusQ.data, timeframe) ?? intradayEmptyMessage
   const sectionEmptyMessage = getDefaultSectionEmptyMessage(statusQ.data, timeframe) ?? intradayEmptyMessage
@@ -163,8 +163,9 @@ export default function DashboardPage() {
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h1 className="text-xl font-bold">대시보드</h1>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            KRX 기준으로 타임프레임별 상승 확률, 패턴 완성 임박도, 상위 추세 정렬, 데이터 품질을 함께 보는 메인 스캔 화면입니다.
+          <p className="mt-0.5 max-w-3xl text-xs text-muted-foreground">
+            KRX 기준 타임프레임별로 확률, 패턴 완성도, 거래 준비도, 데이터 품질을 같이 보면서 지금 바로 볼 후보와
+            조금 더 지켜볼 후보를 나누는 메인 화면입니다.
           </p>
         </div>
 
@@ -190,8 +191,8 @@ export default function DashboardPage() {
         <div className="space-y-1">
           <div className="text-sm font-semibold">완성 신호와 형성 후보를 분리해서 봅니다</div>
           <p className="text-xs leading-relaxed text-muted-foreground">
-            이제 카드 정렬은 단순 확률만이 아니라 형성 품질, 상위 타임프레임 정렬, 표본 신뢰도, 데이터 품질까지 함께 반영합니다.
-            이미 끝난 패턴과 아직 베이스를 만드는 후보를 같은 강도로 보지 않도록 나눠두었습니다.
+            이제 카드 정렬은 단순 확률만이 아니라 거래 준비도, 상위 타임프레임 정렬, 데이터 품질까지 함께 반영합니다.
+            이미 끝난 패턴과 아직 베이스를 만들고 있는 후보를 같은 강도로 보지 않도록 설계했습니다.
           </p>
         </div>
       </Card>
@@ -200,10 +201,10 @@ export default function DashboardPage() {
         <Card className="flex items-start gap-3 border-yellow-500/30 bg-yellow-500/5 p-4">
           <AlertTriangle size={16} className="mt-0.5 text-yellow-400" />
           <div className="space-y-1">
-            <div className="text-sm font-semibold text-yellow-300">분봉은 후보 압축 후 보수적으로 해석합니다</div>
+            <div className="text-sm font-semibold text-yellow-300">분봉 후보 해석은 보수적으로 읽습니다</div>
             <p className="text-xs leading-relaxed text-muted-foreground">
-              {timeframeLabel(timeframe)} 스캔은 일봉 상위 후보를 먼저 좁힌 뒤 들어갑니다. 분봉은 KIS와 저장 캐시 도움을 받더라도
-              일봉·주봉보다 불안정할 수 있어서, 형성 품질과 상위 정렬이 약하면 쉽게 No Signal로 내려가도록 설계했습니다.
+              {timeframeLabel(timeframe)} 대시보드는 먼저 빠른 후보를 수집한 뒤 들어갑니다. 분봉은 KIS, 저장 캐시, 공개
+              소스 품질 차이가 크기 때문에 데이터 상태가 낮으면 자동으로 관망/No Signal 쪽으로 밀리게 되어 있습니다.
             </p>
           </div>
         </Card>
@@ -213,10 +214,10 @@ export default function DashboardPage() {
         <Card className="flex items-start gap-3 border-sky-500/20 bg-sky-500/5 p-4">
           <Activity size={16} className="mt-0.5 text-sky-300" />
           <div className="space-y-1">
-            <div className="text-sm font-semibold text-sky-200">Live KIS 후보는 시간대와 품질 기준으로만 열립니다</div>
+            <div className="text-sm font-semibold text-sky-200">Live KIS 후보는 시간대와 중요도 기준으로만 좁힙니다</div>
             <p className="text-xs leading-relaxed text-muted-foreground">
-              장초반과 마감 전에는 live 후보를 더 넓게 쓰고, 점심장과 장외에는 저장 분봉과 공개 소스를 우선합니다.
-              후보 안에서도 진입 적합도, 완성 임박도, 유동성, 신호 최신성이 높은 종목이 먼저 live 분봉을 사용합니다.
+              시초가와 마감 전에는 live 후보를 더 넓게 보고, 점심시간과 장외에서는 저장 분봉과 공개 소스를 우선합니다.
+              후보 안에서도 진입 적합도, 패턴 완성 임박도, 최근성이 높은 종목을 먼저 live 분봉으로 확인합니다.
             </p>
           </div>
         </Card>
@@ -261,10 +262,10 @@ export default function DashboardPage() {
         <div className="flex flex-wrap gap-2">
           {([
             ['all', '프리셋 전체'],
-            ['ready-now', '바로 볼 종목'],
+            ['ready-now', '지금 볼 종목'],
             ['watch', '지켜볼 후보'],
             ['recheck', '재확인 필요'],
-            ['cooling', '냉각/관망'],
+            ['cooling', '관망/정리'],
           ] as Array<[IntradayPreset, string]>).map(([value, label]) => (
             <button
               key={value}
@@ -286,7 +287,7 @@ export default function DashboardPage() {
           <div>
             <div className="text-sm font-semibold">프리셋 요약</div>
             <p className="mt-1 text-xs text-muted-foreground">
-              현재 모드와 프리셋으로 걸러진 후보를 빠르게 읽을 수 있도록 요약한 숫자입니다.
+              현재 필터로 남은 후보를 빠르게 훑을 수 있도록 핵심 숫자만 따로 모았습니다.
             </p>
           </div>
 
@@ -308,15 +309,15 @@ export default function DashboardPage() {
           <div>
             <div className="text-sm font-semibold">프리셋 컨텍스트</div>
             <p className="mt-1 text-xs text-muted-foreground">
-              현재 프리셋 기준으로 우세한 운용 모드와 세팅 단계를 같이 읽어주는 보조 요약입니다.
+              현재 프리셋 기준으로 데이터 품질과 셋업 분포를 함께 읽을 수 있는 보조 요약입니다.
             </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             <StatusCell label="평균 edge" value={intradaySummary.isProvisionalOnly ? '임시값' : `${Math.round(intradaySummary.avgEdge * 100)}%`} />
             <StatusCell label="평균 손익비" value={intradaySummary.isProvisionalOnly ? '임시값' : intradaySummary.avgRewardRisk.toFixed(2)} />
-            <StatusCell label="우세 운용 모드" value={intradaySummary.dominantMode} />
-            <StatusCell label="우세 세팅 단계" value={intradaySummary.dominantStage} />
+            <StatusCell label="우세 수집 모드" value={intradaySummary.dominantMode} />
+            <StatusCell label="우세 셋업 단계" value={intradaySummary.dominantStage} />
           </div>
 
           <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 p-3 text-xs text-cyan-100">
@@ -343,7 +344,7 @@ export default function DashboardPage() {
               onClick={() => setIntradayPreset('ready-now')}
               className="rounded-md border border-sky-500/30 bg-sky-500/10 px-2.5 py-1.5 text-xs text-sky-100 transition-colors hover:bg-sky-500/15"
             >
-              confirmed/즉시 대응
+              confirmed/즉시 확인
             </button>
             <button
               onClick={() => setIntradayPreset('watch')}
@@ -355,7 +356,7 @@ export default function DashboardPage() {
               onClick={() => setIntradayPreset('cooling')}
               className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-100 transition-colors hover:bg-amber-500/15"
             >
-              관망/냉각
+              관망·정리
             </button>
           </div>
         </Card>
@@ -417,7 +418,7 @@ export default function DashboardPage() {
               label="Live 한도"
               value={statusQ.data?.intraday_live_candidate_limit != null ? `${statusQ.data.intraday_live_candidate_limit}개` : '-'}
             />
-            <StatusCell label="운용 메모" value={livePhaseNote(statusQ.data?.intraday_live_phase)} />
+            <StatusCell label="운영 메모" value={livePhaseNote(statusQ.data?.intraday_live_phase)} />
           </div>
         )}
 
@@ -429,14 +430,15 @@ export default function DashboardPage() {
 
         {statusQ.isError && !statusQ.isLoading && (
           <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-100">
-            스캔 상태를 불러오지 못했습니다. 카드 자체는 마지막 캐시를 보여줄 수 있지만, 현재 예열 진행 여부는 다시 확인이 필요합니다.
+            스캔 상태를 불러오지 못했습니다. 카드 자체는 마지막 캐시를 보여줄 수 있지만, 현재 예열 진행 여부는 다시
+            확인이 필요합니다.
           </div>
         )}
       </Card>
 
       <DashboardSection
         title="상승 확률 상위"
-        subtitle="상승 확률, 형성 품질, 상위 타임프레임 정렬이 함께 좋은 종목입니다."
+        subtitle="상승 확률, 거래 준비도, 상위 타임프레임 정렬이 함께 좋은 종목입니다."
         data={filterDashboard(longQ.data)}
         isLoading={longQ.isLoading}
         isError={longQ.isError}
@@ -459,7 +461,7 @@ export default function DashboardPage() {
       {intradayMode && (
         <DashboardSection
           title="Live 분봉 후보"
-          subtitle="지금 실제 live KIS 분봉까지 열어 확인 중인 후보입니다. 저장 분봉이나 공개 소스 기반 후보보다 우선 관찰할 묶음입니다."
+          subtitle="지금 실제 live KIS 분봉까지 연결해 확인 중인 후보입니다. 저장 분봉이나 공개 소스 기반 후보보다 우선 관찰할 묶음입니다."
           data={filterDashboard(liveQ.data)}
           isLoading={liveQ.isLoading}
           isError={liveQ.isError}
@@ -471,7 +473,7 @@ export default function DashboardPage() {
 
       <DashboardSection
         title="형성 중 후보"
-        subtitle="아직 forming 상태지만 상위 추세와 구조가 받쳐주는 베이스 후보입니다. 완성 신호가 아니라 관찰용 후보군으로 보세요."
+        subtitle="아직 forming 상태지만 구조가 살아 있어 관찰 가치가 있는 후보입니다. 완성 신호가 아니라 관찰용 후보군으로 보세요."
         data={filterDashboard(formingQ.data)}
         isLoading={formingQ.isLoading}
         isError={formingQ.isError}
@@ -481,8 +483,8 @@ export default function DashboardPage() {
       />
 
       <DashboardSection
-        title="교과서 유사형 패턴"
-        subtitle="교과서와의 유사도가 높은 구조입니다. 이제는 형성 품질과 최신성도 함께 보정합니다."
+        title="교과서 유사형"
+        subtitle="교과서 구조와 유사도가 높은 후보입니다. 다만 신선도와 최근성은 별도로 같이 봐야 합니다."
         data={filterDashboard(simQ.data)}
         isLoading={simQ.isLoading}
         isError={simQ.isError}
@@ -504,7 +506,7 @@ export default function DashboardPage() {
 
       <DashboardSection
         title="No Signal / 관망"
-        subtitle="데이터 품질, 표본 신뢰도, 손익비, 형성 과정 점수 중 하나 이상이 부족해 보수적으로 관망 처리한 종목입니다."
+        subtitle="데이터 품질, 구조, 손익비, 완성 과정 중 하나 이상이 부족해서 보수적으로 관망 처리한 종목입니다."
         data={filterDashboard(noSigQ.data)}
         isLoading={noSigQ.isLoading}
         isError={noSigQ.isError}
@@ -553,7 +555,7 @@ function buildIntradaySummary(sections: Array<DashboardResponse | undefined>) {
       avgRewardRisk: 0,
       dominantMode: '-',
       dominantStage: '-',
-      guidance: '현재 프리셋에 맞는 후보가 많지 않습니다. 조건을 조금 완화하거나 다른 타임프레임도 함께 보는 편이 좋습니다.',
+      guidance: '현재 프리셋에 맞는 후보가 많지 않습니다. 조건을 조금 완화하거나 다른 타임프레임을 함께 보는 편이 좋습니다.',
     }
   }
 
@@ -566,10 +568,6 @@ function buildIntradaySummary(sections: Array<DashboardResponse | undefined>) {
       acc.liveCount += item.live_intraday_candidate ? 1 : 0
       acc.confirmedCount += item.state === 'confirmed' ? 1 : 0
       acc.noSignalCount += item.no_signal_flag ? 1 : 0
-      acc.qualitySum += item.data_quality
-      acc.entrySum += item.entry_score
-      acc.edgeSum += item.historical_edge_score
-      acc.rewardRiskSum += item.reward_risk_ratio
       acc.modeCounts[item.intraday_collection_mode] = (acc.modeCounts[item.intraday_collection_mode] ?? 0) + 1
       acc.stageCounts[item.setup_stage] = (acc.stageCounts[item.setup_stage] ?? 0) + 1
       return acc
@@ -578,10 +576,6 @@ function buildIntradaySummary(sections: Array<DashboardResponse | undefined>) {
       liveCount: 0,
       confirmedCount: 0,
       noSignalCount: 0,
-      qualitySum: 0,
-      entrySum: 0,
-      edgeSum: 0,
-      rewardRiskSum: 0,
       modeCounts: {} as Record<string, number>,
       stageCounts: {} as Record<string, number>,
     },
@@ -630,7 +624,7 @@ function dominantLabel(counts: Record<string, number>): string {
 function buildSummaryGuidance(items: DashboardItem[]): string {
   const realItems = items.filter(item => !isPlaceholderItem(item))
   if (realItems.length === 0 && items.length > 0) {
-    return '지금은 빠른 예열 후보만 먼저 보여주고 있습니다. 평균 점수보다 후보 풀과 시장 분포만 가볍게 보고, 실제 분봉 스캔 완료 후 다시 판단하세요.'
+    return '지금은 빠른 예열 후보만 먼저 보여주고 있습니다. 평균 점수보다 후보 대강과 섹션 분포만 가볍게 보고, 실제 분봉 스캔 완료 후 다시 판단하세요.'
   }
 
   const metricItems = realItems.length > 0 ? realItems : items
@@ -640,14 +634,14 @@ function buildSummaryGuidance(items: DashboardItem[]): string {
   const avgRewardRisk = metricItems.reduce((sum, item) => sum + item.reward_risk_ratio, 0) / metricItems.length
 
   if (liveCount >= Math.max(2, Math.round(metricItems.length * 0.4)) && confirmedCount >= Math.max(1, Math.round(metricItems.length * 0.25))) {
-    return 'live 추적 비중과 confirmed 비중이 모두 괜찮습니다. 무효화 기준만 빠르게 점검하고 상단 후보부터 보면 됩니다.'
+    return 'live 추적 비중과 confirmed 비중이 모두 괜찮습니다. 무턱대고 넓게 보기보다 상위 몇 개를 깊게 확인하는 편이 좋습니다.'
   }
 
   if (avgEdge >= 0.58 && avgRewardRisk >= 1.4) {
-    return '평균 edge와 손익비는 무난한 편입니다. 넓게 보기보다 상위 몇 개를 깊게 검토하는 흐름이 좋습니다.'
+    return '평균 edge와 손익비는 무난한 편입니다. 많이 보기보다는 상위 후보 몇 개에 집중하는 방식이 좋습니다.'
   }
 
-  return '확인 단계의 후보가 더 많은 상태입니다. 진입보다 트리거 재확인과 품질 회복 여부를 우선 보는 편이 좋습니다.'
+  return '확인 단계보다 후보가 더 많은 상태입니다. 진입보다 트리거 확인과 데이터 회복 여부를 우선 보는 편이 좋습니다.'
 }
 
 function isPlaceholderItem(item: DashboardItem): boolean {
@@ -691,13 +685,13 @@ function sourceLabel(source: string | null | undefined): string {
 function livePhaseLabel(phase: string | null | undefined): string {
   switch (phase) {
     case 'open_drive':
-      return '장초반 확대'
+      return '시초가 집중'
     case 'regular_session':
-      return '일반 장중'
+      return '정규장'
     case 'midday':
-      return '점심장 축소'
+      return '점심 축소'
     case 'closing_drive':
-      return '마감 전 확대'
+      return '마감 전 집중'
     case 'off_hours':
       return '장외 절약 모드'
     default:
@@ -710,11 +704,11 @@ function livePhaseNote(phase: string | null | undefined): string {
     case 'open_drive':
       return '초기 추세 확인 구간이라 live 후보를 넓게 봅니다.'
     case 'regular_session':
-      return '기본 후보만 live로 확인하고 나머지는 절약 모드로 둡니다.'
+      return '핵심 후보만 live로 확인하고 나머지는 절약 모드로 둡니다.'
     case 'midday':
-      return '노이즈가 많은 시간대라 live 사용을 더 줄입니다.'
+      return '노이즈가 많은 시간대라 live 사용 수를 줄입니다.'
     case 'closing_drive':
-      return '마감 전 재가속 확인을 위해 live 후보를 다시 늘립니다.'
+      return '마감 전 돌파 확인을 위해 live 후보를 다시 늘립니다.'
     case 'off_hours':
       return '장외에는 저장 분봉과 공개 소스를 우선 사용합니다.'
     default:
@@ -754,7 +748,7 @@ function getDefaultSectionEmptyMessage(status: ScanStatusResponse | undefined, t
     return `지금은 ${timeframeLabel(timeframe)} 빠른 예열 후보를 먼저 보여주는 단계입니다. 실제 분석 카드가 곧 자동으로 교체됩니다.`
   }
   if (status.candidate_source === 'fallback_seed') {
-    return `지금은 ${timeframeLabel(timeframe)} 빠른 fallback 후보를 먼저 보여주는 단계라 섹션별 후보 수가 아직 적을 수 있습니다.`
+    return `지금은 ${timeframeLabel(timeframe)} 빠른 fallback 후보를 먼저 보여주는 단계라 섹션별 후보 수가 적을 수 있습니다.`
   }
   return undefined
 }
@@ -762,16 +756,16 @@ function getDefaultSectionEmptyMessage(status: ScanStatusResponse | undefined, t
 function getLiveSectionEmptyMessage(status: ScanStatusResponse | undefined, timeframe: Timeframe): string | undefined {
   if (!status) return undefined
   if (status.status === 'warming' && (status.cached_result_count ?? 0) === 0) {
-    return `${timeframeLabel(timeframe)} live 후보를 추리는 중입니다. 잠시 후 자동으로 다시 채워집니다.`
+    return `${timeframeLabel(timeframe)} live 후보를 수집 중입니다. 잠시 후 자동으로 다시 채워집니다.`
   }
   if (status.candidate_source === 'placeholder_seed') {
     return `지금은 ${timeframeLabel(timeframe)} 빠른 예열 후보만 먼저 보여주고 있어 live 분봉 후보는 잠시 비어 있을 수 있습니다.`
   }
   if (status.intraday_live_phase === 'off_hours') {
-    return '지금은 장외 절약 모드라 live 분봉 후보를 비워둘 수 있습니다. forming/watch 후보를 먼저 확인하세요.'
+    return '지금은 장외 절약 모드라 live 분봉 후보를 비워둘 수 있습니다. forming/watch 후보를 먼저 확인해 보세요.'
   }
   if ((status.intraday_live_candidate_limit ?? 0) === 0) {
-    return '현재 시간대와 품질 기준에서 live 분봉까지 열어볼 후보가 아직 없습니다.'
+    return '현재 시간대와 중요도 기준에서 live 분봉까지 볼 후보가 아직 없습니다.'
   }
   if (status.candidate_source === 'fallback_seed') {
     return `지금은 ${timeframeLabel(timeframe)} 빠른 fallback 후보를 먼저 보여주고 있어 live 후보가 잠시 비어 있을 수 있습니다.`

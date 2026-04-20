@@ -74,7 +74,7 @@ export default function SystemStatusPage() {
         <div>
           <h1 className="text-xl font-bold">운영 상태</h1>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            KIS 토큰, 캐시 백엔드, 분봉 저장 현황, 후보 분봉 예열을 한 화면에서 관리합니다.
+            KIS 토큰, 캐시 백엔드, 분봉 저장소 현황, 후보 분봉 예열 상태를 한 화면에서 확인합니다.
           </p>
         </div>
         <button
@@ -111,12 +111,12 @@ export default function SystemStatusPage() {
             <StatusSummary
               icon={<ShieldCheck size={15} />}
               label="토큰 캐시"
-              value={data.kis.token_cached ? '재사용 가능' : '없음'}
+              value={data.kis.token_cached ? '사용 가능' : '없음'}
               tone={data.kis.token_cached ? 'bullish' : 'warning'}
             />
             <StatusSummary
               icon={<Database size={15} />}
-              label="분봉 저장"
+              label="분봉 저장 종목"
               value={`${data.intraday_store.symbol_count}종목`}
               tone={data.intraday_store.symbol_count > 0 ? 'bullish' : 'muted'}
             />
@@ -152,7 +152,7 @@ export default function SystemStatusPage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <ServerCog size={15} className="text-primary" />
-                  캐시/데이터 운영
+                  캐시 / 데이터 운영
                 </CardTitle>
               </CardHeader>
               <div className="space-y-2">
@@ -160,7 +160,7 @@ export default function SystemStatusPage() {
                 <StatRow label="Redis 연결" value={data.cache.redis_available ? '정상' : '메모리 fallback'} />
                 <StatRow label="메모리 fallback 항목" value={`${data.cache.memory_fallback_entries}개`} />
                 <StatRow label="분봉 저장 종목" value={`${data.intraday_store.symbol_count}개`} />
-                <StatRow label="분봉 저장 봉 수" value={`${data.intraday_store.total_rows.toLocaleString('ko-KR')}개`} />
+                <StatRow label="분봉 저장 행 수" value={`${data.intraday_store.total_rows.toLocaleString('ko-KR')}개`} />
                 <StatRow label="분봉 최신 수집" value={data.intraday_store.latest_fetched_at ? fmtDateTime(data.intraday_store.latest_fetched_at) : '-'} />
                 <StatRow label="생성 시각" value={fmtDateTime(data.generated_at)} />
                 {data.intraday_store.timeframes.length > 0 && (
@@ -170,7 +170,9 @@ export default function SystemStatusPage() {
                       {data.intraday_store.timeframes.map(item => (
                         <div key={item.timeframe} className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
                           <span>{item.timeframe}</span>
-                          <span>{item.symbols}종목 / {item.rows.toLocaleString('ko-KR')}봉</span>
+                          <span>
+                            {item.symbols}종목 / {item.rows.toLocaleString('ko-KR')}개
+                          </span>
                         </div>
                       ))}
                     </div>
@@ -186,8 +188,8 @@ export default function SystemStatusPage() {
               분봉 캐시 예열
             </div>
             <p className="text-xs leading-relaxed text-muted-foreground">
-              대시보드 상위 후보나 직접 입력한 종목의 15분, 30분, 60분 데이터를 미리 저장합니다.
-              기본은 저장/공개 데이터 우선이고, 장중 최신성이 꼭 필요할 때만 KIS 포함 버튼을 사용하세요.
+              대시보드 상위 후보와 직접 입력한 종목의 15분, 30분, 60분 데이터를 미리 모아 둡니다. 기본은 저장/공개 데이터를
+              우선 쓰고, 최신성이 아주 중요할 때만 KIS 포함 버튼을 쓰는 편이 좋습니다.
             </p>
 
             <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
@@ -216,7 +218,7 @@ export default function SystemStatusPage() {
                     disabled={isWarming}
                     className="rounded-md border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground disabled:opacity-60"
                   >
-                    저장/공개 예열
+                    저장·공개 예열
                   </button>
                   <button
                     onClick={() => candidateWarmup.mutate(true)}
@@ -242,7 +244,7 @@ export default function SystemStatusPage() {
                     disabled={isWarming || parseSymbols(manualSymbols).length === 0}
                     className="rounded-md border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground disabled:opacity-60"
                   >
-                    저장/공개 예열
+                    저장·공개 예열
                   </button>
                   <button
                     onClick={() => manualWarmup.mutate(true)}
@@ -257,7 +259,7 @@ export default function SystemStatusPage() {
 
             {warmupStatus && warmupStatus.status !== 'idle' && <WarmupJobStatusCard status={warmupStatus} />}
             {(manualWarmup.isError || candidateWarmup.isError) && (
-              <p className="text-xs text-red-300">분봉 예열 중 오류가 발생했습니다. 종목 코드와 백엔드 로그를 확인해 주세요.</p>
+              <p className="text-xs text-red-300">분봉 예열 중 오류가 발생했습니다. 종목 코드와 백엔드 로그를 함께 확인해 주세요.</p>
             )}
           </Card>
 
@@ -268,8 +270,8 @@ export default function SystemStatusPage() {
                 자동 예열 스케줄
               </div>
               <p className="text-xs leading-relaxed text-muted-foreground">
-                장중에는 후보군을 다시 뽑아 분봉 캐시를 자동으로 채웁니다. 기본값은 KIS 실시간 호출을 아껴 쓰도록 저장/공개 데이터 우선이며,
-                필요할 때만 수동 버튼으로 KIS 포함 예열을 실행하면 됩니다.
+                장중에는 후보군을 다시 뽑아 분봉 캐시를 자동으로 채웁니다. 기본은 KIS 호출을 절약하는 저장/공개 우선 방식이고,
+                필요할 때만 수동으로 KIS 포함 예열을 돌리면 됩니다.
               </p>
               <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
                 {data.scheduled_warmups.map(plan => (
@@ -332,15 +334,17 @@ function WarmupJobStatusCard({ status }: { status: IntradayWarmupJobStatus }) {
     <div className="rounded-lg border border-border bg-background/60 p-3">
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <Badge variant={status.is_running ? 'neutral' : status.failure_count > 0 ? 'warning' : 'bullish'}>
-          {statusLabel(status.status)}
+          {warmupJobLabel(status.status)}
         </Badge>
         <Badge variant={status.failure_count > 0 ? 'warning' : 'bullish'}>
           성공 {status.success_count}/{status.total_requests}
         </Badge>
         <Badge variant={status.allow_live ? 'bullish' : 'muted'}>
-          {status.allow_live ? 'KIS 포함' : '저장/공개 우선'}
+          {status.allow_live ? 'KIS 포함' : '저장·공개 우선'}
         </Badge>
-        <span className="text-muted-foreground">{status.symbols.length}종목 / {status.timeframes.join(', ')}</span>
+        <span className="text-muted-foreground">
+          {status.symbols.length}종목 / {status.timeframes.join(', ')}
+        </span>
       </div>
       <div className="mt-3 h-2 overflow-hidden rounded-full bg-background">
         <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.round(progress * 100)}%` }} />
@@ -353,8 +357,10 @@ function WarmupJobStatusCard({ status }: { status: IntradayWarmupJobStatus }) {
       <div className="mt-2 grid grid-cols-1 gap-1.5 md:grid-cols-2 xl:grid-cols-3">
         {status.results.slice(-9).map(item => (
           <div key={`${item.symbol}-${item.timeframe}`} className="flex items-center justify-between gap-2 rounded-md border border-border bg-card px-2 py-1.5 text-xs">
-            <span>{item.symbol} {item.timeframe}</span>
-            <span className={item.ok ? 'text-emerald-300' : 'text-red-300'}>{item.ok ? `${item.bars}봉` : '실패'}</span>
+            <span>
+              {item.symbol} {item.timeframe}
+            </span>
+            <span className={item.ok ? 'text-emerald-300' : 'text-red-300'}>{item.ok ? `${item.bars}개` : '실패'}</span>
           </div>
         ))}
       </div>
@@ -362,7 +368,7 @@ function WarmupJobStatusCard({ status }: { status: IntradayWarmupJobStatus }) {
   )
 }
 
-function statusLabel(status: string): string {
+function warmupJobLabel(status: string): string {
   if (status === 'running') return '진행 중'
   if (status === 'ready') return '완료'
   if (status === 'error') return '오류'
@@ -402,7 +408,7 @@ function parseSymbols(value: string): string[] {
 
 function formatDuration(seconds: number | null): string {
   if (seconds === null || seconds === undefined) return '-'
-  if (seconds <= 0) return '만료됨'
+  if (seconds <= 0) return '만료'
   const hours = Math.floor(seconds / 3600)
   const minutes = Math.floor((seconds % 3600) / 60)
   if (hours <= 0) return `${minutes}분`
