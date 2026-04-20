@@ -70,6 +70,7 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
       <ReentryCard analysis={analysis} />
       <ActiveSetupCard analysis={analysis} />
       <DecisionSupportCard analysis={analysis} />
+      <MarketContextCard analysis={analysis} />
 
       {bestPattern && <BestPatternCard pattern={bestPattern} analysis={analysis} />}
 
@@ -368,6 +369,30 @@ function ActiveSetupCard({ analysis }: { analysis: AnalysisResult }) {
       <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
         <span>활성 패턴 {analysis.active_pattern_count}개</span>
         <span className="text-right">종료/무효 {analysis.completed_pattern_count}개</span>
+      </div>
+    </Card>
+  )
+}
+
+function MarketContextCard({ analysis }: { analysis: AnalysisResult }) {
+  return (
+    <Card className="space-y-3">
+      <div className="flex items-center gap-2 text-sm font-semibold">
+        <Layers3 size={15} className="text-primary" />
+        시장 맥락과 가격 공간
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <StatRow label="추세 방향" value={analysis.trend_direction || '-'} />
+        <StatRow label="추세 정렬" value={fmtPct(analysis.trend_alignment_score ?? 0)} />
+        <StatRow label="헤드룸" value={fmtPct(analysis.headroom_score ?? 0)} />
+        <StatRow label="목표 거리" value={fmtPct(analysis.target_distance_pct ?? 0)} />
+        <StatRow label="손절 거리" value={fmtPct(analysis.stop_distance_pct ?? 0)} />
+        <StatRow label="평균 보유 바 수" value={`${Math.round(analysis.avg_bars_to_outcome ?? 0)}개`} />
+      </div>
+      <div className="rounded-lg border border-border bg-background/60 p-2.5 text-xs leading-relaxed text-muted-foreground">
+        현재 구조는 {analysis.wyckoff_note || '와이코프 해석 없음'} 기준으로 읽히며, 장중 세션은{' '}
+        {INTRADAY_SESSION_LABELS[analysis.intraday_session_phase] ?? analysis.intraday_session_phase} 쪽 맥락을 따릅니다.
+        {(analysis.avg_turnover_billion ?? 0) > 0 && ` 평균 거래대금은 ${fmtTurnoverBillion(analysis.avg_turnover_billion)} 수준입니다.`}
       </div>
     </Card>
   )

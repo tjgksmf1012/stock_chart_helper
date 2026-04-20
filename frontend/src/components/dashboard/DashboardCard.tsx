@@ -11,8 +11,10 @@ import {
   fmtPct,
   fmtTurnoverBillion,
   getPatternBias,
+  INTRADAY_COLLECTION_MODE_LABELS,
   INTRADAY_SESSION_LABELS,
   PATTERN_NAMES,
+  SETUP_STAGE_LABELS,
   STATE_COLORS,
   STATE_LABELS,
   WYCKOFF_LABELS,
@@ -69,13 +71,15 @@ export function DashboardCard({ item, intradayPreset }: DashboardCardProps) {
             </Badge>
             {item.fetch_status === 'placeholder_pending' && <Badge variant="warning">임시 후보</Badge>}
             {item.live_intraday_candidate && <Badge variant="bullish">live {fmtPct(item.live_intraday_priority_score, 0)}</Badge>}
-            {isIntraday && !item.live_intraday_candidate && <Badge variant="muted">{item.intraday_collection_mode}</Badge>}
+            {isIntraday && !item.live_intraday_candidate && (
+              <Badge variant="muted">{INTRADAY_COLLECTION_MODE_LABELS[item.intraday_collection_mode] ?? item.intraday_collection_mode}</Badge>
+            )}
           </div>
 
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
             {item.pattern_type ? <Badge variant={getPatternBias(item.pattern_type)}>{PATTERN_NAMES[item.pattern_type] ?? item.pattern_type}</Badge> : <Badge variant="muted">No Signal</Badge>}
             {item.state && <span className={cn('rounded px-1 py-0.5 text-xs', STATE_COLORS[item.state] ?? 'text-slate-300 bg-slate-500/10')}>{STATE_LABELS[item.state] ?? item.state}</span>}
-            <Badge variant="muted">{item.setup_stage}</Badge>
+            <Badge variant="muted">{SETUP_STAGE_LABELS[item.setup_stage] ?? item.setup_stage}</Badge>
           </div>
         </div>
 
@@ -184,7 +188,7 @@ export function DashboardCard({ item, intradayPreset }: DashboardCardProps) {
         </div>
       )}
       {item.trend_warning && <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-2.5 text-xs text-amber-200">{item.trend_warning}</div>}
-      {intradayPreset && <p className="text-xs text-muted-foreground">프리셋: {intradayPreset}</p>}
+      {intradayPreset && <p className="text-xs text-muted-foreground">프리셋: {presetLabel(intradayPreset)}</p>}
       <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">{item.reason_summary}</p>
     </Card>
   )
@@ -233,4 +237,21 @@ function scoreVariant(score: number): 'bullish' | 'warning' | 'muted' | 'neutral
   if (score >= 0.56) return 'neutral'
   if (score >= 0.4) return 'warning'
   return 'muted'
+}
+
+function presetLabel(value: string): string {
+  switch (value) {
+    case 'all':
+      return '전체'
+    case 'ready-now':
+      return '지금 볼 종목'
+    case 'watch':
+      return '지켜볼 후보'
+    case 'recheck':
+      return '재확인 필요'
+    case 'cooling':
+      return '관망 / 정리'
+    default:
+      return value
+  }
 }

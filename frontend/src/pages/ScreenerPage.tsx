@@ -8,7 +8,13 @@ import { Card } from '@/components/ui/Card'
 import { QueryError } from '@/components/ui/QueryError'
 import { screenerApi } from '@/lib/api'
 import { TIMEFRAME_OPTIONS } from '@/lib/timeframes'
-import { fmtPct } from '@/lib/utils'
+import {
+  fmtPct,
+  INTRADAY_COLLECTION_MODE_LABELS,
+  PATTERN_NAMES,
+  SETUP_STAGE_LABELS,
+  STATE_LABELS,
+} from '@/lib/utils'
 import type { DashboardItem, ScreenerRequest, Timeframe } from '@/types/api'
 
 type IntradayView = 'all' | 'live' | 'stored' | 'public' | 'mixed' | 'cooldown'
@@ -41,20 +47,23 @@ const DEFAULT_SCREENER_REQUEST: ScreenerRequest = {
 }
 
 const PATTERN_OPTIONS = [
-  { value: 'double_bottom', label: '이중 바닥 (W)' },
-  { value: 'double_top', label: '이중 천장 (M)' },
-  { value: 'head_and_shoulders', label: '헤드 앤 숄더' },
-  { value: 'inverse_head_and_shoulders', label: '역헤드 앤 숄더' },
-  { value: 'ascending_triangle', label: '상승 삼각형' },
-  { value: 'descending_triangle', label: '하락 삼각형' },
-  { value: 'symmetric_triangle', label: '대칭 삼각형' },
-  { value: 'rectangle', label: '박스권' },
+  { value: 'double_bottom', label: PATTERN_NAMES.double_bottom },
+  { value: 'double_top', label: PATTERN_NAMES.double_top },
+  { value: 'head_and_shoulders', label: PATTERN_NAMES.head_and_shoulders },
+  { value: 'inverse_head_and_shoulders', label: PATTERN_NAMES.inverse_head_and_shoulders },
+  { value: 'ascending_triangle', label: PATTERN_NAMES.ascending_triangle },
+  { value: 'descending_triangle', label: PATTERN_NAMES.descending_triangle },
+  { value: 'symmetric_triangle', label: PATTERN_NAMES.symmetric_triangle },
+  { value: 'rectangle', label: PATTERN_NAMES.rectangle },
+  { value: 'cup_and_handle', label: PATTERN_NAMES.cup_and_handle },
+  { value: 'rounding_bottom', label: PATTERN_NAMES.rounding_bottom },
+  { value: 'vcp', label: PATTERN_NAMES.vcp },
 ]
 
 const STATE_OPTIONS = [
-  { value: 'forming', label: '형성 중' },
-  { value: 'armed', label: '활성 임박' },
-  { value: 'confirmed', label: '확인 완료' },
+  { value: 'forming', label: STATE_LABELS.forming },
+  { value: 'armed', label: STATE_LABELS.armed },
+  { value: 'confirmed', label: STATE_LABELS.confirmed },
 ]
 
 const MARKET_OPTIONS = [
@@ -110,6 +119,23 @@ const MARKET_CAP_OPTIONS = [
   { value: '30000', label: '3조 이상' },
 ]
 
+const INTRADAY_VIEW_OPTIONS: Array<[IntradayView, string]> = [
+  ['all', '전체'],
+  ['live', 'live'],
+  ['stored', 'stored'],
+  ['public', 'public'],
+  ['mixed', 'mixed'],
+  ['cooldown', 'cooldown'],
+]
+
+const INTRADAY_PRESET_OPTIONS: Array<[IntradayPreset, string]> = [
+  ['all', '프리셋 전체'],
+  ['ready-now', '바로 볼 종목'],
+  ['watch', '관찰 후보'],
+  ['recheck', '재확인 필요'],
+  ['cooling', '관망 후보'],
+]
+
 const QUICK_PRESETS: Array<{
   id: QuickPresetId
   label: string
@@ -136,7 +162,7 @@ const QUICK_PRESETS: Array<{
   },
   {
     id: 'daily-fresh',
-    label: '일봉 신선도',
+    label: '일봉 신선형',
     description: '이미 끝난 패턴보다 아직 살아 있는 일봉 구조를 찾습니다.',
     build: () => ({
       ...DEFAULT_SCREENER_REQUEST,
@@ -153,7 +179,7 @@ const QUICK_PRESETS: Array<{
   {
     id: 'intraday-ready',
     label: '분봉 즉시형',
-    description: 'live 성격이 강하고 지금 바로 볼 만한 분봉 후보에 집중합니다.',
+    description: 'live 성격이 강하고 지금 바로 볼 만한 분봉 후보를 우선합니다.',
     build: () => ({
       ...DEFAULT_SCREENER_REQUEST,
       timeframes: ['60m', '30m', '15m'],
@@ -170,7 +196,7 @@ const QUICK_PRESETS: Array<{
   {
     id: 'intraday-watch',
     label: '분봉 관찰형',
-    description: '형성 중이지만 흐름을 더 지켜볼 가치가 있는 분봉 후보를 넓게 봅니다.',
+    description: '형성 중이지만 흐름이 살아 있어 지켜볼 가치가 있는 분봉 후보를 봅니다.',
     build: () => ({
       ...DEFAULT_SCREENER_REQUEST,
       timeframes: ['60m', '30m', '15m'],
@@ -187,7 +213,7 @@ const QUICK_PRESETS: Array<{
   {
     id: 'reentry-focus',
     label: '재진입 집중',
-    description: '재축적, 눌림 재상승, 실패 돌파 복구 같은 재진입 케이스만 따로 봅니다.',
+    description: '재축적, 눌림 후 재상승, 실패 돌파 복구 같은 재진입 시나리오만 따로 봅니다.',
     build: () => ({
       ...DEFAULT_SCREENER_REQUEST,
       timeframes: ['1d', '60m'],
@@ -205,18 +231,33 @@ const QUICK_PRESETS: Array<{
 
 function exportToCsv(items: DashboardItem[]) {
   const headers = [
-    '종목코드', '종목명', '시장', '타임프레임', '패턴', '상태',
-    '상승확률(%)', '하락확률(%)', '교과서유사도(%)', '신뢰도(%)',
-    '거래준비도(%)', '진입구간(%)', '신선도(%)', '재진입구조(%)',
-    '활성셋업(%)', '종합점수(%)', '백테스트edge(%)', '행동계획', '재진입유형',
+    '종목코드',
+    '종목명',
+    '시장',
+    '타임프레임',
+    '패턴',
+    '상태',
+    '상승확률(%)',
+    '하락확률(%)',
+    '교과서유사도(%)',
+    '신뢰도(%)',
+    '거래준비도(%)',
+    '진입구간(%)',
+    '신선도(%)',
+    '재진입구조(%)',
+    '활성셋업(%)',
+    '백테스트edge(%)',
+    '행동가이드',
+    '재진입유형',
   ]
+
   const rows = items.map(item => [
     item.symbol.code,
     item.symbol.name,
     item.symbol.market,
-    item.timeframe,
-    item.pattern_type ?? '',
-    item.state ?? '',
+    item.timeframe_label,
+    item.pattern_type ? PATTERN_NAMES[item.pattern_type] ?? item.pattern_type : 'No Signal',
+    item.state ? STATE_LABELS[item.state] ?? item.state : '',
     (item.p_up * 100).toFixed(1),
     (item.p_down * 100).toFixed(1),
     (item.textbook_similarity * 100).toFixed(1),
@@ -226,7 +267,6 @@ function exportToCsv(items: DashboardItem[]) {
     ((item.freshness_score ?? 0) * 100).toFixed(1),
     ((item.reentry_score ?? 0) * 100).toFixed(1),
     ((item.active_setup_score ?? 0) * 100).toFixed(1),
-    (((item as unknown as Record<string, number>)['composite_score'] ?? item.entry_score) * 100).toFixed(1),
     ((item.historical_edge_score ?? 0) * 100).toFixed(1),
     item.action_plan_label ?? '',
     item.reentry_case_label ?? '',
@@ -238,12 +278,12 @@ function exportToCsv(items: DashboardItem[]) {
 
   const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `screener_${new Date().toISOString().slice(0, 10)}.csv`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = `screener_${new Date().toISOString().slice(0, 10)}.csv`
+  document.body.appendChild(anchor)
+  anchor.click()
+  document.body.removeChild(anchor)
   URL.revokeObjectURL(url)
 }
 
@@ -279,7 +319,9 @@ export default function ScreenerPage() {
         intradayPreset === 'all'
           ? true
           : intradayPreset === 'ready-now'
-            ? item.live_intraday_candidate && !item.no_signal_flag && ['confirmed', 'trigger_ready', 'breakout_watch'].includes(item.setup_stage)
+            ? item.live_intraday_candidate &&
+              !item.no_signal_flag &&
+              ['confirmed', 'trigger_ready', 'breakout_watch'].includes(item.setup_stage)
             : intradayPreset === 'watch'
               ? !item.no_signal_flag && ['late_base', 'early_trigger_watch', 'base_building'].includes(item.setup_stage)
               : intradayPreset === 'recheck'
@@ -293,42 +335,30 @@ export default function ScreenerPage() {
   const results = filteredData ?? data ?? []
 
   const stats = useMemo(() => {
-    if (!filteredData?.length) return null
+    if (!results.length) return null
 
-    const realItems = filteredData.filter(item => !isPlaceholderItem(item))
-    const metricItems = realItems.length > 0 ? realItems : filteredData
-    const placeholderCount = filteredData.length - realItems.length
-    const kospi = filteredData.filter(item => item.symbol.market === 'KOSPI').length
-    const kosdaq = filteredData.filter(item => item.symbol.market === 'KOSDAQ').length
-    const avgReliability = metricItems.reduce((sum, item) => sum + item.sample_reliability, 0) / metricItems.length
-    const avgReadiness = metricItems.reduce((sum, item) => sum + (item.trade_readiness_score ?? 0), 0) / metricItems.length
-    const avgEntryWindow = metricItems.reduce((sum, item) => sum + (item.entry_window_score ?? 0), 0) / metricItems.length
-    const avgFreshness = metricItems.reduce((sum, item) => sum + (item.freshness_score ?? 0), 0) / metricItems.length
-    const avgReentry = metricItems.reduce((sum, item) => sum + (item.reentry_score ?? 0), 0) / metricItems.length
-    const avgActiveSetup = metricItems.reduce((sum, item) => sum + (item.active_setup_score ?? 0), 0) / metricItems.length
-    const avgRewardRisk = metricItems.reduce((sum, item) => sum + item.reward_risk_ratio, 0) / metricItems.length
-    const liveCount = filteredData.filter(item => item.live_intraday_candidate).length
-    const confirmedCount = metricItems.filter(item => item.state === 'confirmed').length
-    const noSignalCount = filteredData.filter(item => item.no_signal_flag).length
+    const realItems = results.filter(item => !isPlaceholderItem(item))
+    const metricItems = realItems.length > 0 ? realItems : results
+    const placeholderCount = results.length - realItems.length
 
     return {
-      kospi,
-      kosdaq,
+      kospi: results.filter(item => item.symbol.market === 'KOSPI').length,
+      kosdaq: results.filter(item => item.symbol.market === 'KOSDAQ').length,
       realCount: realItems.length,
       placeholderCount,
       isProvisionalOnly: realItems.length === 0 && placeholderCount > 0,
-      avgReliability,
-      avgReadiness,
-      avgEntryWindow,
-      avgFreshness,
-      avgReentry,
-      avgActiveSetup,
-      avgRewardRisk,
-      liveCount,
-      confirmedCount,
-      noSignalCount,
+      avgReliability: average(metricItems.map(item => item.sample_reliability)),
+      avgReadiness: average(metricItems.map(item => item.trade_readiness_score ?? 0)),
+      avgEntryWindow: average(metricItems.map(item => item.entry_window_score ?? 0)),
+      avgFreshness: average(metricItems.map(item => item.freshness_score ?? 0)),
+      avgReentry: average(metricItems.map(item => item.reentry_score ?? 0)),
+      avgActiveSetup: average(metricItems.map(item => item.active_setup_score ?? 0)),
+      avgRewardRisk: average(metricItems.map(item => item.reward_risk_ratio)),
+      liveCount: results.filter(item => item.live_intraday_candidate).length,
+      confirmedCount: metricItems.filter(item => item.state === 'confirmed').length,
+      noSignalCount: results.filter(item => item.no_signal_flag).length,
     }
-  }, [filteredData])
+  }, [results])
 
   const activeFilterCount = useMemo(() => countActiveFilters(req), [req])
   const topCandidates = useMemo(() => results.slice(0, 3), [results])
@@ -410,8 +440,8 @@ export default function ScreenerPage() {
         <div>
           <h1 className="text-xl font-bold">스크리너</h1>
           <p className="text-xs text-muted-foreground">
-            패턴, 상태, 시장, 타임프레임뿐 아니라 거래 준비도, 진입 구간, 신선도, 재진입 구조까지 함께 걸러서
-            지금 실전에서 먼저 볼 만한 후보를 찾습니다.
+            패턴, 상태, 시장, 타임프레임뿐 아니라 거래 준비도, 진입 구간, 신선도, 재진입 구조까지 함께 걸러서 지금 실전에서
+            먼저 볼 만한 후보를 찾는 화면입니다.
           </p>
         </div>
       </div>
@@ -422,8 +452,8 @@ export default function ScreenerPage() {
           빠른 시작 프리셋
         </div>
         <p className="text-xs leading-relaxed text-muted-foreground">
-          처음부터 모든 슬라이더를 만지지 않아도 되도록 자주 쓰는 실전 시나리오를 미리 묶어 두었습니다.
-          프리셋을 고른 뒤 현재 조건을 조금씩 조정하는 방식이 가장 빠릅니다.
+          처음부터 모든 슬라이더를 만지지 않아도 되도록 자주 쓰는 실전 시나리오를 미리 묶어 두었습니다. 프리셋을 고른 뒤
+          현재 조건을 조금씩 조정하는 방식이 가장 빠릅니다.
         </p>
         <div className="grid grid-cols-1 gap-3 xl:grid-cols-5">
           {QUICK_PRESETS.map(preset => (
@@ -487,9 +517,7 @@ export default function ScreenerPage() {
           <Badge variant="muted">
             타임프레임 {(req.timeframes ?? []).map(timeframe => TIMEFRAME_OPTIONS.find(option => option.value === timeframe)?.label ?? timeframe).join(', ')}
           </Badge>
-          <Badge variant="muted">
-            정렬 {SORT_OPTIONS.find(option => option.value === (req.sort_by ?? 'composite_score'))?.label}
-          </Badge>
+          <Badge variant="muted">정렬 {SORT_OPTIONS.find(option => option.value === (req.sort_by ?? 'composite_score'))?.label}</Badge>
           {(req.exclude_no_signal ?? true) && <Badge variant="warning">No Signal 제외</Badge>}
           {(req.min_trade_readiness_score ?? 0) >= 0.4 && <Badge variant="bullish">준비도 엄격</Badge>}
           {(req.min_freshness_score ?? 0) >= 0.4 && <Badge variant="neutral">신선도 우선</Badge>}
@@ -521,96 +549,66 @@ export default function ScreenerPage() {
 
         <FilterGroup label="패턴 유형">
           <div className="flex flex-wrap gap-1.5">
-            {PATTERN_OPTIONS.map(option => {
-              const selected = req.pattern_types?.includes(option.value)
-              return (
-                <button
-                  key={option.value}
-                  onClick={() => toggleMultiValue('pattern_types', option.value)}
-                  className={`rounded px-2 py-1 text-xs transition-colors ${
-                    selected ? 'bg-primary text-primary-foreground' : 'bg-muted/50 text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  {option.label}
-                </button>
-              )
-            })}
+            {PATTERN_OPTIONS.map(option => (
+              <ChipButton
+                key={option.value}
+                selected={req.pattern_types?.includes(option.value) ?? false}
+                onClick={() => toggleMultiValue('pattern_types', option.value)}
+                label={option.label}
+              />
+            ))}
           </div>
         </FilterGroup>
 
         <FilterGroup label="패턴 상태">
           <div className="flex flex-wrap gap-1.5">
-            {STATE_OPTIONS.map(option => {
-              const selected = req.states?.includes(option.value)
-              return (
-                <button
-                  key={option.value}
-                  onClick={() => toggleMultiValue('states', option.value)}
-                  className={`rounded px-2 py-1 text-xs transition-colors ${
-                    selected ? 'bg-primary text-primary-foreground' : 'bg-muted/50 text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  {option.label}
-                </button>
-              )
-            })}
+            {STATE_OPTIONS.map(option => (
+              <ChipButton
+                key={option.value}
+                selected={req.states?.includes(option.value) ?? false}
+                onClick={() => toggleMultiValue('states', option.value)}
+                label={option.label}
+              />
+            ))}
           </div>
         </FilterGroup>
 
         <FilterGroup label="시장">
           <div className="flex flex-wrap gap-1.5">
-            {MARKET_OPTIONS.map(option => {
-              const selected = req.markets?.includes(option.value)
-              return (
-                <button
-                  key={option.value}
-                  onClick={() => toggleMultiValue('markets', option.value)}
-                  className={`rounded px-2 py-1 text-xs transition-colors ${
-                    selected ? 'bg-primary text-primary-foreground' : 'bg-muted/50 text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  {option.label}
-                </button>
-              )
-            })}
+            {MARKET_OPTIONS.map(option => (
+              <ChipButton
+                key={option.value}
+                selected={req.markets?.includes(option.value) ?? false}
+                onClick={() => toggleMultiValue('markets', option.value)}
+                label={option.label}
+              />
+            ))}
           </div>
         </FilterGroup>
 
         <FilterGroup label="데이터 상태">
           <div className="flex flex-wrap gap-1.5">
-            {FETCH_STATUS_OPTIONS.map(option => {
-              const selected = req.fetch_statuses?.includes(option.value)
-              return (
-                <button
-                  key={option.value}
-                  onClick={() => toggleMultiValue('fetch_statuses', option.value)}
-                  className={`rounded px-2 py-1 text-xs transition-colors ${
-                    selected ? 'bg-primary text-primary-foreground' : 'bg-muted/50 text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  {option.label}
-                </button>
-              )
-            })}
+            {FETCH_STATUS_OPTIONS.map(option => (
+              <ChipButton
+                key={option.value}
+                selected={req.fetch_statuses?.includes(option.value) ?? false}
+                onClick={() => toggleMultiValue('fetch_statuses', option.value)}
+                label={option.label}
+              />
+            ))}
           </div>
         </FilterGroup>
 
         <FilterGroup label="재진입 유형">
           <div className="flex flex-wrap gap-1.5">
-            {REENTRY_CASE_OPTIONS.map(option => {
-              const selected = req.reentry_cases?.includes(option.value)
-              return (
-                <button
-                  key={option.value}
-                  onClick={() => toggleMultiValue('reentry_cases', option.value)}
-                  className={`rounded px-2 py-1 text-xs transition-colors ${
-                    selected ? 'bg-primary text-primary-foreground' : 'bg-muted/50 text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  {option.label}
-                </button>
-              )
-            })}
+            {REENTRY_CASE_OPTIONS.map(option => (
+              <ChipButton
+                key={option.value}
+                selected={req.reentry_cases?.includes(option.value) ?? false}
+                onClick={() => toggleMultiValue('reentry_cases', option.value)}
+                label={option.label}
+              />
+            ))}
           </div>
         </FilterGroup>
 
@@ -619,21 +617,9 @@ export default function ScreenerPage() {
           value={req.min_textbook_similarity ?? 0}
           onChange={value => updateReq(setReq, setActiveQuickPreset, { min_textbook_similarity: value })}
         />
-        <SliderGroup
-          label="최소 상승 확률"
-          value={req.min_p_up ?? 0}
-          onChange={value => updateReq(setReq, setActiveQuickPreset, { min_p_up: value })}
-        />
-        <SliderGroup
-          label="최대 하락 확률"
-          value={req.max_p_down ?? 1}
-          onChange={value => updateReq(setReq, setActiveQuickPreset, { max_p_down: value })}
-        />
-        <SliderGroup
-          label="최소 신뢰도"
-          value={req.min_confidence ?? 0}
-          onChange={value => updateReq(setReq, setActiveQuickPreset, { min_confidence: value })}
-        />
+        <SliderGroup label="최소 상승 확률" value={req.min_p_up ?? 0} onChange={value => updateReq(setReq, setActiveQuickPreset, { min_p_up: value })} />
+        <SliderGroup label="최대 하락 확률" value={req.max_p_down ?? 1} onChange={value => updateReq(setReq, setActiveQuickPreset, { max_p_down: value })} />
+        <SliderGroup label="최소 신뢰도" value={req.min_confidence ?? 0} onChange={value => updateReq(setReq, setActiveQuickPreset, { min_confidence: value })} />
         <SliderGroup
           label="최소 표본 신뢰도"
           value={req.min_sample_reliability ?? 0}
@@ -710,9 +696,7 @@ export default function ScreenerPage() {
             value={typeof req.min_market_cap === 'number' ? String(req.min_market_cap) : ''}
             onChange={event => {
               const nextValue = event.target.value
-              updateReq(setReq, setActiveQuickPreset, {
-                min_market_cap: nextValue ? Number(nextValue) : undefined,
-              })
+              updateReq(setReq, setActiveQuickPreset, { min_market_cap: nextValue ? Number(nextValue) : undefined })
             }}
             className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
           >
@@ -722,7 +706,7 @@ export default function ScreenerPage() {
               </option>
             ))}
           </select>
-          <p className="text-xs text-muted-foreground">소형주 잡음을 줄이고 싶을 때 유용합니다.</p>
+          <p className="text-xs text-muted-foreground">너무 작은 종목은 줄이고, 더 큰 흐름을 보는 용도로 사용합니다.</p>
         </FilterGroup>
 
         <FilterGroup label="정렬 기준">
@@ -761,7 +745,7 @@ export default function ScreenerPage() {
               onChange={event => updateReq(setReq, setActiveQuickPreset, { exclude_no_signal: event.target.checked })}
               className="accent-primary"
             />
-            <span className="text-xs text-muted-foreground">No Signal 종목은 제외합니다.</span>
+            <span className="text-xs text-muted-foreground">No Signal 종목을 제외합니다.</span>
           </label>
         </FilterGroup>
       </div>
@@ -783,8 +767,8 @@ export default function ScreenerPage() {
         <Card className="space-y-2">
           <div className="text-sm font-semibold">조건에 맞는 종목이 없습니다.</div>
           <p className="text-xs text-muted-foreground">
-            지금 조건이 꽤 엄격하거나, 선택한 타임프레임에서 실전형 후보가 아직 적을 수 있습니다.
-            최소 점수 기준을 조금 낮추거나 타임프레임을 넓혀서 다시 확인해 보세요.
+            지금 조건이 꽤 엄격하거나 선택한 타임프레임에서 실전형 후보가 아직 적을 수 있습니다. 최소 점수 기준을 조금 낮추거나
+            다른 타임프레임도 함께 보는 편이 좋습니다.
           </p>
           <div className="flex flex-wrap gap-2 pt-1">
             <button
@@ -826,14 +810,7 @@ export default function ScreenerPage() {
           {intradayMode && (
             <>
               <div className="flex flex-wrap gap-2">
-                {([
-                  ['all', '전체'],
-                  ['live', 'live'],
-                  ['stored', 'stored'],
-                  ['public', 'public'],
-                  ['mixed', 'mixed'],
-                  ['cooldown', 'cooldown'],
-                ] as Array<[IntradayView, string]>).map(([value, label]) => (
+                {INTRADAY_VIEW_OPTIONS.map(([value, label]) => (
                   <button
                     key={value}
                     onClick={() => setIntradayView(value)}
@@ -849,13 +826,7 @@ export default function ScreenerPage() {
               </div>
 
               <div className="flex flex-wrap gap-2">
-                {([
-                  ['all', '프리셋 전체'],
-                  ['ready-now', '바로 볼 종목'],
-                  ['watch', '관찰 후보'],
-                  ['recheck', '재확인 필요'],
-                  ['cooling', '관망 후보'],
-                ] as Array<[IntradayPreset, string]>).map(([value, label]) => (
+                {INTRADAY_PRESET_OPTIONS.map(([value, label]) => (
                   <button
                     key={value}
                     onClick={() => setIntradayPreset(value)}
@@ -899,7 +870,11 @@ export default function ScreenerPage() {
                 <SummaryButton label="live 추적" value={`${stats.liveCount}개`} onClick={() => setIntradayView('live')} />
                 <SummaryButton label="confirmed" value={`${stats.confirmedCount}개`} onClick={() => setIntradayPreset('ready-now')} />
                 <SummaryButton label="No Signal" value={`${stats.noSignalCount}개`} onClick={() => setIntradayPreset('cooling')} />
-                <SummaryButton label="평균 손익비" value={stats.isProvisionalOnly ? '임시값' : stats.avgRewardRisk.toFixed(2)} onClick={() => setIntradayPreset('ready-now')} />
+                <SummaryButton
+                  label="평균 손익비"
+                  value={stats.isProvisionalOnly ? '임시값' : stats.avgRewardRisk.toFixed(2)}
+                  onClick={() => setIntradayPreset('ready-now')}
+                />
               </div>
 
               <Card className="space-y-3">
@@ -919,7 +894,7 @@ export default function ScreenerPage() {
                     onClick={() => setIntradayPreset('watch')}
                     className="rounded-md border border-violet-500/30 bg-violet-500/10 px-2.5 py-1.5 text-xs text-violet-100 transition-colors hover:bg-violet-500/15"
                   >
-                    forming/watch
+                    forming / watch
                   </button>
                   <button
                     onClick={() => setIntradayPreset('recheck')}
@@ -934,11 +909,7 @@ export default function ScreenerPage() {
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {results.map(item => (
-              <DashboardCard
-                key={`${item.timeframe}-${item.symbol.code}`}
-                item={item}
-                intradayPreset={intradayMode ? intradayPreset : undefined}
-              />
+              <DashboardCard key={`${item.timeframe}-${item.symbol.code}`} item={item} intradayPreset={intradayMode ? intradayPreset : undefined} />
             ))}
           </div>
         </div>
@@ -962,6 +933,19 @@ function FilterGroup({ label, children }: { label: string; children: ReactNode }
       <div className="text-xs font-semibold text-muted-foreground">{label}</div>
       {children}
     </div>
+  )
+}
+
+function ChipButton({ label, selected, onClick }: { label: string; selected: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`rounded px-2 py-1 text-xs transition-colors ${
+        selected ? 'bg-primary text-primary-foreground' : 'bg-muted/50 text-muted-foreground hover:text-foreground'
+      }`}
+    >
+      {label}
+    </button>
   )
 }
 
@@ -1028,8 +1012,8 @@ function TopCandidateCard({ item, rank }: { item: DashboardItem; rank: number })
       </div>
       <div className="mt-3 flex flex-wrap gap-1.5 text-xs">
         <Badge variant={item.p_up >= 0.6 ? 'bullish' : 'neutral'}>상승 {fmtPct(item.p_up, 0)}</Badge>
-        <Badge variant={item.trade_readiness_score >= 0.6 ? 'bullish' : 'neutral'}>준비 {fmtPct(item.trade_readiness_score ?? 0, 0)}</Badge>
-        <Badge variant={item.entry_window_score >= 0.55 ? 'bullish' : 'warning'}>진입 {fmtPct(item.entry_window_score ?? 0, 0)}</Badge>
+        <Badge variant={(item.trade_readiness_score ?? 0) >= 0.6 ? 'bullish' : 'neutral'}>준비 {fmtPct(item.trade_readiness_score ?? 0, 0)}</Badge>
+        <Badge variant={(item.entry_window_score ?? 0) >= 0.55 ? 'bullish' : 'warning'}>진입 {fmtPct(item.entry_window_score ?? 0, 0)}</Badge>
       </div>
       <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{item.action_plan_summary || item.reason_summary}</p>
       {item.next_trigger && <div className="mt-2 text-xs text-primary">다음 트리거: {item.next_trigger}</div>}
@@ -1039,7 +1023,7 @@ function TopCandidateCard({ item, rank }: { item: DashboardItem; rank: number })
 
 function buildScreenerGuidance(items: DashboardItem[]): string {
   if (items.length === 0) {
-    return '현재 조건에 맞는 결과가 없습니다. 신선도나 준비도 기준을 조금 낮추거나 다른 타임프레임을 함께 보는 편이 좋습니다.'
+    return '현재 조건에 맞는 결과가 없습니다. 신선도나 준비도 기준을 조금 낮추거나 다른 타임프레임도 함께 보는 편이 좋습니다.'
   }
 
   const realItems = items.filter(item => !isPlaceholderItem(item))
@@ -1049,31 +1033,32 @@ function buildScreenerGuidance(items: DashboardItem[]): string {
 
   const liveCount = realItems.filter(item => item.live_intraday_candidate).length
   const readyCount = realItems.filter(item => (item.trade_readiness_score ?? 0) >= 0.6).length
-  const avgFreshness = realItems.reduce((sum, item) => sum + (item.freshness_score ?? 0), 0) / realItems.length
-  const reentryCases = realItems
-    .map(item => item.reentry_case_label)
-    .filter(label => !!label && label !== '구조 없음')
-  const dominantReentryCase =
-    reentryCases.length > 0
-      ? [...new Set(reentryCases)].sort(
-          (left, right) => reentryCases.filter(value => value === right).length - reentryCases.filter(value => value === left).length,
-        )[0]
-      : ''
+  const avgFreshness = average(realItems.map(item => item.freshness_score ?? 0))
+  const dominantReentryCase = dominantString(
+    realItems
+      .map(item => item.reentry_case_label)
+      .filter(label => !!label && label !== '구조 없음'),
+  )
 
   if (liveCount >= Math.max(2, Math.round(realItems.length * 0.3))) {
-    return `실시간 추적 후보가 충분합니다. live 후보부터 확인하고, 신선도와 진입 구간이 높으면서 재진입 구조까지 받쳐주는 종목을 먼저 보세요${dominantReentryCase ? `. 현재는 ${dominantReentryCase} 비중이 높습니다.` : '.'}`
+    return `실시간 추적 후보가 충분합니다. live 후보부터 확인하고, 그 안에서 진입 구간과 재진입 구조까지 받쳐 주는 종목을 먼저 보는 편이 좋습니다${dominantReentryCase ? `. 지금은 ${dominantReentryCase} 비중이 높습니다.` : '.'}`
   }
 
   if (readyCount >= Math.max(2, Math.round(realItems.length * 0.25)) && avgFreshness >= 0.5) {
-    return `거래 준비도와 패턴 신선도가 함께 받쳐주는 후보가 모여 있습니다. 상위 카드에서 리스크 기준, 재진입 구조, 다음 트리거를 먼저 확인해 보세요${dominantReentryCase ? `. 특히 ${dominantReentryCase}가 많이 보입니다.` : '.'}`
+    return `거래 준비도와 패턴 신선도가 함께 받쳐 주는 후보가 모여 있습니다. 상위 카드에서 리스크 기준, 재진입 구조, 다음 트리거를 먼저 확인해 보세요${dominantReentryCase ? `. 많이 보이는 유형은 ${dominantReentryCase}입니다.` : '.'}`
   }
 
-  return `아직은 형성 중이거나 재확인이 필요한 후보가 많습니다. 무리한 진입보다 목표가 소진 여부, 신선도 저하 여부, 재축적 여부를 먼저 체크하는 편이 좋습니다${dominantReentryCase ? `. 현재 주된 유형은 ${dominantReentryCase}입니다.` : '.'}`
+  return `아직은 형성 중이거나 재확인이 필요한 후보가 많습니다. 무리한 진입보다 목표가 선진 여부, 기준선 유지 여부, 재축적 여부를 먼저 체크하는 편이 좋습니다${dominantReentryCase ? `. 현재 주된 유형은 ${dominantReentryCase}입니다.` : '.'}`
 }
 
 function countActiveFilters(req: ScreenerRequest): number {
   let count = 0
-  if ((req.timeframes?.length ?? 0) !== (DEFAULT_SCREENER_REQUEST.timeframes?.length ?? 0) || req.timeframes?.some(value => !(DEFAULT_SCREENER_REQUEST.timeframes ?? []).includes(value))) count += 1
+  if (
+    (req.timeframes?.length ?? 0) !== (DEFAULT_SCREENER_REQUEST.timeframes?.length ?? 0) ||
+    req.timeframes?.some(value => !(DEFAULT_SCREENER_REQUEST.timeframes ?? []).includes(value))
+  ) {
+    count += 1
+  }
   if ((req.pattern_types?.length ?? 0) > 0) count += 1
   if ((req.states?.length ?? 0) > 0) count += 1
   if ((req.markets?.length ?? 0) > 0) count += 1
@@ -1111,7 +1096,6 @@ function countActiveFilters(req: ScreenerRequest): number {
 
   if ((req.sort_by ?? DEFAULT_SCREENER_REQUEST.sort_by) !== DEFAULT_SCREENER_REQUEST.sort_by) count += 1
   if ((req.exclude_no_signal ?? DEFAULT_SCREENER_REQUEST.exclude_no_signal) !== DEFAULT_SCREENER_REQUEST.exclude_no_signal) count += 1
-
   return count
 }
 
@@ -1131,4 +1115,16 @@ function sliderHint(label: string, value: number): string {
 
 function isPlaceholderItem(item: DashboardItem): boolean {
   return item.fetch_status === 'placeholder_pending'
+}
+
+function average(values: number[]): number {
+  if (values.length === 0) return 0
+  return values.reduce((sum, value) => sum + value, 0) / values.length
+}
+
+function dominantString(values: string[]): string {
+  if (values.length === 0) return ''
+  const counts = new Map<string, number>()
+  values.forEach(value => counts.set(value, (counts.get(value) ?? 0) + 1))
+  return [...counts.entries()].sort((left, right) => right[1] - left[1])[0][0]
 }

@@ -111,6 +111,25 @@ export const INTRADAY_SESSION_LABELS: Record<string, string> = {
   neutral: '중립',
 }
 
+export const SETUP_STAGE_LABELS: Record<string, string> = {
+  confirmed: '확인 완료',
+  trigger_ready: '트리거 대기',
+  breakout_watch: '돌파 감시',
+  late_base: '후반 베이스',
+  early_trigger_watch: '초기 트리거 감시',
+  base_building: '베이스 형성',
+  no_signal: '관망',
+}
+
+export const INTRADAY_COLLECTION_MODE_LABELS: Record<string, string> = {
+  live: 'live',
+  stored: '저장 캐시',
+  public: '공개 소스',
+  mixed: '혼합',
+  cooldown: '쿨다운',
+  budget: '절약 모드',
+}
+
 export function getPatternBias(patternType: string | null | undefined): 'bullish' | 'bearish' | 'neutral' {
   if (!patternType) return 'neutral'
 
