@@ -1,6 +1,9 @@
-﻿import { Activity, AlertCircle, Database, Layers3, ShieldAlert, Target, TrendingDown, TrendingUp } from 'lucide-react'
+﻿import { useState } from 'react'
+import { useMutation } from '@tanstack/react-query'
+import { Activity, AlertCircle, Database, Flag, Layers3, ShieldAlert, Target, TrendingDown, TrendingUp } from 'lucide-react'
 
 import type { AnalysisResult, PatternInfo } from '@/types/api'
+import { outcomesApi } from '@/lib/api'
 import { Badge } from '@/components/ui/Badge'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { ProbBar } from '@/components/ui/ProbBar'
@@ -23,48 +26,16 @@ import {
 
 interface AnalysisPanelProps {
   analysis: AnalysisResult
+  symbol?: string
+  timeframe?: string
 }
 
-export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
+export function AnalysisPanel({ analysis, symbol, timeframe }: AnalysisPanelProps) {
   const bestPattern = analysis.patterns[0]
 
   return (
     <div className="space-y-3">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            {analysis.p_up >= 0.55 ? (
-              <TrendingUp size={14} className="text-green-400" />
-            ) : analysis.p_down >= 0.55 ? (
-              <TrendingDown size={14} className="text-red-400" />
-            ) : (
-              <Activity size={14} className="text-primary" />
-            )}
-            확률 분석
-            <Badge variant="muted" className="ml-auto">
-              {analysis.timeframe_label}
-            </Badge>
-          </CardTitle>
-        </CardHeader>
-        {analysis.no_signal_flag ? (
-          <div className="space-y-2 text-xs text-muted-foreground">
-            <div className="flex items-center gap-2 text-yellow-300">
-              <AlertCircle size={14} />
-              <span className="font-medium">No Signal</span>
-            </div>
-            <p>{analysis.no_signal_reason}</p>
-            <p>{analysis.reason_summary}</p>
-            <div className="rounded-lg border border-amber-400/15 bg-amber-400/5 p-2.5 text-xs leading-relaxed text-amber-100">
-              <span className="font-medium">다음 액션:</span> {buildNoSignalAction(analysis)}
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <ProbBar p_up={analysis.p_up} p_down={analysis.p_down} size="md" />
-            <p className="text-xs leading-relaxed text-muted-foreground">{analysis.reason_summary}</p>
-          </div>
-        )}
-      </Card>
+      <ProbabilityCard analysis={analysis} symbol={symbol} timeframe={timeframe} />
 
       <ActionPlanCard analysis={analysis} />
       <TradeReadinessCard analysis={analysis} />
@@ -503,6 +474,94 @@ function scoreVariant(score: number): 'bullish' | 'warning' | 'muted' | 'neutral
   if (score >= 0.56) return 'neutral'
   if (score >= 0.4) return 'warning'
   return 'muted'
+}
+
+function ProbabilityCard({
+  analysis,
+  symbol,
+  timeframe,
+}: {
+  analysis: AnalysisResult
+  symbol?: string
+  timeframe?: string
+}) {
+  const [flagged, setFlagged] = useState(false)
+
+  const flagMutation = useMutation({
+    mutationFn: () =>
+      outcomesApi.record({
+        symbol_code: symbol ?? analysis.symbol?.code ?? '',
+        symbol_name: analysis.symbol?.name ?? '',
+        pattern_type: analysis.patterns[0]?.pattern_type ?? 'no_pattern',
+        timeframe: timeframe ?? analysis.timeframe,
+        signal_date: new Date().toISOString().slice(0, 10),
+        entry_price: 0,
+        target_price: null,
+        stop_price: null,
+        outcome: 'cancelled',
+        notes: 'user_false_positive',
+        p_up_at_signal: analysis.p_up,
+        textbook_similarity_at_signal: analysis.textbook_similarity,
+        trade_readiness_at_signal: analysis.trade_readiness_score ?? 0,
+      }),
+    onSuccess: () => setFlagged(true),
+  })
+
+  const canFlag = analysis.patterns.length > 0 && !analysis.no_signal_flag
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          {analysis.p_up >= 0.55 ? (
+            <TrendingUp size={14} className="text-green-400" />
+          ) : analysis.p_down >= 0.55 ? (
+            <TrendingDown size={14} className="text-red-400" />
+          ) : (
+            <Activity size={14} className="text-primary" />
+          )}
+          확률 분석
+          <Badge variant="muted" className="ml-auto">
+            {analysis.timeframe_label}
+          </Badge>
+          {canFlag && (
+            <button
+              onClick={() => { if (!flagged) flagMutation.mutate() }}
+              disabled={flagged || flagMutation.isPending}
+              className={cn(
+                'flex items-center gap-1 rounded px-2 py-0.5 text-[11px] transition-colors',
+                flagged
+                  ? 'text-amber-300'
+                  : 'text-muted-foreground hover:text-amber-300 disabled:opacity-40',
+              )}
+              title="이 패턴은 오탐으로 보입니다 — 기록에 남겨 알고리즘 개선에 활용합니다"
+            >
+              <Flag size={11} className={flagged ? 'fill-amber-300' : ''} />
+              {flagged ? '신고됨' : '오탐 신고'}
+            </button>
+          )}
+        </CardTitle>
+      </CardHeader>
+      {analysis.no_signal_flag ? (
+        <div className="space-y-2 text-xs text-muted-foreground">
+          <div className="flex items-center gap-2 text-yellow-300">
+            <AlertCircle size={14} />
+            <span className="font-medium">No Signal</span>
+          </div>
+          <p>{analysis.no_signal_reason}</p>
+          <p>{analysis.reason_summary}</p>
+          <div className="rounded-lg border border-amber-400/15 bg-amber-400/5 p-2.5 text-xs leading-relaxed text-amber-100">
+            <span className="font-medium">다음 액션:</span> {buildNoSignalAction(analysis)}
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <ProbBar p_up={analysis.p_up} p_down={analysis.p_down} size="md" />
+          <p className="text-xs leading-relaxed text-muted-foreground">{analysis.reason_summary}</p>
+        </div>
+      )}
+    </Card>
+  )
 }
 
 function buildNoSignalAction(analysis: AnalysisResult): string {
