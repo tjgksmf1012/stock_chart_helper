@@ -78,6 +78,7 @@ _FETCH_STATUS_LABELS.update(
         "scanner_store_only": "스캐너 저장 데이터 전용",
         "scanner_public_only": "스캐너 공개 데이터 전용",
         "scanner_public_augmented": "스캐너 공개 데이터 보강",
+        "placeholder_pending": "빠른 예열 후보",
     }
 )
 
@@ -1430,6 +1431,9 @@ def _data_profile(df: pd.DataFrame, timeframe: str) -> dict[str, Any]:
         elif source in {"intraday_store", "yahoo_fallback"}:
             quality = 0.62 if timeframe in {"60m", "30m", "15m"} else 0.45
             note = "분봉 저장 데이터로 분석되었습니다. 실시간 데이터가 아니므로 최신성을 확인하세요."
+        elif source == "placeholder_seed":
+            quality = 0.34
+            note = "빠른 예열 후보입니다. 실제 분봉 스캔이 끝나면 더 정확한 결과로 자동 갱신됩니다."
         else:
             quality = 0.52
             note = "분봉 데이터 수집에 실패하여 No Signal 처리됩니다."
@@ -1458,6 +1462,9 @@ def _data_profile(df: pd.DataFrame, timeframe: str) -> dict[str, Any]:
     elif fetch_status in {"intraday_empty", "stored_empty", "intraday_unavailable", "yahoo_empty"}:
         quality -= 0.18
         note = "분봉 데이터를 수집할 수 없습니다. 데이터 소스를 확인하세요."
+    elif fetch_status == "placeholder_pending":
+        quality -= 0.14
+        note = "빠른 예열 후보를 먼저 보여주는 중입니다. 실제 분봉 스캔이 끝나면 자동으로 교체됩니다."
     elif fetch_status == "yahoo_symbol_missing":
         quality -= 0.14
         note = "해당 심볼의 데이터를 찾을 수 없습니다. 종목 코드를 확인하세요."

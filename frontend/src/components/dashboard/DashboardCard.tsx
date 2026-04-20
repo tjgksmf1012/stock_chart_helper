@@ -67,6 +67,7 @@ export function DashboardCard({ item, intradayPreset }: DashboardCardProps) {
             <Badge variant={item.data_quality >= 0.8 ? 'bullish' : item.data_quality >= 0.6 ? 'neutral' : 'warning'}>
               품질 {fmtPct(item.data_quality, 0)}
             </Badge>
+            {item.fetch_status === 'placeholder_pending' && <Badge variant="warning">임시 후보</Badge>}
             {item.live_intraday_candidate && <Badge variant="bullish">live {fmtPct(item.live_intraday_priority_score, 0)}</Badge>}
             {isIntraday && !item.live_intraday_candidate && <Badge variant="muted">{item.intraday_collection_mode}</Badge>}
           </div>

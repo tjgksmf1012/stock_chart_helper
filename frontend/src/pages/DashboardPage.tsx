@@ -42,7 +42,7 @@ export default function DashboardPage() {
     staleTime: 5_000,
     refetchInterval: query => {
       const current = query.state.data as ScanStatusResponse | undefined
-      return current?.is_running ? 5_000 : 15_000
+      return current?.is_running || current?.candidate_source === 'placeholder_seed' ? 5_000 : 15_000
     },
   })
 
@@ -150,8 +150,10 @@ export default function DashboardPage() {
       ? `${timeframeLabel(timeframe)} 후보를 백그라운드에서 예열 중입니다. 잠시 후 자동으로 결과가 채워집니다.`
       : undefined
   const intradayFallbackMessage =
-    intradayMode && statusQ.data?.candidate_source === 'fallback_seed'
-      ? `지금은 ${timeframeLabel(timeframe)} 즉시 fallback 후보를 먼저 보여주고 있습니다. 백그라운드 정밀 스캔이 끝나면 카드가 자동으로 더 정확하게 정렬됩니다.`
+    intradayMode && ['fallback_seed', 'placeholder_seed'].includes(statusQ.data?.candidate_source ?? '')
+      ? statusQ.data?.candidate_source === 'placeholder_seed'
+        ? `지금은 ${timeframeLabel(timeframe)} 빠른 예열 후보를 먼저 보여주고 있습니다. 백그라운드 분봉 스캔이 끝나면 실제 패턴 계산 결과로 자동 교체됩니다.`
+        : `지금은 ${timeframeLabel(timeframe)} 즉시 fallback 후보를 먼저 보여주고 있습니다. 백그라운드 정밀 스캔이 끝나면 카드가 자동으로 더 정확하게 정렬됩니다.`
       : null
   const liveEmptyMessage = getLiveSectionEmptyMessage(statusQ.data, timeframe) ?? intradayEmptyMessage
   const sectionEmptyMessage = getDefaultSectionEmptyMessage(statusQ.data, timeframe) ?? intradayEmptyMessage
@@ -688,6 +690,8 @@ function candidateSourceLabel(source: string | null | undefined): string {
       return '일봉 상위 후보'
     case 'fallback_seed':
       return '즉시 fallback 후보'
+    case 'placeholder_seed':
+      return '빠른 예열 후보'
     case 'background_pending':
       return '백그라운드 예열 대기'
     case 'cache_ready':
@@ -708,6 +712,9 @@ function getDefaultSectionEmptyMessage(status: ScanStatusResponse | undefined, t
   if (status.status === 'warming' && (status.cached_result_count ?? 0) === 0) {
     return `${timeframeLabel(timeframe)} 후보를 백그라운드에서 예열 중입니다. 잠시 후 자동으로 결과가 채워집니다.`
   }
+  if (status.candidate_source === 'placeholder_seed') {
+    return `지금은 ${timeframeLabel(timeframe)} 빠른 예열 후보를 먼저 보여주는 단계입니다. 실제 분석 카드가 곧 자동으로 교체됩니다.`
+  }
   if (status.candidate_source === 'fallback_seed') {
     return `지금은 ${timeframeLabel(timeframe)} 빠른 fallback 후보를 먼저 보여주는 단계라 섹션별 후보 수가 아직 적을 수 있습니다.`
   }
@@ -718,6 +725,9 @@ function getLiveSectionEmptyMessage(status: ScanStatusResponse | undefined, time
   if (!status) return undefined
   if (status.status === 'warming' && (status.cached_result_count ?? 0) === 0) {
     return `${timeframeLabel(timeframe)} live 후보를 추리는 중입니다. 잠시 후 자동으로 다시 채워집니다.`
+  }
+  if (status.candidate_source === 'placeholder_seed') {
+    return `지금은 ${timeframeLabel(timeframe)} 빠른 예열 후보만 먼저 보여주고 있어 live 분봉 후보는 잠시 비어 있을 수 있습니다.`
   }
   if (status.intraday_live_phase === 'off_hours') {
     return '지금은 장외 절약 모드라 live 분봉 후보를 비워둘 수 있습니다. forming/watch 후보를 먼저 확인하세요.'

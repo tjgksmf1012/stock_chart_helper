@@ -10,10 +10,12 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import pandas as pd
+
 from ..api.schemas import SymbolInfo
 from ..core.config import get_settings
 from ..core.redis import cache_delete, cache_get, cache_set
-from .analysis_service import analyze_symbol_dataframe
+from .analysis_service import analyze_symbol_dataframe, build_no_signal_snapshot
 from .data_fetcher import get_data_fetcher
 from .timeframe_service import DEFAULT_TIMEFRAME, timeframe_label
 
@@ -719,102 +721,7 @@ async def _analyze_one(
             is_in_universe=True,
         )
         analysis = await analyze_symbol_dataframe(symbol, timeframe, df)
-        result: dict[str, Any] = {
-            "code": code,
-            "name": name,
-            "market": market,
-            "timeframe": timeframe,
-            "timeframe_label": analysis.timeframe_label,
-            "pattern_type": analysis.patterns[0].pattern_type if analysis.patterns else None,
-            "state": analysis.patterns[0].state if analysis.patterns else None,
-            "setup_stage": "neutral",
-            "p_up": analysis.p_up,
-            "p_down": analysis.p_down,
-            "textbook_similarity": analysis.textbook_similarity,
-            "formation_quality": (
-                0.28 * analysis.patterns[0].leg_balance_fit
-                + 0.28 * analysis.patterns[0].reversal_energy_fit
-                + 0.22 * analysis.patterns[0].breakout_quality_fit
-                + 0.22 * analysis.patterns[0].retest_quality_fit
-            ) if analysis.patterns else 0.0,
-            "leg_balance_fit": analysis.patterns[0].leg_balance_fit if analysis.patterns else 0.0,
-            "reversal_energy_fit": analysis.patterns[0].reversal_energy_fit if analysis.patterns else 0.0,
-            "breakout_quality_fit": analysis.patterns[0].breakout_quality_fit if analysis.patterns else 0.0,
-            "retest_quality_fit": analysis.patterns[0].retest_quality_fit if analysis.patterns else 0.0,
-            "confidence": analysis.confidence,
-            "entry_score": analysis.entry_score,
-            "reward_risk_ratio": analysis.reward_risk_ratio,
-            "headroom_score": analysis.headroom_score,
-            "target_distance_pct": analysis.target_distance_pct,
-            "stop_distance_pct": analysis.stop_distance_pct,
-            "avg_mfe_pct": analysis.avg_mfe_pct,
-            "avg_mae_pct": analysis.avg_mae_pct,
-            "avg_bars_to_outcome": analysis.avg_bars_to_outcome,
-            "historical_edge_score": analysis.historical_edge_score,
-            "trend_alignment_score": analysis.trend_alignment_score,
-            "trend_direction": analysis.trend_direction,
-            "trend_warning": analysis.trend_warning,
-            "wyckoff_phase": analysis.wyckoff_phase,
-            "wyckoff_score": analysis.wyckoff_score,
-            "wyckoff_note": analysis.wyckoff_note,
-            "intraday_session_phase": analysis.intraday_session_phase,
-            "intraday_session_score": analysis.intraday_session_score,
-            "intraday_session_note": analysis.intraday_session_note,
-            "action_plan": analysis.action_plan,
-            "action_plan_label": analysis.action_plan_label,
-            "action_plan_summary": analysis.action_plan_summary,
-            "action_priority_score": analysis.action_priority_score,
-            "risk_flags": analysis.risk_flags,
-            "confirmation_checklist": analysis.confirmation_checklist,
-            "next_trigger": analysis.next_trigger,
-            "trade_readiness_score": analysis.trade_readiness_score,
-            "trade_readiness_label": analysis.trade_readiness_label,
-            "trade_readiness_summary": analysis.trade_readiness_summary,
-            "entry_window_score": analysis.entry_window_score,
-            "entry_window_label": analysis.entry_window_label,
-            "entry_window_summary": analysis.entry_window_summary,
-            "freshness_score": analysis.freshness_score,
-            "freshness_label": analysis.freshness_label,
-            "freshness_summary": analysis.freshness_summary,
-            "reentry_score": analysis.reentry_score,
-            "reentry_label": analysis.reentry_label,
-            "reentry_summary": analysis.reentry_summary,
-            "reentry_case": analysis.reentry_case,
-            "reentry_case_label": analysis.reentry_case_label,
-            "reentry_profile_key": analysis.reentry_profile_key,
-            "reentry_profile_label": analysis.reentry_profile_label,
-            "reentry_profile_summary": analysis.reentry_profile_summary,
-            "reentry_trigger": analysis.reentry_trigger,
-            "reentry_compression_score": analysis.reentry_compression_score,
-            "reentry_volume_recovery_score": analysis.reentry_volume_recovery_score,
-            "reentry_trigger_hold_score": analysis.reentry_trigger_hold_score,
-            "reentry_wick_absorption_score": analysis.reentry_wick_absorption_score,
-            "reentry_failure_burden_score": analysis.reentry_failure_burden_score,
-            "reentry_factors": [factor.model_dump() for factor in analysis.reentry_factors],
-            "score_factors": [factor.model_dump() for factor in analysis.score_factors],
-            "active_setup_score": analysis.active_setup_score,
-            "active_setup_label": analysis.active_setup_label,
-            "active_setup_summary": analysis.active_setup_summary,
-            "active_pattern_count": analysis.active_pattern_count,
-            "completed_pattern_count": analysis.completed_pattern_count,
-            "no_signal_flag": analysis.no_signal_flag,
-            "reason_summary": analysis.reason_summary,
-            "completion_proximity": analysis.completion_proximity,
-            "recency_score": analysis.recency_score,
-            "data_source": analysis.data_source,
-            "data_quality": analysis.data_quality,
-            "source_note": analysis.source_note,
-            "fetch_status": analysis.fetch_status,
-            "fetch_status_label": analysis.fetch_status_label,
-            "fetch_message": analysis.fetch_message,
-            "liquidity_score": analysis.liquidity_score,
-            "avg_turnover_billion": analysis.avg_turnover_billion,
-            "sample_size": analysis.sample_size,
-            "empirical_win_rate": analysis.empirical_win_rate,
-            "sample_reliability": analysis.sample_reliability,
-            "stats_timeframe": analysis.stats_timeframe,
-            "available_bars": analysis.available_bars,
-        }
+        result = _analysis_to_scan_row(analysis, code=code, name=name, market=market, timeframe=timeframe)
 
         if include_confluence:
             result.update(
@@ -932,6 +839,153 @@ def _decorate_intraday_result(
     )
     item["intraday_collection_mode"] = _intraday_collection_mode(item)
     return item
+
+
+def _analysis_to_scan_row(
+    analysis: Any,
+    *,
+    code: str,
+    name: str,
+    market: str,
+    timeframe: str,
+) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "code": code,
+        "name": name,
+        "market": market,
+        "timeframe": timeframe,
+        "timeframe_label": analysis.timeframe_label,
+        "pattern_type": analysis.patterns[0].pattern_type if analysis.patterns else None,
+        "state": analysis.patterns[0].state if analysis.patterns else None,
+        "setup_stage": "neutral",
+        "p_up": analysis.p_up,
+        "p_down": analysis.p_down,
+        "textbook_similarity": analysis.textbook_similarity,
+        "formation_quality": (
+            0.28 * analysis.patterns[0].leg_balance_fit
+            + 0.28 * analysis.patterns[0].reversal_energy_fit
+            + 0.22 * analysis.patterns[0].breakout_quality_fit
+            + 0.22 * analysis.patterns[0].retest_quality_fit
+        ) if analysis.patterns else 0.0,
+        "leg_balance_fit": analysis.patterns[0].leg_balance_fit if analysis.patterns else 0.0,
+        "reversal_energy_fit": analysis.patterns[0].reversal_energy_fit if analysis.patterns else 0.0,
+        "breakout_quality_fit": analysis.patterns[0].breakout_quality_fit if analysis.patterns else 0.0,
+        "retest_quality_fit": analysis.patterns[0].retest_quality_fit if analysis.patterns else 0.0,
+        "confidence": analysis.confidence,
+        "entry_score": analysis.entry_score,
+        "reward_risk_ratio": analysis.reward_risk_ratio,
+        "headroom_score": analysis.headroom_score,
+        "target_distance_pct": analysis.target_distance_pct,
+        "stop_distance_pct": analysis.stop_distance_pct,
+        "avg_mfe_pct": analysis.avg_mfe_pct,
+        "avg_mae_pct": analysis.avg_mae_pct,
+        "avg_bars_to_outcome": analysis.avg_bars_to_outcome,
+        "historical_edge_score": analysis.historical_edge_score,
+        "trend_alignment_score": analysis.trend_alignment_score,
+        "trend_direction": analysis.trend_direction,
+        "trend_warning": analysis.trend_warning,
+        "wyckoff_phase": analysis.wyckoff_phase,
+        "wyckoff_score": analysis.wyckoff_score,
+        "wyckoff_note": analysis.wyckoff_note,
+        "intraday_session_phase": analysis.intraday_session_phase,
+        "intraday_session_score": analysis.intraday_session_score,
+        "intraday_session_note": analysis.intraday_session_note,
+        "action_plan": analysis.action_plan,
+        "action_plan_label": analysis.action_plan_label,
+        "action_plan_summary": analysis.action_plan_summary,
+        "action_priority_score": analysis.action_priority_score,
+        "risk_flags": analysis.risk_flags,
+        "confirmation_checklist": analysis.confirmation_checklist,
+        "next_trigger": analysis.next_trigger,
+        "trade_readiness_score": analysis.trade_readiness_score,
+        "trade_readiness_label": analysis.trade_readiness_label,
+        "trade_readiness_summary": analysis.trade_readiness_summary,
+        "entry_window_score": analysis.entry_window_score,
+        "entry_window_label": analysis.entry_window_label,
+        "entry_window_summary": analysis.entry_window_summary,
+        "freshness_score": analysis.freshness_score,
+        "freshness_label": analysis.freshness_label,
+        "freshness_summary": analysis.freshness_summary,
+        "reentry_score": analysis.reentry_score,
+        "reentry_label": analysis.reentry_label,
+        "reentry_summary": analysis.reentry_summary,
+        "reentry_case": analysis.reentry_case,
+        "reentry_case_label": analysis.reentry_case_label,
+        "reentry_profile_key": analysis.reentry_profile_key,
+        "reentry_profile_label": analysis.reentry_profile_label,
+        "reentry_profile_summary": analysis.reentry_profile_summary,
+        "reentry_trigger": analysis.reentry_trigger,
+        "reentry_compression_score": analysis.reentry_compression_score,
+        "reentry_volume_recovery_score": analysis.reentry_volume_recovery_score,
+        "reentry_trigger_hold_score": analysis.reentry_trigger_hold_score,
+        "reentry_wick_absorption_score": analysis.reentry_wick_absorption_score,
+        "reentry_failure_burden_score": analysis.reentry_failure_burden_score,
+        "reentry_factors": [factor.model_dump() for factor in analysis.reentry_factors],
+        "score_factors": [factor.model_dump() for factor in analysis.score_factors],
+        "active_setup_score": analysis.active_setup_score,
+        "active_setup_label": analysis.active_setup_label,
+        "active_setup_summary": analysis.active_setup_summary,
+        "active_pattern_count": analysis.active_pattern_count,
+        "completed_pattern_count": analysis.completed_pattern_count,
+        "no_signal_flag": analysis.no_signal_flag,
+        "reason_summary": analysis.reason_summary,
+        "completion_proximity": analysis.completion_proximity,
+        "recency_score": analysis.recency_score,
+        "data_source": analysis.data_source,
+        "data_quality": analysis.data_quality,
+        "source_note": analysis.source_note,
+        "fetch_status": analysis.fetch_status,
+        "fetch_status_label": analysis.fetch_status_label,
+        "fetch_message": analysis.fetch_message,
+        "liquidity_score": analysis.liquidity_score,
+        "avg_turnover_billion": analysis.avg_turnover_billion,
+        "sample_size": analysis.sample_size,
+        "empirical_win_rate": analysis.empirical_win_rate,
+        "sample_reliability": analysis.sample_reliability,
+        "stats_timeframe": analysis.stats_timeframe,
+        "available_bars": analysis.available_bars,
+    }
+    return result
+
+
+def _placeholder_frame() -> pd.DataFrame:
+    df = pd.DataFrame()
+    df.attrs.update(
+        {
+            "data_source": "placeholder_seed",
+            "fetch_status": "placeholder_pending",
+            "fetch_message": "빠른 예열 후보입니다. 백그라운드 분봉 스캔이 끝나면 실제 결과로 자동 교체됩니다.",
+            "available_bars": 0,
+        }
+    )
+    return df
+
+
+def _build_placeholder_scan_results(timeframe: str, fallback: list[tuple[str, str, str]]) -> list[dict[str, Any]]:
+    placeholder_df = _placeholder_frame()
+    results: list[dict[str, Any]] = []
+    for code, name, market in fallback:
+        symbol = SymbolInfo(
+            code=code,
+            name=name,
+            market=market,
+            sector=None,
+            market_cap=None,
+            is_in_universe=True,
+        )
+        analysis = build_no_signal_snapshot(symbol, timeframe, placeholder_df)
+        row = _analysis_to_scan_row(analysis, code=code, name=name, market=market, timeframe=timeframe)
+        row.update(
+            {
+                "setup_stage": "placeholder_watch",
+                "confluence_score": 0.18,
+                "confluence_summary": f"{timeframe_label(timeframe)} 빠른 예열 후보",
+                "scenario_text": "백그라운드 분봉 스캔이 끝나면 실제 패턴·확률·준비도 계산으로 자동 교체됩니다.",
+                "composite_score": round(0.12 + 0.04 * max(0, len(fallback) - len(results)), 3),
+            }
+        )
+        results.append(row)
+    return results
 
 
 async def run_scan(
@@ -1133,6 +1187,12 @@ async def _build_quick_scan_results(timeframe: str) -> tuple[list[dict[str, Any]
     return results, fallback, intraday_live_limit, intraday_live_phase
 
 
+def _placeholder_fallback_codes(timeframe: str) -> list[tuple[str, str, str]]:
+    if timeframe == "1d":
+        return FALLBACK_CODES
+    return FALLBACK_CODES[: min(len(FALLBACK_CODES), max(6, min(settings.intraday_live_candidate_limit, 8)))]
+
+
 async def _bootstrap_intraday_quick_scan(timeframe: str, cache_key: str) -> list[dict[str, Any]]:
     quick_task = asyncio.current_task()
     try:
@@ -1203,12 +1263,38 @@ async def get_scan_results(timeframe: str = DEFAULT_TIMEFRAME) -> list[dict[str,
         task = _scan_tasks.get(timeframe)
         if task and not task.done():
             quick_cached = await cache_get(cache_key)
-            return quick_cached or []
+            if quick_cached:
+                return quick_cached
+            placeholders = _build_placeholder_scan_results(timeframe, _placeholder_fallback_codes(timeframe))
+            _update_scan_status(
+                timeframe,
+                status="warming",
+                source="fallback",
+                candidate_source="placeholder_seed",
+                candidate_count=len(placeholders),
+                cached_result_count=len(placeholders),
+                universe_size=len(placeholders),
+                last_error=None,
+            )
+            return placeholders
 
         quick_task = _quick_scan_tasks.get(timeframe)
         if quick_task and not quick_task.done():
             quick_cached = await cache_get(cache_key)
-            return quick_cached or []
+            if quick_cached:
+                return quick_cached
+            placeholders = _build_placeholder_scan_results(timeframe, _placeholder_fallback_codes(timeframe))
+            _update_scan_status(
+                timeframe,
+                status="warming",
+                source="fallback",
+                candidate_source="placeholder_seed",
+                candidate_count=len(placeholders),
+                cached_result_count=len(placeholders),
+                universe_size=len(placeholders),
+                last_error=None,
+            )
+            return placeholders
 
         _update_scan_status(
             timeframe,
@@ -1226,7 +1312,22 @@ async def get_scan_results(timeframe: str = DEFAULT_TIMEFRAME) -> list[dict[str,
             await asyncio.wait_for(asyncio.shield(quick_task), timeout=3.5)
         except asyncio.TimeoutError:
             quick_cached = await cache_get(cache_key)
-            return quick_cached or []
+            if quick_cached:
+                return quick_cached
+            placeholders = _build_placeholder_scan_results(timeframe, _placeholder_fallback_codes(timeframe))
+            await cache_set(cache_key, placeholders, ttl=45)
+            _update_scan_status(
+                timeframe,
+                status="warming",
+                source="fallback",
+                candidate_source="placeholder_seed",
+                candidate_count=len(placeholders),
+                cached_result_count=len(placeholders),
+                universe_size=len(placeholders),
+                last_finished_at=_utc_now_iso(),
+                last_error=None,
+            )
+            return placeholders
         quick_cached = await cache_get(cache_key)
         return quick_cached or []
 
