@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { useQueries, useQuery } from '@tanstack/react-query'
+import { useMutation, useQueries, useQuery } from '@tanstack/react-query'
 import {
   AlertTriangle,
   ArrowLeft,
+  Bookmark,
   Database,
   Layers3,
   Loader2,
@@ -19,7 +20,7 @@ import { CandleChart } from '@/components/chart/CandleChart'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { QueryError } from '@/components/ui/QueryError'
-import { symbolsApi } from '@/lib/api'
+import { outcomesApi, symbolsApi } from '@/lib/api'
 import {
   DEFAULT_TIMEFRAME,
   getChartLookbackDays,
@@ -40,6 +41,7 @@ export default function ChartPage() {
   const [searchResults, setSearchResults] = useState<Array<{ code: string; name: string; market: string }>>([])
   const searchRequestRef = useRef(0)
   const watched = symbol ? isWatched(symbol) : false
+  const [savedId, setSavedId] = useState<number | null>(null)
 
   const barsQ = useQuery({
     queryKey: ['bars', symbol, timeframe],
@@ -106,6 +108,29 @@ export default function ChartPage() {
   }, [symbol])
 
   const analysis = analysisQ.data
+  const saveMutation = useMutation({
+    mutationFn: () => {
+      if (!analysis) return Promise.reject(new Error('no analysis'))
+      const bestPattern = analysis.patterns[0]
+      return outcomesApi.record({
+        symbol_code: symbol!,
+        symbol_name: analysis.symbol.name,
+        pattern_type: bestPattern?.pattern_type ?? 'no_pattern',
+        timeframe,
+        signal_date: new Date().toISOString().slice(0, 10),
+        entry_price: priceQ.data?.close ?? 0,
+        target_price: bestPattern?.target_level ?? null,
+        stop_price: bestPattern?.invalidation_level ?? null,
+        outcome: 'pending',
+        p_up_at_signal: analysis.p_up,
+        composite_score_at_signal: analysis.trade_readiness_score ?? 0,
+        textbook_similarity_at_signal: analysis.textbook_similarity,
+        trade_readiness_at_signal: analysis.trade_readiness_score ?? 0,
+      })
+    },
+    onSuccess: result => setSavedId(result.id),
+  })
+
   const hasBars = (barsQ.data?.length ?? 0) > 0
   const isPrimaryLoading = Boolean(symbol) && !analysis && analysisQ.isLoading
   const isChartLoading = Boolean(symbol) && !hasBars && barsQ.isLoading
@@ -228,6 +253,20 @@ export default function ChartPage() {
                   >
                     <Star size={12} className={watched ? 'fill-yellow-400' : ''} />
                     {watched ? '관심종목 해제' : '추가'}
+                  </button>
+                  <button
+                    onClick={() => { if (!analysis || savedId != null) return; saveMutation.mutate() }}
+                    disabled={savedId != null || saveMutation.isPending || !analysis}
+                    className={cn(
+                      'flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors',
+                      savedId != null
+                        ? 'bg-primary/15 text-primary'
+                        : 'text-muted-foreground hover:bg-primary/10 hover:text-primary disabled:opacity-40',
+                    )}
+                    title="이 신호를 내 기록에 저장합니다"
+                  >
+                    <Bookmark size={12} className={savedId != null ? 'fill-primary' : ''} />
+                    {savedId != null ? '저장됨' : saveMutation.isPending ? '저장 중...' : '신호 저장'}
                   </button>
                 </div>
 
@@ -380,7 +419,7 @@ export default function ChartPage() {
             )}
           </Card>
           {analysis ? (
-            <AnalysisPanel analysis={analysis} />
+            <AnalysisPanel analysis={analysis} symbol={symbol} timeframe={timeframe} />
           ) : (
             <Card className="flex items-center justify-center text-sm text-muted-foreground">
               분석 결과가 준비되면 오른쪽에 상세 해석이 표시됩니다.
