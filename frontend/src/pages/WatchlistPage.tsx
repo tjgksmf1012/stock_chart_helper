@@ -56,6 +56,13 @@ function WatchlistRow({ code, name, market }: { code: string; name: string; mark
             <Loader2 size={10} className="animate-spin text-muted-foreground" />
             <span className="text-xs text-muted-foreground">분석 중...</span>
           </div>
+        ) : analysisQ.isError ? (
+          <button
+            onClick={event => { event.stopPropagation(); void analysisQ.refetch() }}
+            className="mt-0.5 flex items-center gap-1 text-xs text-red-400/70 hover:text-red-400"
+          >
+            <span>분석 실패 — 재시도</span>
+          </button>
         ) : (
           <span className="mt-0.5 block text-xs text-muted-foreground">설명 가능한 패턴이 아직 없습니다</span>
         )}
