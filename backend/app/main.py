@@ -103,6 +103,25 @@ def _start_scheduler() -> None:
             replace_existing=True,
         )
 
+        # Keep-alive: self-ping every 14 min so Render free tier doesn't sleep
+        import httpx as _httpx
+
+        async def _keep_alive() -> None:
+            try:
+                async with _httpx.AsyncClient(timeout=10) as _c:
+                    await _c.get("https://stock-chart-helper-api.onrender.com/health")
+            except Exception:
+                pass  # silently ignore; not critical
+
+        from apscheduler.triggers.interval import IntervalTrigger
+
+        scheduler.add_job(
+            _keep_alive,
+            IntervalTrigger(minutes=14),
+            id="keep_alive",
+            replace_existing=True,
+        )
+
         scheduler.start()
         logger.info(
             "APScheduler started",
