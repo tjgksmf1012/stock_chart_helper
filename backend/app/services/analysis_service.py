@@ -10,7 +10,7 @@ from typing import Any
 import pandas as pd
 from pandas.tseries.offsets import BDay, DateOffset
 
-from ..api.schemas import AnalysisResult, PatternInfo, ProjectionPoint, SymbolInfo
+from ..api.schemas import AnalysisResult, PatternInfo, ProjectionPoint, ProjectionScenario, SymbolInfo
 from .backtest_engine import get_pattern_stats
 from .pattern_engine import PatternEngine, PatternResult
 from .probability_engine import compute_probability
@@ -2260,6 +2260,136 @@ def _projected_points(
     return points
 
 
+def _projection_base_cap_pct(timeframe: str) -> float:
+    return {
+        "1mo": 0.16,
+        "1wk": 0.12,
+        "1d": 0.09,
+        "60m": 0.045,
+        "30m": 0.036,
+        "15m": 0.028,
+    }.get(timeframe, 0.02)
+
+
+def _stabilize_projection_prices(
+    timeframe: str,
+    pattern_state: str,
+    bullish: bool,
+    current_close: float,
+    neckline: float,
+    target: float,
+    invalidation: float,
+    prices: list[tuple[int, float, str]],
+    strength: float,
+    uncertainty: float,
+    trade_readiness_score: float,
+    entry_window_score: float,
+    freshness_score: float,
+    active_setup_score: float,
+    headroom_score: float,
+    reward_risk_ratio: float,
+    data_quality: float,
+) -> list[tuple[int, float, str]]:
+    base_cap_pct = _projection_base_cap_pct(timeframe)
+    direction_cap = current_close * base_cap_pct * (0.76 + 0.72 * strength)
+    if pattern_state == "forming":
+        direction_cap *= 0.82
+    elif pattern_state in {"played_out", "invalidated"}:
+        direction_cap *= 0.66
+
+    direction_cap *= 0.82 + 0.18 * min(1.0, max(0.0, data_quality))
+    direction_cap *= 0.78 + 0.22 * min(1.0, max(0.0, headroom_score))
+    direction_cap *= 0.80 + 0.20 * min(1.0, max(0.0, reward_risk_ratio / 2.2))
+
+    target_distance = abs(target - current_close)
+    if (bullish and target > current_close) or ((not bullish) and target < current_close):
+        progress_cap = target_distance * (0.24 + 0.42 * strength)
+        if pattern_state == "confirmed" and trade_readiness_score >= 0.66 and entry_window_score >= 0.58 and freshness_score >= 0.52:
+            progress_cap = target_distance * (0.34 + 0.46 * strength)
+        direction_cap = min(direction_cap, max(current_close * 0.012, progress_cap))
+
+    step_cap = current_close * base_cap_pct * (0.18 + 0.20 * strength)
+    step_cap *= 0.88 + 0.12 * min(1.0, max(0.0, trade_readiness_score))
+    step_cap *= 0.90 + 0.10 * min(1.0, max(0.0, active_setup_score))
+
+    downside_cap = max(
+        current_close * base_cap_pct * (0.26 + 0.16 * uncertainty),
+        abs(current_close - invalidation) * (0.56 + 0.24 * uncertainty),
+    )
+
+    if bullish:
+        upper_bound = current_close + max(current_close * 0.012, direction_cap)
+        lower_bound = current_close - downside_cap
+        if invalidation < current_close:
+            lower_bound = max(lower_bound, invalidation * 0.995)
+    else:
+        lower_bound = current_close - max(current_close * 0.012, direction_cap)
+        upper_bound = current_close + downside_cap
+        if invalidation > current_close:
+            upper_bound = min(upper_bound, invalidation * 1.005)
+
+    stabilized: list[tuple[int, float, str]] = []
+    previous = current_close
+    for step, raw_price, kind in prices:
+        bounded = min(max(raw_price, lower_bound), upper_bound)
+        local_step_cap = step_cap * (1.16 if kind in {"target", "extension", "followthrough", "breakout", "breakdown"} else 1.0)
+        delta = bounded - previous
+        if delta > local_step_cap:
+            bounded = previous + local_step_cap
+        elif delta < -local_step_cap:
+            bounded = previous - local_step_cap
+        stabilized.append((step, round(bounded, 2), kind))
+        previous = bounded
+
+    return stabilized
+
+
+def _range_projection_prices(
+    steps: list[int],
+    bullish: bool,
+    current_close: float,
+    neckline: float,
+    invalidation: float,
+    timeframe: str,
+    strength: float,
+) -> list[tuple[int, float, str]]:
+    base_cap_pct = _projection_base_cap_pct(timeframe)
+    range_band = current_close * base_cap_pct * (0.16 + 0.12 * strength)
+    center = neckline if abs(neckline - current_close) / max(current_close, 1.0) <= base_cap_pct * 1.6 else current_close
+    support = max(invalidation * 1.01, current_close - range_band) if bullish else min(invalidation * 0.99, current_close + range_band)
+    return [
+        (steps[0], (current_close + support) / 2, "digest"),
+        (steps[1], center, "range"),
+        (steps[2], center + (range_band * (0.20 if bullish else -0.20)), "probe"),
+        (steps[3], center + (range_band * (0.35 if bullish else -0.35)), "stabilize"),
+    ]
+
+
+def _risk_projection_prices(
+    steps: list[int],
+    bullish: bool,
+    current_close: float,
+    invalidation: float,
+    timeframe: str,
+) -> list[tuple[int, float, str]]:
+    base_cap_pct = _projection_base_cap_pct(timeframe)
+    warning_band = current_close * base_cap_pct * 0.22
+    risk_test = invalidation if invalidation else (current_close - warning_band if bullish else current_close + warning_band)
+    rebound = warning_band * 0.28
+    return [
+        (steps[0], current_close - warning_band if bullish else current_close + warning_band, "pressure"),
+        (steps[1], (current_close + risk_test) / 2, "slip"),
+        (steps[2], risk_test, "test"),
+        (steps[3], risk_test + rebound if bullish else risk_test - rebound, "bounce"),
+    ]
+
+
+def _normalize_projection_weights(raw_weights: list[float]) -> list[float]:
+    clamped = [max(0.12, weight) for weight in raw_weights]
+    total = sum(clamped) or 1.0
+    return [round(weight / total, 3) for weight in clamped]
+
+
 def _build_projection(
     df: pd.DataFrame,
     timeframe: str,
@@ -2268,7 +2398,18 @@ def _build_projection(
     reentry: dict[str, Any] | None,
     target_hit_at: str | None,
     invalidated_at: str | None,
-) -> tuple[str, str, list[ProjectionPoint]]:
+    p_up: float,
+    p_down: float,
+    confidence: float,
+    trade_readiness_score: float,
+    entry_window_score: float,
+    freshness_score: float,
+    active_setup_score: float,
+    headroom_score: float,
+    reward_risk_ratio: float,
+    data_quality: float,
+    sample_reliability: float,
+) -> tuple[str, str, str, list[ProjectionPoint], list[ProjectionScenario]]:
     last_ts = _timestamp_series(df).iloc[-1]
     neckline = pattern.neckline or current_close
     target = pattern.target_level or current_close
@@ -2279,6 +2420,28 @@ def _build_projection(
     steps = _projection_horizon(timeframe)
     reentry_case = str((reentry or {}).get("reentry_case") or "")
     reentry_case_label = str((reentry or {}).get("reentry_case_label") or "")
+    strength = max(
+        0.12,
+        min(
+            1.0,
+            0.22 * confidence
+            + 0.22 * trade_readiness_score
+            + 0.12 * entry_window_score
+            + 0.10 * freshness_score
+            + 0.08 * active_setup_score
+            + 0.08 * headroom_score
+            + 0.08 * min(1.0, reward_risk_ratio / 2.4)
+            + 0.05 * data_quality
+            + 0.05 * sample_reliability,
+        ),
+    )
+    uncertainty = max(
+        0.08,
+        min(
+            1.0,
+            1.0 - (0.34 * confidence + 0.24 * trade_readiness_score + 0.22 * data_quality + 0.20 * sample_reliability),
+        ),
+    )
 
     if pattern.state == "played_out":
         if reentry_case == "box_reaccumulation":
@@ -2290,12 +2453,12 @@ def _build_projection(
             ]
             summary = (
                 f"{pattern_name} 패턴은 {reentry_case_label}으로 해석됩니다. "
-                "목선 근처 박스 재축적 뒤 재돌파가 나오는 시나리오를 우선 반영했습니다."
+                "다만 목표가까지 직선으로 가정하지 않고, 목선 근처 재축적과 재돌파 확인을 먼저 반영했습니다."
             )
-            return "박스 재축적 후 재돌파", summary, _projected_points(last_ts, timeframe, prices)
-
-        if reentry_case == "pullback_relaunch":
-            prices = [
+            label = "박스 재축적 후 재돌파"
+            raw_prices = prices
+        elif reentry_case == "pullback_relaunch":
+            raw_prices = [
                 (steps[0], max(neckline * 1.01, current_close - span * 0.08) if bullish else min(neckline * 0.99, current_close + span * 0.08), "pullback"),
                 (steps[1], current_close, "hold"),
                 (steps[2], current_close + span * 0.22 if bullish else current_close - span * 0.22, "relaunch"),
@@ -2303,27 +2466,26 @@ def _build_projection(
             ]
             summary = (
                 f"{pattern_name} 패턴은 {reentry_case_label}으로 해석됩니다. "
-                "깊지 않은 눌림 뒤 재가속이 나오는 보수적 재상승 시나리오입니다."
+                "깊지 않은 눌림 뒤 재가속 가능성을 보되, 과도한 직선 상승 대신 단계적 복귀를 우선 반영했습니다."
             )
-            return "눌림 후 재가속", summary, _projected_points(last_ts, timeframe, prices)
-
-        base = max(neckline, current_close - span * 0.35) if bullish else min(neckline, current_close + span * 0.35)
-        drift = current_close + span * 0.12 if bullish else current_close - span * 0.12
-        prices = [
-            (steps[0], base, "cooldown"),
-            (steps[1], (base + current_close) / 2, "retest"),
-            (steps[2], current_close, "range"),
-            (steps[3], drift, "rebuild"),
-        ]
-        summary = (
-            f"{pattern_name} 패턴은 이미 1차 목표를 소화한 뒤 숨 고르기 국면으로 보는 시나리오입니다. "
-            "재돌파가 바로 나오기보다 박스 조정 또는 재기초 형성 가능성을 우선 반영했습니다."
-        )
-        return "목표 달성 이후 재정비", summary, _projected_points(last_ts, timeframe, prices)
-
-    if pattern.state == "invalidated":
+            label = "눌림 후 재가속"
+        else:
+            base = max(neckline, current_close - span * 0.35) if bullish else min(neckline, current_close + span * 0.35)
+            drift = current_close + span * 0.12 if bullish else current_close - span * 0.12
+            raw_prices = [
+                (steps[0], base, "cooldown"),
+                (steps[1], (base + current_close) / 2, "retest"),
+                (steps[2], current_close, "range"),
+                (steps[3], drift, "rebuild"),
+            ]
+            summary = (
+                f"{pattern_name} 패턴은 이미 1차 목표를 소화한 뒤 숨 고르기 국면으로 보는 시나리오입니다. "
+                "즉시 재돌파보다 박스 조정과 재기초 형성을 우선 가정했습니다."
+            )
+            label = "목표 달성 이후 재정비"
+    elif pattern.state == "invalidated":
         if reentry_case == "failed_breakout_recovery":
-            prices = [
+            raw_prices = [
                 (steps[0], current_close, "reclaim"),
                 (steps[1], max(current_close, neckline * 0.995) if bullish else min(current_close, neckline * 1.005), "retest"),
                 (steps[2], neckline * 1.02 if bullish else neckline * 0.98, "rebreak"),
@@ -2331,85 +2493,179 @@ def _build_projection(
             ]
             summary = (
                 f"{pattern_name} 패턴은 {reentry_case_label}으로 해석됩니다. "
-                "실패했던 돌파를 복구한 뒤 다시 기준선을 회복하는 시나리오를 우선 반영했습니다."
+                "실패했던 돌파를 복구하는 흐름을 보되, 재확인 과정을 여러 단계로 나눠 보수적으로 반영했습니다."
             )
-            return "실패 돌파 복구", summary, _projected_points(last_ts, timeframe, prices)
-
-        drift = invalidation - span * 0.15 if bullish else invalidation + span * 0.15
-        prices = [
-            (steps[0], invalidation, "broken"),
-            (steps[1], drift, "followthrough"),
-            (steps[2], drift * (1.01 if bullish else 0.99), "bounce"),
-            (steps[3], drift, "range"),
-        ]
-        summary = (
-            f"{pattern_name} 패턴은 무효화 이후 새 균형점을 찾는 흐름으로 가정했습니다. "
-            "기존 패턴 재개보다 손실 정리와 재축적 여부 확인이 먼저라는 의미입니다."
-        )
-        return "무효화 이후 재균형", summary, _projected_points(last_ts, timeframe, prices)
-
-    if bullish:
+            label = "실패 돌파 복구"
+        else:
+            drift = invalidation - span * 0.15 if bullish else invalidation + span * 0.15
+            raw_prices = [
+                (steps[0], invalidation, "broken"),
+                (steps[1], drift, "followthrough"),
+                (steps[2], drift * (1.01 if bullish else 0.99), "bounce"),
+                (steps[3], drift, "range"),
+            ]
+            summary = (
+                f"{pattern_name} 패턴은 무효화 이후 새 균형점을 찾는 흐름으로 가정했습니다. "
+                "기존 패턴 재개보다 손실 정리와 새 구조 형성 확인이 먼저라는 의미입니다."
+            )
+            label = "무효화 이후 재균형"
+    elif bullish:
         if pattern.state == "forming":
-            prices = [
+            raw_prices = [
                 (steps[0], max(current_close - span * 0.12, invalidation * 1.01), "handle"),
                 (steps[1], neckline * 0.995, "trigger"),
                 (steps[2], neckline * 1.02, "breakout"),
                 (steps[3], target, "target"),
             ]
-            summary = (
-                f"{pattern_name} 패턴이 아직 형성 중이라 눌림과 기준선 접근을 거친 뒤 돌파가 나오는 보수적 시나리오입니다."
-            )
-            return "형성 후 돌파", summary, _projected_points(last_ts, timeframe, prices)
-
-        if pattern.state == "armed":
-            prices = [
+            summary = f"{pattern_name} 패턴이 아직 형성 중이라 눌림과 기준선 접근 뒤 돌파를 시도하는 기본 시나리오입니다."
+            label = "형성 후 돌파"
+        elif pattern.state == "armed":
+            raw_prices = [
                 (steps[0], neckline * 0.998, "trigger"),
                 (steps[1], neckline * 1.01, "breakout"),
                 (steps[2], max(neckline, current_close - span * 0.08), "retest"),
                 (steps[3], target, "target"),
             ]
-            summary = f"{pattern_name} 패턴이 활성 직전이라 목선 돌파와 리테스트를 거쳐 목표가로 향하는 흐름을 우선 가정했습니다."
-            return "돌파 임박", summary, _projected_points(last_ts, timeframe, prices)
+            summary = f"{pattern_name} 패턴이 활성 직전이라 목선 확인과 리테스트 이후 상방을 보는 기본 시나리오입니다."
+            label = "돌파 임박"
+        else:
+            raw_prices = [
+                (steps[0], max(neckline, current_close - span * 0.1), "retest"),
+                (steps[1], current_close + span * 0.12, "hold"),
+                (steps[2], target, "target"),
+                (steps[3], target + span * 0.12, "extension"),
+            ]
+            summary = f"{pattern_name} 패턴은 확인 상태지만, 즉시 직진보다 재테스트 뒤 단계적 상방 진행을 우선 가정했습니다."
+            label = "확인 후 재테스트"
+    else:
+        if pattern.state == "forming":
+            raw_prices = [
+                (steps[0], min(current_close + span * 0.12, invalidation * 0.99), "handle"),
+                (steps[1], neckline * 1.005, "trigger"),
+                (steps[2], neckline * 0.98, "breakdown"),
+                (steps[3], target, "target"),
+            ]
+            summary = f"{pattern_name} 패턴이 아직 형성 중이라 반등 후 기준선 이탈을 시도하는 기본 하락 시나리오입니다."
+            label = "형성 후 이탈"
+        elif pattern.state == "armed":
+            raw_prices = [
+                (steps[0], neckline * 1.002, "trigger"),
+                (steps[1], neckline * 0.99, "breakdown"),
+                (steps[2], min(neckline, current_close + span * 0.08), "retest"),
+                (steps[3], target, "target"),
+            ]
+            summary = f"{pattern_name} 패턴이 활성 직전이라 기준선 이탈과 되돌림 확인 뒤 하방을 보는 기본 시나리오입니다."
+            label = "이탈 임박"
+        else:
+            raw_prices = [
+                (steps[0], min(neckline, current_close + span * 0.1), "retest"),
+                (steps[1], current_close - span * 0.12, "hold"),
+                (steps[2], target, "target"),
+                (steps[3], target - span * 0.12, "extension"),
+            ]
+            summary = f"{pattern_name} 패턴은 확인 상태지만, 단번에 밀리기보다 재확인 뒤 하방이 이어지는 흐름을 우선 가정했습니다."
+            label = "확인 후 재테스트"
 
-        prices = [
-            (steps[0], max(neckline, current_close - span * 0.1), "retest"),
-            (steps[1], current_close + span * 0.12, "hold"),
-            (steps[2], target, "target"),
-            (steps[3], target + span * 0.12, "extension"),
+    primary_prices = _stabilize_projection_prices(
+        timeframe=timeframe,
+        pattern_state=pattern.state,
+        bullish=bullish,
+        current_close=current_close,
+        neckline=neckline,
+        target=target,
+        invalidation=invalidation,
+        prices=raw_prices,
+        strength=strength,
+        uncertainty=uncertainty,
+        trade_readiness_score=trade_readiness_score,
+        entry_window_score=entry_window_score,
+        freshness_score=freshness_score,
+        active_setup_score=active_setup_score,
+        headroom_score=headroom_score,
+        reward_risk_ratio=reward_risk_ratio,
+        data_quality=data_quality,
+    )
+    range_prices = _stabilize_projection_prices(
+        timeframe=timeframe,
+        pattern_state=pattern.state,
+        bullish=bullish,
+        current_close=current_close,
+        neckline=neckline,
+        target=target,
+        invalidation=invalidation,
+        prices=_range_projection_prices(steps, bullish, current_close, neckline, invalidation, timeframe, strength),
+        strength=max(0.12, strength * 0.78),
+        uncertainty=min(1.0, uncertainty + 0.10),
+        trade_readiness_score=trade_readiness_score,
+        entry_window_score=min(entry_window_score, 0.55),
+        freshness_score=freshness_score,
+        active_setup_score=active_setup_score,
+        headroom_score=headroom_score,
+        reward_risk_ratio=reward_risk_ratio,
+        data_quality=data_quality,
+    )
+    risk_prices = _stabilize_projection_prices(
+        timeframe=timeframe,
+        pattern_state=pattern.state,
+        bullish=not bullish,
+        current_close=current_close,
+        neckline=neckline,
+        target=invalidation if invalidation else current_close,
+        invalidation=target if target else current_close,
+        prices=_risk_projection_prices(steps, bullish, current_close, invalidation, timeframe),
+        strength=max(0.12, 0.42 + uncertainty * 0.26),
+        uncertainty=min(1.0, uncertainty + 0.16),
+        trade_readiness_score=min(trade_readiness_score, 0.42),
+        entry_window_score=min(entry_window_score, 0.42),
+        freshness_score=min(freshness_score, 0.46),
+        active_setup_score=min(active_setup_score, 0.48),
+        headroom_score=headroom_score,
+        reward_risk_ratio=reward_risk_ratio,
+        data_quality=data_quality,
+    )
+
+    primary_weight, range_weight, risk_weight = _normalize_projection_weights(
+        [
+            0.40 + 0.28 * strength + 0.14 * max(p_up, p_down) - 0.16 * uncertainty,
+            0.24 + 0.22 * uncertainty + 0.08 * (1.0 - strength),
+            0.18 + 0.26 * (1.0 - strength) + 0.18 * uncertainty,
         ]
-        summary = (
-            f"{pattern_name} 패턴은 이미 확인된 상태라 재테스트 이후 목표 구간과 추가 확장을 시도하는 흐름을 가정했습니다."
-        )
-        return "확인 후 재테스트", summary, _projected_points(last_ts, timeframe, prices)
+    )
 
-    if pattern.state == "forming":
-        prices = [
-            (steps[0], min(current_close + span * 0.12, invalidation * 0.99), "handle"),
-            (steps[1], neckline * 1.005, "trigger"),
-            (steps[2], neckline * 0.98, "breakdown"),
-            (steps[3], target, "target"),
-        ]
-        summary = f"{pattern_name} 패턴이 아직 형성 중이라 반등 후 기준선 이탈이 나오는 보수적 하락 시나리오입니다."
-        return "형성 후 이탈", summary, _projected_points(last_ts, timeframe, prices)
-
-    if pattern.state == "armed":
-        prices = [
-            (steps[0], neckline * 1.002, "trigger"),
-            (steps[1], neckline * 0.99, "breakdown"),
-            (steps[2], min(neckline, current_close + span * 0.08), "retest"),
-            (steps[3], target, "target"),
-        ]
-        summary = f"{pattern_name} 패턴이 활성 직전이라 기준선 이탈과 되돌림 확인 뒤 목표가로 향하는 흐름을 우선 가정했습니다."
-        return "이탈 임박", summary, _projected_points(last_ts, timeframe, prices)
-
-    prices = [
-        (steps[0], min(neckline, current_close + span * 0.1), "retest"),
-        (steps[1], current_close - span * 0.12, "hold"),
-        (steps[2], target, "target"),
-        (steps[3], target - span * 0.12, "extension"),
+    direction_label = "상방" if bullish else "하방"
+    risk_label = "실패 시 하방" if bullish else "실패 시 반등"
+    caution = (
+        f"예상 경로는 가격 예언이 아니라 조건부 시나리오입니다. "
+        f"현재 점수 기준 주 시나리오 비중은 {round(primary_weight * 100)}% 수준이며, "
+        "직선 급등·급락보다 재테스트, 횡보, 실패 가능성을 함께 확인해야 합니다."
+    )
+    scenarios = [
+        ProjectionScenario(
+            key="primary",
+            label=f"주 시나리오 · {label}",
+            weight=primary_weight,
+            bias="bullish" if bullish else "bearish",
+            summary=summary,
+            path=_projected_points(last_ts, timeframe, primary_prices),
+        ),
+        ProjectionScenario(
+            key="range",
+            label="대안 시나리오 · 횡보/재확인",
+            weight=range_weight,
+            bias="neutral",
+            summary=f"{direction_label} 한쪽으로 곧장 가지 않고, 핵심 가격대 부근에서 재확인과 횡보가 이어지는 경우입니다.",
+            path=_projected_points(last_ts, timeframe, range_prices),
+        ),
+        ProjectionScenario(
+            key="risk",
+            label=f"리스크 시나리오 · {risk_label}",
+            weight=risk_weight,
+            bias="bearish" if bullish else "bullish",
+            summary="트리거 실패나 재돌파 실패가 나오면 기준선 또는 무효화 구간 재시험이 먼저 나올 수 있다는 뜻입니다.",
+            path=_projected_points(last_ts, timeframe, risk_prices),
+        ),
     ]
-    summary = f"{pattern_name} 패턴은 이미 확인된 상태라 되돌림 확인 후 추가 하락을 시도하는 흐름을 가정했습니다."
-    return "확인 후 재테스트", summary, _projected_points(last_ts, timeframe, prices)
+    return label, summary, caution, _projected_points(last_ts, timeframe, primary_prices), scenarios
 
 
 def build_no_signal_snapshot(
@@ -2722,16 +2978,6 @@ async def analyze_symbol_dataframe(
         total=total,
     )
 
-    projection_label, projection_summary, projected_path = _build_projection(
-        df,
-        timeframe,
-        best_pattern,
-        current_close,
-        reentry,
-        best_target_hit_at,
-        best_invalidated_at,
-    )
-
     pattern_infos: list[PatternInfo] = []
     for pattern, completion, recency, pattern_bars_since_signal, target_hit_at, invalidated_at in patterns_with_meta:
         lifecycle = _pattern_lifecycle_profile(
@@ -2848,6 +3094,26 @@ async def analyze_symbol_dataframe(
         invalidated_at=best_invalidated_at,
         bars_since_signal=bars_since_signal,
     )
+    projection_label, projection_summary, projection_caution, projected_path, projection_scenarios = _build_projection(
+        df,
+        timeframe,
+        best_pattern,
+        current_close,
+        reentry,
+        best_target_hit_at,
+        best_invalidated_at,
+        probability.p_up,
+        probability.p_down,
+        probability.confidence,
+        readiness["trade_readiness_score"],
+        entry_window["entry_window_score"],
+        freshness["freshness_score"],
+        active_setup["active_setup_score"],
+        probability.headroom_score,
+        probability.reward_risk_ratio,
+        profile["data_quality"],
+        probability.sample_reliability,
+    )
 
     return AnalysisResult(
         symbol=symbol,
@@ -2924,7 +3190,9 @@ async def analyze_symbol_dataframe(
         patterns=pattern_infos,
         projection_label=projection_label,
         projection_summary=projection_summary,
+        projection_caution=projection_caution,
         projected_path=projected_path,
+        projection_scenarios=projection_scenarios,
         is_provisional=best_pattern.is_provisional,
         updated_at=datetime.utcnow().isoformat(),
         data_source=profile["data_source"],

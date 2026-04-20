@@ -84,6 +84,36 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
         <div className="space-y-2 text-xs text-muted-foreground">
           <div className="font-medium text-foreground">{analysis.projection_label || '중립 시나리오'}</div>
           <p>{analysis.projection_summary}</p>
+          {analysis.projection_caution && (
+            <div className="rounded-lg border border-sky-400/15 bg-sky-400/5 p-2.5 text-xs leading-relaxed text-sky-100">
+              {analysis.projection_caution}
+            </div>
+          )}
+          {analysis.projection_scenarios.length > 0 && (
+            <div className="grid gap-2 pt-1">
+              {analysis.projection_scenarios.map(scenario => (
+                <div key={scenario.key} className="rounded-lg border border-border bg-background/60 p-2.5">
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <span className="font-medium text-foreground">{scenario.label}</span>
+                    <Badge
+                      variant={
+                        scenario.key === 'risk'
+                          ? 'warning'
+                          : scenario.key === 'range'
+                            ? 'muted'
+                            : scenario.bias === 'bearish'
+                              ? 'bearish'
+                              : 'bullish'
+                      }
+                    >
+                      {fmtPct(scenario.weight, 0)}
+                    </Badge>
+                  </div>
+                  <p className="text-[11px] leading-relaxed text-muted-foreground">{scenario.summary}</p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </Card>
 

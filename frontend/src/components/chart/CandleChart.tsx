@@ -12,7 +12,7 @@ import {
   type Time,
 } from 'lightweight-charts'
 
-import type { AnalysisResult, OHLCVBar } from '@/types/api'
+import type { AnalysisResult, OHLCVBar, ProjectionScenario } from '@/types/api'
 
 interface CandleChartProps {
   bars: OHLCVBar[]
@@ -26,6 +26,8 @@ const OVERLAY_COLORS = {
   invalidation: '#f87171',
   projectionBull: '#38bdf8',
   projectionBear: '#fb7185',
+  projectionNeutral: '#94a3b8',
+  projectionRisk: '#f59e0b',
 }
 
 const CHART_COLORS = {
@@ -190,29 +192,32 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
 
     candleSeries.setMarkers(markers)
 
-    if (analysis.projected_path.length > 0) {
+    const projectionScenarios = getProjectionScenarios(analysis)
+    projectionScenarios.slice(0, 3).forEach((scenario, index) => {
       const projectionSeries = chart.addLineSeries({
-        color: analysis.p_up >= analysis.p_down ? OVERLAY_COLORS.projectionBull : OVERLAY_COLORS.projectionBear,
-        lineWidth: 2,
-        lineStyle: LineStyle.Dashed,
+        color: scenarioColor(scenario),
+        lineWidth: index === 0 ? 2 : 1,
+        lineStyle: index === 0 ? LineStyle.Dashed : LineStyle.Dotted,
         priceLineVisible: false,
         lastValueVisible: false,
-        crosshairMarkerVisible: true,
+        crosshairMarkerVisible: index === 0,
       })
 
       const projectionData: LineData[] = [
         { time: lastTime, value: lastClose },
-        ...analysis.projected_path.map(point => ({
+        ...scenario.path.map(point => ({
           time: toChartTime(point.dt),
           value: point.price,
         })),
       ]
       projectionSeries.setData(projectionData)
       overlayRef.current.push(projectionSeries)
-    }
+    })
 
     chart.timeScale().fitContent()
   }, [analysis, bars])
+
+  const projectionScenarios = analysis ? getProjectionScenarios(analysis) : []
 
   return (
     <div className="space-y-1">
@@ -228,20 +233,58 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
           <span className="flex items-center gap-1">
             <span className="inline-block h-px w-3 bg-red-400" style={{ borderTop: '1px dotted' }} /> 무효화 기준
           </span>
-          {analysis.projected_path.length > 0 && (
-            <span className="flex items-center gap-1">
-              <span
-                className="inline-block h-px w-3"
-                style={{
-                  borderTop: `2px dashed ${analysis.p_up >= analysis.p_down ? OVERLAY_COLORS.projectionBull : OVERLAY_COLORS.projectionBear}`,
-                }}
-              /> 예상 경로
-            </span>
+          {projectionScenarios.length > 0 && (
+            <>
+              <span className="flex items-center gap-1">
+                <span
+                  className="inline-block h-px w-3"
+                  style={{ borderTop: `2px dashed ${scenarioColor(projectionScenarios[0])}` }}
+                /> 주 시나리오
+              </span>
+              {projectionScenarios.some(scenario => scenario.key === 'range') && (
+                <span className="flex items-center gap-1">
+                  <span className="inline-block h-px w-3" style={{ borderTop: `1px dotted ${OVERLAY_COLORS.projectionNeutral}` }} /> 횡보 대안
+                </span>
+              )}
+              {projectionScenarios.some(scenario => scenario.key === 'risk') && (
+                <span className="flex items-center gap-1">
+                  <span className="inline-block h-px w-3" style={{ borderTop: `1px dotted ${OVERLAY_COLORS.projectionRisk}` }} /> 리스크 대안
+                </span>
+              )}
+            </>
           )}
         </div>
       )}
     </div>
   )
+}
+
+function getProjectionScenarios(analysis: AnalysisResult): ProjectionScenario[] {
+  if (analysis.projection_scenarios.length > 0) {
+    return analysis.projection_scenarios
+  }
+
+  if (analysis.projected_path.length === 0) {
+    return []
+  }
+
+  return [
+    {
+      key: 'primary',
+      label: analysis.projection_label,
+      weight: 1,
+      bias: analysis.p_up >= analysis.p_down ? 'bullish' : 'bearish',
+      summary: analysis.projection_summary,
+      path: analysis.projected_path,
+    },
+  ]
+}
+
+function scenarioColor(scenario: ProjectionScenario): string {
+  if (scenario.key === 'risk') return OVERLAY_COLORS.projectionRisk
+  if (scenario.bias === 'bullish') return OVERLAY_COLORS.projectionBull
+  if (scenario.bias === 'bearish') return OVERLAY_COLORS.projectionBear
+  return OVERLAY_COLORS.projectionNeutral
 }
 
 function toChartTime(value: string): Time {

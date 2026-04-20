@@ -72,6 +72,15 @@ class ProjectionPoint(BaseModel):
     kind: str
 
 
+class ProjectionScenario(BaseModel):
+    key: str
+    label: str
+    weight: float
+    bias: str
+    summary: str
+    path: list[ProjectionPoint]
+
+
 class ScoreFactor(BaseModel):
     label: str
     score: float
@@ -154,7 +163,9 @@ class AnalysisResult(BaseModel):
     patterns: list[PatternInfo]
     projection_label: str
     projection_summary: str
+    projection_caution: str = ""
     projected_path: list[ProjectionPoint]
+    projection_scenarios: list[ProjectionScenario] = Field(default_factory=list)
     is_provisional: bool
     updated_at: str
     data_source: str

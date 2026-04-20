@@ -67,6 +67,15 @@ export interface ProjectionPoint {
   kind: string
 }
 
+export interface ProjectionScenario {
+  key: string
+  label: string
+  weight: number
+  bias: 'bullish' | 'bearish' | 'neutral'
+  summary: string
+  path: ProjectionPoint[]
+}
+
 export interface ScoreFactor {
   label: string
   score: number
@@ -149,7 +158,9 @@ export interface AnalysisResult {
   patterns: PatternInfo[]
   projection_label: string
   projection_summary: string
+  projection_caution: string
   projected_path: ProjectionPoint[]
+  projection_scenarios: ProjectionScenario[]
   is_provisional: boolean
   updated_at: string
   data_source: string
