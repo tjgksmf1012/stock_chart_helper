@@ -292,11 +292,13 @@ export default function DashboardPage() {
 
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-6">
             <StatusCell label="후보 수" value={`${intradaySummary.totalCount}개`} />
+            <StatusCell label="실제 분석" value={`${intradaySummary.realCount}개`} />
+            <StatusCell label="임시 후보" value={`${intradaySummary.placeholderCount}개`} />
             <StatusCell label="live 추적" value={`${intradaySummary.liveCount}개`} />
             <StatusCell label="confirmed" value={`${intradaySummary.confirmedCount}개`} />
             <StatusCell label="관망/No Signal" value={`${intradaySummary.noSignalCount}개`} />
-            <StatusCell label="평균 품질" value={`${Math.round(intradaySummary.avgQuality * 100)}%`} />
-            <StatusCell label="평균 진입 적합도" value={`${Math.round(intradaySummary.avgEntry * 100)}%`} />
+            <StatusCell label="평균 품질" value={intradaySummary.isProvisionalOnly ? '임시값' : `${Math.round(intradaySummary.avgQuality * 100)}%`} />
+            <StatusCell label="평균 진입 적합도" value={intradaySummary.isProvisionalOnly ? '임시값' : `${Math.round(intradaySummary.avgEntry * 100)}%`} />
           </div>
         </Card>
       )}
@@ -311,8 +313,8 @@ export default function DashboardPage() {
           </div>
 
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-            <StatusCell label="평균 edge" value={`${Math.round(intradaySummary.avgEdge * 100)}%`} />
-            <StatusCell label="평균 손익비" value={intradaySummary.avgRewardRisk.toFixed(2)} />
+            <StatusCell label="평균 edge" value={intradaySummary.isProvisionalOnly ? '임시값' : `${Math.round(intradaySummary.avgEdge * 100)}%`} />
+            <StatusCell label="평균 손익비" value={intradaySummary.isProvisionalOnly ? '임시값' : intradaySummary.avgRewardRisk.toFixed(2)} />
             <StatusCell label="우세 운용 모드" value={intradaySummary.dominantMode} />
             <StatusCell label="우세 세팅 단계" value={intradaySummary.dominantStage} />
           </div>
@@ -539,6 +541,9 @@ function buildIntradaySummary(sections: Array<DashboardResponse | undefined>) {
   if (items.length === 0) {
     return {
       totalCount: 0,
+      realCount: 0,
+      placeholderCount: 0,
+      isProvisionalOnly: false,
       liveCount: 0,
       confirmedCount: 0,
       noSignalCount: 0,
@@ -551,6 +556,10 @@ function buildIntradaySummary(sections: Array<DashboardResponse | undefined>) {
       guidance: '현재 프리셋에 맞는 후보가 많지 않습니다. 조건을 조금 완화하거나 다른 타임프레임도 함께 보는 편이 좋습니다.',
     }
   }
+
+  const realItems = items.filter(item => !isPlaceholderItem(item))
+  const placeholderCount = items.length - realItems.length
+  const metricItems = realItems.length > 0 ? realItems : items
 
   const totals = items.reduce(
     (acc, item) => {
@@ -578,15 +587,34 @@ function buildIntradaySummary(sections: Array<DashboardResponse | undefined>) {
     },
   )
 
+  const metricTotals = metricItems.reduce(
+    (acc, item) => {
+      acc.qualitySum += item.data_quality
+      acc.entrySum += item.entry_score
+      acc.edgeSum += item.historical_edge_score
+      acc.rewardRiskSum += item.reward_risk_ratio
+      return acc
+    },
+    {
+      qualitySum: 0,
+      entrySum: 0,
+      edgeSum: 0,
+      rewardRiskSum: 0,
+    },
+  )
+
   return {
     totalCount: items.length,
+    realCount: realItems.length,
+    placeholderCount,
+    isProvisionalOnly: realItems.length === 0 && placeholderCount > 0,
     liveCount: totals.liveCount,
     confirmedCount: totals.confirmedCount,
     noSignalCount: totals.noSignalCount,
-    avgQuality: totals.qualitySum / items.length,
-    avgEntry: totals.entrySum / items.length,
-    avgEdge: totals.edgeSum / items.length,
-    avgRewardRisk: totals.rewardRiskSum / items.length,
+    avgQuality: metricTotals.qualitySum / metricItems.length,
+    avgEntry: metricTotals.entrySum / metricItems.length,
+    avgEdge: metricTotals.edgeSum / metricItems.length,
+    avgRewardRisk: metricTotals.rewardRiskSum / metricItems.length,
     dominantMode: dominantLabel(totals.modeCounts),
     dominantStage: dominantLabel(totals.stageCounts),
     guidance: buildSummaryGuidance(items),
@@ -600,12 +628,18 @@ function dominantLabel(counts: Record<string, number>): string {
 }
 
 function buildSummaryGuidance(items: DashboardItem[]): string {
-  const liveCount = items.filter(item => item.live_intraday_candidate).length
-  const confirmedCount = items.filter(item => item.state === 'confirmed').length
-  const avgEdge = items.reduce((sum, item) => sum + item.historical_edge_score, 0) / items.length
-  const avgRewardRisk = items.reduce((sum, item) => sum + item.reward_risk_ratio, 0) / items.length
+  const realItems = items.filter(item => !isPlaceholderItem(item))
+  if (realItems.length === 0 && items.length > 0) {
+    return '지금은 빠른 예열 후보만 먼저 보여주고 있습니다. 평균 점수보다 후보 풀과 시장 분포만 가볍게 보고, 실제 분봉 스캔 완료 후 다시 판단하세요.'
+  }
 
-  if (liveCount >= Math.max(2, Math.round(items.length * 0.4)) && confirmedCount >= Math.max(1, Math.round(items.length * 0.25))) {
+  const metricItems = realItems.length > 0 ? realItems : items
+  const liveCount = items.filter(item => item.live_intraday_candidate).length
+  const confirmedCount = metricItems.filter(item => item.state === 'confirmed').length
+  const avgEdge = metricItems.reduce((sum, item) => sum + item.historical_edge_score, 0) / metricItems.length
+  const avgRewardRisk = metricItems.reduce((sum, item) => sum + item.reward_risk_ratio, 0) / metricItems.length
+
+  if (liveCount >= Math.max(2, Math.round(metricItems.length * 0.4)) && confirmedCount >= Math.max(1, Math.round(metricItems.length * 0.25))) {
     return 'live 추적 비중과 confirmed 비중이 모두 괜찮습니다. 무효화 기준만 빠르게 점검하고 상단 후보부터 보면 됩니다.'
   }
 
@@ -614,6 +648,10 @@ function buildSummaryGuidance(items: DashboardItem[]): string {
   }
 
   return '확인 단계의 후보가 더 많은 상태입니다. 진입보다 트리거 재확인과 품질 회복 여부를 우선 보는 편이 좋습니다.'
+}
+
+function isPlaceholderItem(item: DashboardItem): boolean {
+  return item.fetch_status === 'placeholder_pending'
 }
 
 function statusLabel(status: string | undefined): string {

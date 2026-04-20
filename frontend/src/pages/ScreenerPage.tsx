@@ -186,22 +186,28 @@ export default function ScreenerPage() {
   const stats = useMemo(() => {
     if (!filteredData?.length) return null
 
+    const realItems = filteredData.filter(item => !isPlaceholderItem(item))
+    const metricItems = realItems.length > 0 ? realItems : filteredData
+    const placeholderCount = filteredData.length - realItems.length
     const kospi = filteredData.filter(item => item.symbol.market === 'KOSPI').length
     const kosdaq = filteredData.filter(item => item.symbol.market === 'KOSDAQ').length
-    const avgReliability = filteredData.reduce((sum, item) => sum + item.sample_reliability, 0) / filteredData.length
-    const avgReadiness = filteredData.reduce((sum, item) => sum + (item.trade_readiness_score ?? 0), 0) / filteredData.length
-    const avgEntryWindow = filteredData.reduce((sum, item) => sum + (item.entry_window_score ?? 0), 0) / filteredData.length
-    const avgFreshness = filteredData.reduce((sum, item) => sum + (item.freshness_score ?? 0), 0) / filteredData.length
-    const avgReentry = filteredData.reduce((sum, item) => sum + (item.reentry_score ?? 0), 0) / filteredData.length
-    const avgActiveSetup = filteredData.reduce((sum, item) => sum + (item.active_setup_score ?? 0), 0) / filteredData.length
-    const avgRewardRisk = filteredData.reduce((sum, item) => sum + item.reward_risk_ratio, 0) / filteredData.length
+    const avgReliability = metricItems.reduce((sum, item) => sum + item.sample_reliability, 0) / metricItems.length
+    const avgReadiness = metricItems.reduce((sum, item) => sum + (item.trade_readiness_score ?? 0), 0) / metricItems.length
+    const avgEntryWindow = metricItems.reduce((sum, item) => sum + (item.entry_window_score ?? 0), 0) / metricItems.length
+    const avgFreshness = metricItems.reduce((sum, item) => sum + (item.freshness_score ?? 0), 0) / metricItems.length
+    const avgReentry = metricItems.reduce((sum, item) => sum + (item.reentry_score ?? 0), 0) / metricItems.length
+    const avgActiveSetup = metricItems.reduce((sum, item) => sum + (item.active_setup_score ?? 0), 0) / metricItems.length
+    const avgRewardRisk = metricItems.reduce((sum, item) => sum + item.reward_risk_ratio, 0) / metricItems.length
     const liveCount = filteredData.filter(item => item.live_intraday_candidate).length
-    const confirmedCount = filteredData.filter(item => item.state === 'confirmed').length
+    const confirmedCount = metricItems.filter(item => item.state === 'confirmed').length
     const noSignalCount = filteredData.filter(item => item.no_signal_flag).length
 
     return {
       kospi,
       kosdaq,
+      realCount: realItems.length,
+      placeholderCount,
+      isProvisionalOnly: realItems.length === 0 && placeholderCount > 0,
       avgReliability,
       avgReadiness,
       avgEntryWindow,
@@ -560,20 +566,30 @@ export default function ScreenerPage() {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-7">
             <SummaryStat label="검색 결과" value={`${results.length}개`} />
             <SummaryStat label="시장 분포" value={`KOSPI ${stats?.kospi ?? 0} / KOSDAQ ${stats?.kosdaq ?? 0}`} />
-            <SummaryStat label="평균 표본 신뢰도" value={`${((stats?.avgReliability ?? 0) * 100).toFixed(0)}%`} />
-            <SummaryStat label="평균 거래 준비도" value={`${((stats?.avgReadiness ?? 0) * 100).toFixed(0)}%`} />
-            <SummaryStat label="평균 진입 구간" value={`${((stats?.avgEntryWindow ?? 0) * 100).toFixed(0)}%`} />
-            <SummaryStat label="평균 패턴 신선도" value={`${((stats?.avgFreshness ?? 0) * 100).toFixed(0)}%`} />
-            <SummaryStat label="평균 재진입 구조" value={`${((stats?.avgReentry ?? 0) * 100).toFixed(0)}%`} />
+            <SummaryStat label="실제 분석" value={`${stats?.realCount ?? 0}개`} />
+            <SummaryStat label="임시 후보" value={`${stats?.placeholderCount ?? 0}개`} />
+            <SummaryStat label="평균 표본 신뢰도" value={stats?.isProvisionalOnly ? '임시값' : `${((stats?.avgReliability ?? 0) * 100).toFixed(0)}%`} />
+            <SummaryStat label="평균 거래 준비도" value={stats?.isProvisionalOnly ? '임시값' : `${((stats?.avgReadiness ?? 0) * 100).toFixed(0)}%`} />
+            <SummaryStat label="평균 진입 구간" value={stats?.isProvisionalOnly ? '임시값' : `${((stats?.avgEntryWindow ?? 0) * 100).toFixed(0)}%`} />
+            <SummaryStat label="평균 패턴 신선도" value={stats?.isProvisionalOnly ? '임시값' : `${((stats?.avgFreshness ?? 0) * 100).toFixed(0)}%`} />
+            <SummaryStat label="평균 재진입 구조" value={stats?.isProvisionalOnly ? '임시값' : `${((stats?.avgReentry ?? 0) * 100).toFixed(0)}%`} />
           </div>
 
           {intradayMode && stats && (
             <>
+              {stats.isProvisionalOnly && (
+                <Card className="border-amber-500/20 bg-amber-500/5 text-amber-100">
+                  <div className="text-sm font-semibold">빠른 예열 후보만 표시 중입니다</div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    지금 보이는 점수와 평균값은 임시값입니다. 백그라운드 분봉 스캔이 끝나면 실제 패턴·준비도·재진입 구조로 자동 교체됩니다.
+                  </p>
+                </Card>
+              )}
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <SummaryButton label="live 추적" value={`${stats.liveCount}개`} onClick={() => setIntradayView('live')} />
                 <SummaryButton label="confirmed" value={`${stats.confirmedCount}개`} onClick={() => setIntradayPreset('ready-now')} />
                 <SummaryButton label="No Signal" value={`${stats.noSignalCount}개`} onClick={() => setIntradayPreset('cooling')} />
-                <SummaryButton label="평균 손익비" value={stats.avgRewardRisk.toFixed(2)} onClick={() => setIntradayPreset('ready-now')} />
+                <SummaryButton label="평균 손익비" value={stats.isProvisionalOnly ? '임시값' : stats.avgRewardRisk.toFixed(2)} onClick={() => setIntradayPreset('ready-now')} />
               </div>
 
               <Card className="space-y-3">
@@ -681,10 +697,15 @@ function buildScreenerGuidance(items: DashboardItem[]): string {
     return '현재 조건에 맞는 결과가 없습니다. 신선도·준비도 조건을 조금 완화하거나 다른 타임프레임을 함께 보는 것이 좋습니다.'
   }
 
-  const liveCount = items.filter(item => item.live_intraday_candidate).length
-  const readyCount = items.filter(item => (item.trade_readiness_score ?? 0) >= 0.6).length
-  const avgFreshness = items.reduce((sum, item) => sum + (item.freshness_score ?? 0), 0) / items.length
-  const reentryCases = items
+  const realItems = items.filter(item => !isPlaceholderItem(item))
+  if (realItems.length === 0) {
+    return '지금은 빠른 예열 후보만 먼저 보여주고 있습니다. 평균 점수보다는 후보 풀과 시장 분포만 가볍게 확인하고, 실제 분봉 스캔이 끝난 뒤 다시 판단하세요.'
+  }
+
+  const liveCount = realItems.filter(item => item.live_intraday_candidate).length
+  const readyCount = realItems.filter(item => (item.trade_readiness_score ?? 0) >= 0.6).length
+  const avgFreshness = realItems.reduce((sum, item) => sum + (item.freshness_score ?? 0), 0) / realItems.length
+  const reentryCases = realItems
     .map(item => item.reentry_case_label)
     .filter(label => !!label && label !== '구조 없음')
   const dominantReentryCase =
@@ -694,13 +715,17 @@ function buildScreenerGuidance(items: DashboardItem[]): string {
         )[0]
       : ''
 
-  if (liveCount >= Math.max(2, Math.round(items.length * 0.3))) {
+  if (liveCount >= Math.max(2, Math.round(realItems.length * 0.3))) {
     return `실시간 추적 후보가 충분합니다. live 후보부터 확인하고, 신선도와 진입 구간이 동시에 높으면서 재진입 구조까지 받쳐주는 종목을 우선 보세요${dominantReentryCase ? `. 현재는 ${dominantReentryCase} 비중이 높습니다.` : '.'}`
   }
 
-  if (readyCount >= Math.max(2, Math.round(items.length * 0.25)) && avgFreshness >= 0.5) {
+  if (readyCount >= Math.max(2, Math.round(realItems.length * 0.25)) && avgFreshness >= 0.5) {
     return `거래 준비도와 패턴 신선도가 함께 받쳐주는 후보가 모여 있습니다. 상위 카드에서 리스크 기준, 재진입 구조, 다음 트리거를 먼저 확인해 보세요${dominantReentryCase ? `. 특히 ${dominantReentryCase}이 많이 보입니다.` : '.'}`
   }
 
   return `아직은 형성 중이거나 재확인이 필요한 후보가 많습니다. 무리한 진입보다 목표가 소진 여부, 신선도, 재축적 여부를 먼저 체크하는 편이 좋습니다${dominantReentryCase ? `. 현재 주된 유형은 ${dominantReentryCase}입니다.` : '.'}`
+}
+
+function isPlaceholderItem(item: DashboardItem): boolean {
+  return item.fetch_status === 'placeholder_pending'
 }
