@@ -337,8 +337,26 @@ export default function ChartPage() {
               </div>
             ) : (
               <div className="flex h-[520px] flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
-                <p>표시할 차트 데이터가 아직 없습니다.</p>
-                <p className="text-xs text-muted-foreground/80">분봉 데이터가 부족하거나 백그라운드 예열이 아직 끝나지 않았을 수 있습니다.</p>
+                <p>{analysis?.fetch_status_label || '표시할 차트 데이터가 아직 없습니다.'}</p>
+                <p className="max-w-md text-center text-xs text-muted-foreground/80">
+                  {analysis?.fetch_message || '분봉 데이터가 부족하거나 백그라운드 예열이 아직 끝나지 않았을 수 있습니다.'}
+                </p>
+                <div className="flex flex-wrap justify-center gap-2 pt-1">
+                  <button
+                    onClick={() => barsQ.refetch()}
+                    className="rounded-md border border-border bg-card px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    다시 시도
+                  </button>
+                  {['1m', '15m', '30m', '60m'].includes(timeframe) && (
+                    <button
+                      onClick={() => setTimeframe('1d')}
+                      className="rounded-md border border-sky-500/30 bg-sky-500/10 px-2.5 py-1.5 text-xs text-sky-100 transition-colors hover:bg-sky-500/15"
+                    >
+                      일봉으로 보기
+                    </button>
+                  )}
+                </div>
               </div>
             )}
           </Card>

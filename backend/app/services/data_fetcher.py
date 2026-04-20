@@ -65,6 +65,8 @@ INTRADAY_RESAMPLE_RULES = {
     "15m": "15min",
 }
 
+YAHOO_HISTORY_TIMEOUT_SECONDS = 12.0
+
 DAILY_RESAMPLE_RULES = {
     "1wk": "W-FRI",
     "1mo": "MS",
@@ -307,12 +309,15 @@ class KRXDataFetcher:
                     import yfinance as yf
 
                     ticker = yf.Ticker(yahoo_symbol)
-                    df = await asyncio.to_thread(
-                        ticker.history,
-                        period=f"{period_days}d",
-                        interval=yahoo_interval,
-                        auto_adjust=False,
-                        prepost=False,
+                    df = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            ticker.history,
+                            period=f"{period_days}d",
+                            interval=yahoo_interval,
+                            auto_adjust=False,
+                            prepost=False,
+                        ),
+                        timeout=YAHOO_HISTORY_TIMEOUT_SECONDS,
                     )
                     normalized = self._normalize_intraday_frame(df)
                     if not normalized.empty:
@@ -322,6 +327,13 @@ class KRXDataFetcher:
                             fetch_status="live_ok",
                             fetch_message="Yahoo Finance intraday bars loaded successfully.",
                         )
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "yfinance intraday timed out for %s (%s, %s)",
+                        code,
+                        yahoo_symbol,
+                        yahoo_interval,
+                    )
                 except Exception as exc:
                     exc_str = str(exc)
                     if "Too Many Requests" in exc_str or "Rate limit" in exc_str.lower():

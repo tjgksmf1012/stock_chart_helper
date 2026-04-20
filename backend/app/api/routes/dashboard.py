@@ -295,6 +295,11 @@ async def dashboard_live_intraday(
     limit: int = Query(default=10, le=50),
 ) -> DashboardResponse:
     timeframe = _timeframe_query(timeframe)
+    status = await get_scan_status(timeframe)
+    if timeframe in {"1m", "15m", "30m", "60m"} and (status.get("cached_result_count") or 0) == 0:
+        if not status.get("is_running"):
+            await trigger_scan(timeframe=timeframe, force_refresh=False, source="background")
+        return _response("live_intraday_candidates", timeframe, [])
     data = await get_scan_results(timeframe)
     ranked = [
         row for row in data

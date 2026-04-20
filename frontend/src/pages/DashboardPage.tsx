@@ -8,7 +8,7 @@ import { dashboardApi } from '@/lib/api'
 import { DEFAULT_TIMEFRAME, TIMEFRAME_OPTIONS, timeframeLabel } from '@/lib/timeframes'
 import { fmtDateTime } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
-import type { DashboardItem, DashboardResponse } from '@/types/api'
+import type { DashboardItem, DashboardResponse, ScanStatusResponse, Timeframe } from '@/types/api'
 
 type IntradayView = 'all' | 'live' | 'stored' | 'public' | 'mixed' | 'cooldown'
 type IntradayPreset = 'all' | 'ready-now' | 'watch' | 'recheck' | 'cooling'
@@ -142,6 +142,12 @@ export default function DashboardPage() {
     intradayMode && statusQ.data?.status === 'warming' && (statusQ.data?.cached_result_count ?? 0) === 0
       ? `${timeframeLabel(timeframe)} 후보를 백그라운드에서 예열 중입니다. 잠시 후 자동으로 결과가 채워집니다.`
       : undefined
+  const intradayFallbackMessage =
+    intradayMode && statusQ.data?.candidate_source === 'fallback_seed'
+      ? `지금은 ${timeframeLabel(timeframe)} 즉시 fallback 후보를 먼저 보여주고 있습니다. 백그라운드 정밀 스캔이 끝나면 카드가 자동으로 더 정확하게 정렬됩니다.`
+      : null
+  const liveEmptyMessage = getLiveSectionEmptyMessage(statusQ.data, timeframe) ?? intradayEmptyMessage
+  const sectionEmptyMessage = getDefaultSectionEmptyMessage(statusQ.data, timeframe) ?? intradayEmptyMessage
 
   return (
     <div className="space-y-8">
@@ -203,6 +209,16 @@ export default function DashboardPage() {
               장초반과 마감 전에는 live 후보를 더 넓게 쓰고, 점심장과 장외에는 저장 분봉과 공개 소스를 우선합니다.
               후보 안에서도 진입 적합도, 완성 임박도, 유동성, 신호 최신성이 높은 종목이 먼저 live 분봉을 사용합니다.
             </p>
+          </div>
+        </Card>
+      )}
+
+      {intradayMode && intradayFallbackMessage && (
+        <Card className="flex items-start gap-3 border-cyan-500/20 bg-cyan-500/5 p-4">
+          <Loader2 size={16} className={statusQ.data?.is_running ? 'mt-0.5 animate-spin text-cyan-300' : 'mt-0.5 text-cyan-300'} />
+          <div className="space-y-1">
+            <div className="text-sm font-semibold text-cyan-100">먼저 빠른 후보를 보여주고 있습니다</div>
+            <p className="text-xs leading-relaxed text-muted-foreground">{intradayFallbackMessage}</p>
           </div>
         </Card>
       )}
@@ -399,6 +415,12 @@ export default function DashboardPage() {
             최근 오류: {statusQ.data.last_error}
           </div>
         )}
+
+        {statusQ.isError && !statusQ.isLoading && (
+          <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-100">
+            스캔 상태를 불러오지 못했습니다. 카드 자체는 마지막 캐시를 보여줄 수 있지만, 현재 예열 진행 여부는 다시 확인이 필요합니다.
+          </div>
+        )}
       </Card>
 
       <DashboardSection
@@ -409,7 +431,7 @@ export default function DashboardPage() {
         isError={longQ.isError}
         onRetry={() => longQ.refetch()}
         intradayPreset={intradayMode ? intradayPreset : undefined}
-        emptyMessage={intradayEmptyMessage}
+        emptyMessage={sectionEmptyMessage}
       />
 
       <DashboardSection
@@ -420,7 +442,7 @@ export default function DashboardPage() {
         isError={armedQ.isError}
         onRetry={() => armedQ.refetch()}
         intradayPreset={intradayMode ? intradayPreset : undefined}
-        emptyMessage={intradayEmptyMessage}
+        emptyMessage={sectionEmptyMessage}
       />
 
       {intradayMode && (
@@ -432,7 +454,7 @@ export default function DashboardPage() {
           isError={liveQ.isError}
           onRetry={() => liveQ.refetch()}
           intradayPreset={intradayPreset}
-          emptyMessage={intradayEmptyMessage}
+          emptyMessage={liveEmptyMessage}
         />
       )}
 
@@ -444,7 +466,7 @@ export default function DashboardPage() {
         isError={formingQ.isError}
         onRetry={() => formingQ.refetch()}
         intradayPreset={intradayMode ? intradayPreset : undefined}
-        emptyMessage={intradayEmptyMessage}
+        emptyMessage={sectionEmptyMessage}
       />
 
       <DashboardSection
@@ -455,7 +477,7 @@ export default function DashboardPage() {
         isError={simQ.isError}
         onRetry={() => simQ.refetch()}
         intradayPreset={intradayMode ? intradayPreset : undefined}
-        emptyMessage={intradayEmptyMessage}
+        emptyMessage={sectionEmptyMessage}
       />
 
       <DashboardSection
@@ -466,7 +488,7 @@ export default function DashboardPage() {
         isError={shortQ.isError}
         onRetry={() => shortQ.refetch()}
         intradayPreset={intradayMode ? intradayPreset : undefined}
-        emptyMessage={intradayEmptyMessage}
+        emptyMessage={sectionEmptyMessage}
       />
 
       <DashboardSection
@@ -477,7 +499,7 @@ export default function DashboardPage() {
         isError={noSigQ.isError}
         onRetry={() => noSigQ.refetch()}
         intradayPreset={intradayMode ? intradayPreset : undefined}
-        emptyMessage={intradayEmptyMessage}
+        emptyMessage={sectionEmptyMessage}
       />
     </div>
   )
@@ -672,4 +694,32 @@ function candidateSourceLabel(source: string | null | undefined): string {
     default:
       return '-'
   }
+}
+
+function getDefaultSectionEmptyMessage(status: ScanStatusResponse | undefined, timeframe: Timeframe): string | undefined {
+  if (!status) return undefined
+  if (status.status === 'warming' && (status.cached_result_count ?? 0) === 0) {
+    return `${timeframeLabel(timeframe)} 후보를 백그라운드에서 예열 중입니다. 잠시 후 자동으로 결과가 채워집니다.`
+  }
+  if (status.candidate_source === 'fallback_seed') {
+    return `지금은 ${timeframeLabel(timeframe)} 빠른 fallback 후보를 먼저 보여주는 단계라 섹션별 후보 수가 아직 적을 수 있습니다.`
+  }
+  return undefined
+}
+
+function getLiveSectionEmptyMessage(status: ScanStatusResponse | undefined, timeframe: Timeframe): string | undefined {
+  if (!status) return undefined
+  if (status.status === 'warming' && (status.cached_result_count ?? 0) === 0) {
+    return `${timeframeLabel(timeframe)} live 후보를 추리는 중입니다. 잠시 후 자동으로 다시 채워집니다.`
+  }
+  if (status.intraday_live_phase === 'off_hours') {
+    return '지금은 장외 절약 모드라 live 분봉 후보를 비워둘 수 있습니다. forming/watch 후보를 먼저 확인하세요.'
+  }
+  if ((status.intraday_live_candidate_limit ?? 0) === 0) {
+    return '현재 시간대와 품질 기준에서 live 분봉까지 열어볼 후보가 아직 없습니다.'
+  }
+  if (status.candidate_source === 'fallback_seed') {
+    return `지금은 ${timeframeLabel(timeframe)} 빠른 fallback 후보를 먼저 보여주고 있어 live 후보가 잠시 비어 있을 수 있습니다.`
+  }
+  return '현재 조건을 동시에 만족하는 live 분봉 후보가 없습니다.'
 }

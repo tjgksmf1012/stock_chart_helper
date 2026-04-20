@@ -19,6 +19,8 @@ from .timeframe_service import DEFAULT_TIMEFRAME, timeframe_label
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+INTRADAY_SCAN_BATCH_SIZE = 4
+INTRADAY_QUICK_SCAN_BATCH_SIZE = 3
 
 FALLBACK_CODES: list[tuple[str, str, str]] = [
     ("005930", "삼성전자", "KOSPI"),
@@ -50,6 +52,7 @@ ANCHOR_TIMEFRAMES: dict[str, list[str]] = {
 
 _scan_lock = asyncio.Lock()
 _scan_tasks: dict[str, asyncio.Task] = {}
+_quick_scan_tasks: dict[str, asyncio.Task] = {}
 _scan_status: dict[str, dict[str, Any]] = {}
 _KST = ZoneInfo("Asia/Seoul")
 
@@ -906,6 +909,31 @@ async def _select_candidates(limit: int, timeframe: str) -> tuple[list[tuple[str
     return fallback, "krx_universe_fallback", live_codes, live_phase
 
 
+def _effective_batch_size(timeframe: str, requested: int, *, quick: bool = False) -> int:
+    if timeframe not in {"1m", "15m", "30m", "60m"}:
+        return max(1, requested)
+    limit = INTRADAY_QUICK_SCAN_BATCH_SIZE if quick else INTRADAY_SCAN_BATCH_SIZE
+    return max(1, min(requested, limit))
+
+
+def _decorate_intraday_result(
+    item: dict[str, Any],
+    timeframe: str,
+    *,
+    live_codes: set[str],
+    live_phase: str,
+) -> dict[str, Any]:
+    item["live_intraday_candidate"] = item.get("code") in live_codes
+    item["live_intraday_reason"] = _live_intraday_reason(item, timeframe, live_phase) if item["live_intraday_candidate"] else ""
+    item["non_live_intraday_reason"] = (
+        ""
+        if item["live_intraday_candidate"]
+        else _non_live_intraday_reason(item, timeframe, live_phase, len(live_codes))
+    )
+    item["intraday_collection_mode"] = _intraday_collection_mode(item)
+    return item
+
+
 async def run_scan(
     timeframe: str = DEFAULT_TIMEFRAME,
     limit: int = 100,
@@ -954,9 +982,10 @@ async def run_scan(
                 intraday_live_phase=(live_phase if timeframe in {"1m", "15m", "30m", "60m"} else None),
             )
 
+            effective_batch_size = _effective_batch_size(timeframe, batch_size)
             results: list[dict[str, Any]] = []
-            for index in range(0, len(universe), batch_size):
-                batch = universe[index:index + batch_size]
+            for index in range(0, len(universe), effective_batch_size):
+                batch = universe[index:index + effective_batch_size]
                 tasks = [
                     _analyze_one(
                         code,
@@ -972,20 +1001,9 @@ async def run_scan(
                 for item in batch_results:
                     if isinstance(item, dict):
                         if timeframe in {"1m", "15m", "30m", "60m"}:
-                            item["live_intraday_candidate"] = item.get("code") in live_codes
-                            item["live_intraday_reason"] = (
-                                _live_intraday_reason(item, timeframe, live_phase)
-                                if item["live_intraday_candidate"]
-                                else ""
-                            )
-                            item["non_live_intraday_reason"] = (
-                                ""
-                                if item["live_intraday_candidate"]
-                                else _non_live_intraday_reason(item, timeframe, live_phase, len(live_codes))
-                            )
-                            item["intraday_collection_mode"] = _intraday_collection_mode(item)
+                            item = _decorate_intraday_result(item, timeframe, live_codes=live_codes, live_phase=live_phase)
                         results.append(item)
-                await asyncio.sleep(0.08)
+                await asyncio.sleep(0.12 if timeframe in {"1m", "15m", "30m", "60m"} else 0.08)
 
             results.sort(
                 key=lambda row: (
@@ -1060,7 +1078,11 @@ async def trigger_scan(
 
 
 async def _build_quick_scan_results(timeframe: str) -> tuple[list[dict[str, Any]], list[tuple[str, str, str]], int, str]:
-    fallback = FALLBACK_CODES if timeframe == "1d" else FALLBACK_CODES[: min(len(FALLBACK_CODES), settings.intraday_seed_limit)]
+    fallback = (
+        FALLBACK_CODES
+        if timeframe == "1d"
+        else FALLBACK_CODES[: min(len(FALLBACK_CODES), max(8, min(settings.intraday_live_candidate_limit, 10)))]
+    )
     intraday_live_limit, intraday_live_phase = (
         _effective_live_intraday_limit(timeframe, len(fallback))
         if timeframe in {"1m", "15m", "30m", "60m"}
@@ -1071,34 +1093,29 @@ async def _build_quick_scan_results(timeframe: str) -> tuple[list[dict[str, Any]
         if timeframe in {"1m", "15m", "30m", "60m"}
         else set()
     )
-    quick = await asyncio.gather(
-        *[
-            _analyze_one(
-                code,
-                name,
-                market,
-                timeframe,
-                allow_live_intraday=False if timeframe in {"1m", "15m", "30m", "60m"} else True,
-            )
-            for code, name, market in fallback
-        ],
-        return_exceptions=True,
-    )
-    results = [item for item in quick if isinstance(item, dict)]
+    effective_batch_size = _effective_batch_size(timeframe, len(fallback), quick=True)
+    results: list[dict[str, Any]] = []
+    for index in range(0, len(fallback), effective_batch_size):
+        batch = fallback[index:index + effective_batch_size]
+        quick = await asyncio.gather(
+            *[
+                _analyze_one(
+                    code,
+                    name,
+                    market,
+                    timeframe,
+                    allow_live_intraday=False if timeframe in {"1m", "15m", "30m", "60m"} else True,
+                )
+                for code, name, market in batch
+            ],
+            return_exceptions=True,
+        )
+        results.extend(item for item in quick if isinstance(item, dict))
+        if timeframe in {"1m", "15m", "30m", "60m"}:
+            await asyncio.sleep(0.1)
     if timeframe in {"1m", "15m", "30m", "60m"}:
         for item in results:
-            item["live_intraday_candidate"] = item.get("code") in fallback_live_codes
-            item["live_intraday_reason"] = (
-                _live_intraday_reason(item, timeframe, intraday_live_phase)
-                if item["live_intraday_candidate"]
-                else ""
-            )
-            item["non_live_intraday_reason"] = (
-                ""
-                if item["live_intraday_candidate"]
-                else _non_live_intraday_reason(item, timeframe, intraday_live_phase, intraday_live_limit)
-            )
-            item["intraday_collection_mode"] = _intraday_collection_mode(item)
+            _decorate_intraday_result(item, timeframe, live_codes=fallback_live_codes, live_phase=intraday_live_phase)
 
     results.sort(
         key=lambda row: (
@@ -1114,6 +1131,43 @@ async def _build_quick_scan_results(timeframe: str) -> tuple[list[dict[str, Any]
         reverse=True,
     )
     return results, fallback, intraday_live_limit, intraday_live_phase
+
+
+async def _bootstrap_intraday_quick_scan(timeframe: str, cache_key: str) -> list[dict[str, Any]]:
+    quick_task = asyncio.current_task()
+    try:
+        results, fallback, intraday_live_limit, intraday_live_phase = await _build_quick_scan_results(timeframe)
+        if results:
+            await cache_set(cache_key, results, ttl=180)
+        _update_scan_status(
+            timeframe,
+            status="warming",
+            cached_result_count=len(results),
+            universe_size=len(fallback),
+            candidate_source="fallback_seed",
+            candidate_count=len(fallback),
+            intraday_live_candidate_limit=intraday_live_limit,
+            intraday_live_candidate_count=intraday_live_limit,
+            intraday_live_phase=intraday_live_phase,
+            last_finished_at=_utc_now_iso(),
+            source="fallback",
+        )
+        await trigger_scan(timeframe=timeframe, force_refresh=True, source="background")
+        return results
+    except Exception as exc:
+        logger.warning("Quick scan bootstrap failed for %s: %s", timeframe, exc)
+        _update_scan_status(
+            timeframe,
+            status="error",
+            is_running=False,
+            last_error=str(exc),
+            last_finished_at=_utc_now_iso(),
+        )
+        return []
+    finally:
+        current_task = _quick_scan_tasks.get(timeframe)
+        if current_task is quick_task:
+            _quick_scan_tasks.pop(timeframe, None)
 
 
 async def get_scan_results(timeframe: str = DEFAULT_TIMEFRAME) -> list[dict[str, Any]]:
@@ -1151,6 +1205,11 @@ async def get_scan_results(timeframe: str = DEFAULT_TIMEFRAME) -> list[dict[str,
             quick_cached = await cache_get(cache_key)
             return quick_cached or []
 
+        quick_task = _quick_scan_tasks.get(timeframe)
+        if quick_task and not quick_task.done():
+            quick_cached = await cache_get(cache_key)
+            return quick_cached or []
+
         _update_scan_status(
             timeframe,
             status="warming",
@@ -1160,24 +1219,16 @@ async def get_scan_results(timeframe: str = DEFAULT_TIMEFRAME) -> list[dict[str,
             candidate_count=0,
             cached_result_count=0,
         )
-        results, fallback, intraday_live_limit, intraday_live_phase = await _build_quick_scan_results(timeframe)
-        if results:
-            await cache_set(cache_key, results, ttl=180)
-        _update_scan_status(
-            timeframe,
-            status="warming",
-            cached_result_count=len(results),
-            universe_size=len(fallback),
-            candidate_source="fallback_seed",
-            candidate_count=len(fallback),
-            intraday_live_candidate_limit=intraday_live_limit,
-            intraday_live_candidate_count=intraday_live_limit,
-            intraday_live_phase=intraday_live_phase,
-            last_finished_at=_utc_now_iso(),
-            source="fallback",
-        )
-        await trigger_scan(timeframe=timeframe, force_refresh=True, source="background")
-        return results
+        try:
+            if not quick_task or quick_task.done():
+                quick_task = asyncio.create_task(_bootstrap_intraday_quick_scan(timeframe, cache_key))
+                _quick_scan_tasks[timeframe] = quick_task
+            await asyncio.wait_for(asyncio.shield(quick_task), timeout=3.5)
+        except asyncio.TimeoutError:
+            quick_cached = await cache_get(cache_key)
+            return quick_cached or []
+        quick_cached = await cache_get(cache_key)
+        return quick_cached or []
 
     _update_scan_status(timeframe, status="warming", is_running=False, source="fallback")
     results, fallback, intraday_live_limit, intraday_live_phase = await _build_quick_scan_results(timeframe)
