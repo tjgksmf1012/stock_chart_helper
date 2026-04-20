@@ -1,8 +1,10 @@
-﻿import type { MouseEvent } from 'react'
+﻿import { useState, type MouseEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AlertTriangle, Layers3, Star } from 'lucide-react'
+import { useMutation } from '@tanstack/react-query'
+import { AlertTriangle, Bookmark, Layers3, Star } from 'lucide-react'
 
 import type { DashboardItem } from '@/types/api'
+import { outcomesApi } from '@/lib/api'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { ProbBar } from '@/components/ui/ProbBar'
@@ -31,6 +33,26 @@ export function DashboardCard({ item, intradayPreset }: DashboardCardProps) {
   const { addToWatchlist, removeFromWatchlist, isWatched, setTimeframe } = useAppStore()
   const watched = isWatched(item.symbol.code)
   const isIntraday = ['1m', '15m', '30m', '60m'].includes(item.timeframe)
+  const [savedId, setSavedId] = useState<number | null>(null)
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      outcomesApi.record({
+        symbol_code: item.symbol.code,
+        symbol_name: item.symbol.name,
+        pattern_type: item.pattern_type ?? 'no_pattern',
+        timeframe: item.timeframe,
+        signal_date: new Date().toISOString().slice(0, 10),
+        entry_price: 0,
+        target_price: null,
+        stop_price: null,
+        outcome: 'pending',
+        p_up_at_signal: item.p_up,
+        composite_score_at_signal: item.trade_readiness_score ?? 0,
+        textbook_similarity_at_signal: item.textbook_similarity,
+        trade_readiness_at_signal: item.trade_readiness_score ?? 0,
+      }),
+    onSuccess: result => setSavedId(result.id),
+  })
 
   const toggleWatch = (event: MouseEvent) => {
     event.stopPropagation()
@@ -97,6 +119,21 @@ export function DashboardCard({ item, intradayPreset }: DashboardCardProps) {
             title={watched ? '관심종목 해제' : '관심종목 추가'}
           >
             <Star size={14} className={watched ? 'fill-yellow-400' : ''} />
+          </button>
+          <button
+            onClick={event => {
+              event.stopPropagation()
+              if (savedId != null || saveMutation.isPending) return
+              saveMutation.mutate()
+            }}
+            disabled={savedId != null || saveMutation.isPending}
+            className={cn(
+              'rounded p-1.5 transition-colors',
+              savedId != null ? 'text-primary' : 'text-muted-foreground hover:text-primary disabled:opacity-40',
+            )}
+            title={savedId != null ? '저장됨' : '신호 저장'}
+          >
+            <Bookmark size={14} className={savedId != null ? 'fill-primary' : ''} />
           </button>
         </div>
       </div>
