@@ -24,6 +24,7 @@ export default function PatternPerformancePage() {
     queryFn: patternsApi.stats,
     staleTime: 60_000,
   })
+
   const refreshMutation = useMutation({
     mutationFn: patternsApi.refreshStats,
     onSuccess: () => {
@@ -60,7 +61,7 @@ export default function PatternPerformancePage() {
         <div>
           <h1 className="text-xl font-bold">패턴 성과 리포트</h1>
           <p className="text-xs text-muted-foreground">
-            패턴별 백테스트 승률, 표본 수, 평균 MFE/MAE, 평균 결과 봉 수를 타임프레임별로 확인하는 화면입니다.
+            패턴별 백테스트 승률, 표본 수, 평균 MFE/MAE, 평균 결과 도달 바 수를 타임프레임별로 확인하는 화면입니다.
           </p>
         </div>
       </div>
@@ -94,7 +95,7 @@ export default function PatternPerformancePage() {
 
         {refreshMutation.isSuccess && (
           <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
-            백테스트 집계를 백그라운드로 시작했습니다. 잠시 뒤 리포트가 새 통계로 갱신됩니다.
+            백테스트 집계를 백그라운드로 시작했습니다. 잠시 후 리포트가 최신 통계로 갱신됩니다.
           </div>
         )}
 
@@ -105,6 +106,14 @@ export default function PatternPerformancePage() {
             <SummaryCell icon={<Activity size={14} className="text-primary" />} label="총 표본 수" value={`${summary.totalSamples}건`} />
           </div>
         )}
+      </Card>
+
+      <Card className="space-y-2 border-primary/20 bg-primary/5">
+        <div className="text-sm font-semibold">읽는 법</div>
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          edge와 승률은 패턴의 평균적인 통계일 뿐입니다. 실전에서는 현재 차트의 신선도, 데이터 품질, 거래 준비도, 진입 구간을
+          같이 봐야 하며, 표본 수가 작은 패턴은 참고 강도를 낮추는 편이 좋습니다.
+        </p>
       </Card>
 
       {isLoading ? (
@@ -157,9 +166,11 @@ function PatternStatCard({ item, rank }: { item: PatternStatsEntry; rank: number
         <span className="text-right">평균 MAE {fmtPct(item.avg_mae_pct)}</span>
         <span className="flex items-center gap-1">
           <Clock3 size={12} />
-          평균 결과 봉 수 {item.avg_bars_to_outcome.toFixed(1)}
+          평균 결과 도달 {item.avg_bars_to_outcome.toFixed(1)}바
         </span>
-        <span className="text-right">wins/total {item.wins}/{item.total}</span>
+        <span className="text-right">
+          wins / total {item.wins}/{item.total}
+        </span>
       </div>
     </Card>
   )

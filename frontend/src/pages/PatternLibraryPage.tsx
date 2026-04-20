@@ -120,10 +120,18 @@ export default function PatternLibraryPage() {
         <div>
           <h1 className="text-xl font-bold">차트 패턴 라이브러리</h1>
           <p className="text-xs text-muted-foreground">
-            교과서형 패턴의 정의, 구조 조건, 확인 조건, 무효화 기준을 한 번에 정리해 둔 참고 화면입니다.
+            교과서형 패턴의 정의, 구조 조건, 확인 조건, 무효화 기준을 한 번에 정리한 참고 화면입니다.
           </p>
         </div>
       </div>
+
+      <Card className="space-y-3 border-primary/20 bg-primary/5">
+        <div className="text-sm font-semibold">활용 팁</div>
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          이 화면은 “이 패턴이 원래 어떻게 생겼는지”를 확인하는 용도입니다. 실제 매매에서는 차트 화면의 신선도, 거래 준비도,
+          진입 구간, 재진입 구조를 함께 봐야 하며, 교과서 유사도만 높다고 바로 강한 종목은 아닙니다.
+        </p>
+      </Card>
 
       <div className="flex gap-2">
         {(['all', 'bullish', 'bearish', 'neutral'] as const).map(value => (
@@ -151,7 +159,9 @@ export default function PatternLibraryPage() {
         <div className="py-10 text-center text-muted-foreground">불러오는 중...</div>
       ) : (
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          {filtered.map(entry => <PatternCard key={entry.pattern_type} entry={entry} />)}
+          {filtered.map(entry => (
+            <PatternCard key={entry.pattern_type} entry={entry} />
+          ))}
         </div>
       )}
     </div>
