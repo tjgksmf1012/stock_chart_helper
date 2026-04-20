@@ -1,16 +1,43 @@
-﻿import { useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Download, Loader2, Search, SlidersHorizontal } from 'lucide-react'
+import { Download, FilterX, Loader2, Search, SlidersHorizontal, Sparkles } from 'lucide-react'
 
 import { DashboardCard } from '@/components/dashboard/DashboardCard'
+import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { QueryError } from '@/components/ui/QueryError'
 import { screenerApi } from '@/lib/api'
 import { TIMEFRAME_OPTIONS } from '@/lib/timeframes'
+import { fmtPct } from '@/lib/utils'
 import type { DashboardItem, ScreenerRequest, Timeframe } from '@/types/api'
 
 type IntradayView = 'all' | 'live' | 'stored' | 'public' | 'mixed' | 'cooldown'
 type IntradayPreset = 'all' | 'ready-now' | 'watch' | 'recheck' | 'cooling'
+type QuickPresetId = 'daily-ready' | 'daily-fresh' | 'intraday-ready' | 'intraday-watch' | 'reentry-focus'
+
+const DEFAULT_SCREENER_REQUEST: ScreenerRequest = {
+  min_textbook_similarity: 0.25,
+  min_p_up: 0.0,
+  min_confidence: 0.2,
+  min_sample_reliability: 0.1,
+  min_data_quality: 0.3,
+  min_trade_readiness_score: 0.25,
+  min_entry_window_score: 0.15,
+  min_freshness_score: 0.15,
+  min_reentry_score: 0.1,
+  min_reentry_compression_score: 0.1,
+  min_reentry_volume_recovery_score: 0.1,
+  min_reentry_trigger_hold_score: 0.1,
+  min_reentry_wick_absorption_score: 0.1,
+  min_reentry_failure_burden_score: 0.1,
+  min_active_setup_score: 0.15,
+  min_confluence_score: 0.0,
+  min_historical_edge_score: 0.15,
+  exclude_no_signal: true,
+  sort_by: 'composite_score',
+  limit: 20,
+  timeframes: ['1d'],
+}
 
 const PATTERN_OPTIONS = [
   { value: 'double_bottom', label: '이중 바닥 (W)' },
@@ -73,6 +100,93 @@ const SORT_OPTIONS: Array<{ value: NonNullable<ScreenerRequest['sort_by']>; labe
   { value: 'p_down', label: '하락 확률' },
 ]
 
+const QUICK_PRESETS: Array<{
+  id: QuickPresetId
+  label: string
+  description: string
+  build: () => ScreenerRequest
+}> = [
+  {
+    id: 'daily-ready',
+    label: '일봉 실전형',
+    description: '지금 당장 검토할 일봉 후보를 좁힙니다.',
+    build: () => ({
+      ...DEFAULT_SCREENER_REQUEST,
+      timeframes: ['1d'],
+      states: ['armed', 'confirmed'],
+      min_trade_readiness_score: 0.45,
+      min_entry_window_score: 0.35,
+      min_freshness_score: 0.35,
+      min_historical_edge_score: 0.2,
+      sort_by: 'trade_readiness_score',
+      limit: 20,
+    }),
+  },
+  {
+    id: 'daily-fresh',
+    label: '일봉 신선도',
+    description: '이미 끝난 패턴보다 아직 살아있는 일봉 구조를 봅니다.',
+    build: () => ({
+      ...DEFAULT_SCREENER_REQUEST,
+      timeframes: ['1d', '1wk'],
+      states: ['forming', 'armed'],
+      min_freshness_score: 0.45,
+      min_active_setup_score: 0.3,
+      min_trade_readiness_score: 0.25,
+      sort_by: 'freshness_score',
+      limit: 24,
+    }),
+  },
+  {
+    id: 'intraday-ready',
+    label: '분봉 즉시형',
+    description: 'live/confirmed 쪽으로 바로 볼 분봉 후보를 찾습니다.',
+    build: () => ({
+      ...DEFAULT_SCREENER_REQUEST,
+      timeframes: ['60m', '30m', '15m'],
+      states: ['armed', 'confirmed'],
+      min_trade_readiness_score: 0.45,
+      min_entry_window_score: 0.4,
+      min_data_quality: 0.45,
+      min_historical_edge_score: 0.2,
+      sort_by: 'entry_window_score',
+      limit: 24,
+    }),
+  },
+  {
+    id: 'intraday-watch',
+    label: '분봉 관찰형',
+    description: 'forming/watch 중심으로 장중 지켜볼 후보를 넓게 봅니다.',
+    build: () => ({
+      ...DEFAULT_SCREENER_REQUEST,
+      timeframes: ['60m', '30m', '15m'],
+      states: ['forming', 'armed'],
+      min_trade_readiness_score: 0.2,
+      min_entry_window_score: 0.1,
+      min_freshness_score: 0.25,
+      min_data_quality: 0.35,
+      sort_by: 'active_setup_score',
+      limit: 30,
+    }),
+  },
+  {
+    id: 'reentry-focus',
+    label: '재진입 집중',
+    description: '재축적/재돌파 계열만 따로 보고 싶을 때 씁니다.',
+    build: () => ({
+      ...DEFAULT_SCREENER_REQUEST,
+      timeframes: ['1d', '60m'],
+      reentry_cases: ['box_reaccumulation', 'pullback_relaunch', 'failed_breakout_recovery'],
+      min_reentry_score: 0.35,
+      min_reentry_volume_recovery_score: 0.25,
+      min_reentry_trigger_hold_score: 0.25,
+      min_freshness_score: 0.25,
+      sort_by: 'reentry_score',
+      limit: 24,
+    }),
+  },
+]
+
 function exportToCsv(items: DashboardItem[]) {
   const headers = [
     '종목코드', '종목명', '시장', '타임프레임', '패턴', '상태',
@@ -118,32 +232,11 @@ function exportToCsv(items: DashboardItem[]) {
 }
 
 export default function ScreenerPage() {
-  const [req, setReq] = useState<ScreenerRequest>({
-    min_textbook_similarity: 0.25,
-    min_p_up: 0.0,
-    min_confidence: 0.2,
-    min_sample_reliability: 0.1,
-    min_data_quality: 0.3,
-    min_trade_readiness_score: 0.25,
-    min_entry_window_score: 0.15,
-    min_freshness_score: 0.15,
-    min_reentry_score: 0.1,
-    min_reentry_compression_score: 0.1,
-    min_reentry_volume_recovery_score: 0.1,
-    min_reentry_trigger_hold_score: 0.1,
-    min_reentry_wick_absorption_score: 0.1,
-    min_reentry_failure_burden_score: 0.1,
-    min_active_setup_score: 0.15,
-    min_confluence_score: 0.0,
-    min_historical_edge_score: 0.15,
-    exclude_no_signal: true,
-    sort_by: 'composite_score',
-    limit: 20,
-    timeframes: ['1d'],
-  })
+  const [req, setReq] = useState<ScreenerRequest>(DEFAULT_SCREENER_REQUEST)
   const [submitted, setSubmitted] = useState(false)
   const [intradayView, setIntradayView] = useState<IntradayView>('all')
   const [intradayPreset, setIntradayPreset] = useState<IntradayPreset>('all')
+  const [activeQuickPreset, setActiveQuickPreset] = useState<QuickPresetId | null>(null)
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['screener', req],
@@ -221,6 +314,9 @@ export default function ScreenerPage() {
     }
   }, [filteredData])
 
+  const activeFilterCount = useMemo(() => countActiveFilters(req), [req])
+  const topCandidates = useMemo(() => results.slice(0, 3), [results])
+
   const run = () => {
     setSubmitted(true)
     refetch()
@@ -248,6 +344,24 @@ export default function ScreenerPage() {
       limit: Math.max(current.limit ?? 20, 30),
     }))
     setSubmitted(true)
+    setActiveQuickPreset(null)
+  }
+
+  const resetFilters = () => {
+    setReq(DEFAULT_SCREENER_REQUEST)
+    setIntradayView('all')
+    setIntradayPreset('all')
+    setActiveQuickPreset(null)
+  }
+
+  const applyQuickPreset = (presetId: QuickPresetId) => {
+    const preset = QUICK_PRESETS.find(item => item.id === presetId)
+    if (!preset) return
+    setReq(preset.build())
+    setIntradayView('all')
+    setIntradayPreset(presetId === 'intraday-ready' ? 'ready-now' : presetId === 'intraday-watch' ? 'watch' : 'all')
+    setActiveQuickPreset(presetId)
+    setSubmitted(true)
   }
 
   const toggleMultiValue = (field: 'pattern_types' | 'states' | 'markets' | 'fetch_statuses' | 'reentry_cases', value: string) => {
@@ -258,6 +372,7 @@ export default function ScreenerPage() {
         [field]: selected ? current[field]?.filter(item => item !== value) : [...(current[field] ?? []), value],
       }
     })
+    setActiveQuickPreset(null)
   }
 
   const toggleTimeframe = (value: Timeframe) => {
@@ -268,6 +383,7 @@ export default function ScreenerPage() {
         timeframes: selected ? current.timeframes?.filter(item => item !== value) : [...(current.timeframes ?? []), value],
       }
     })
+    setActiveQuickPreset(null)
   }
 
   return (
@@ -281,6 +397,82 @@ export default function ScreenerPage() {
           </p>
         </div>
       </div>
+
+      <Card className="space-y-4 border-primary/20 bg-primary/5">
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          <Sparkles size={15} className="text-primary" />
+          빠른 시작 프리셋
+        </div>
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          처음부터 모든 슬라이더를 만지지 않아도 되도록, 자주 쓰는 실전 시나리오를 미리 묶어 두었습니다. 프리셋을 누른 뒤 바로 실행하거나, 그 상태에서 세부 조건만 조금 수정하면 됩니다.
+        </p>
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-5">
+          {QUICK_PRESETS.map(preset => (
+            <button
+              key={preset.id}
+              onClick={() => applyQuickPreset(preset.id)}
+              className={`rounded-xl border p-3 text-left transition-colors ${
+                activeQuickPreset === preset.id
+                  ? 'border-primary/40 bg-primary/10'
+                  : 'border-border bg-background/60 hover:border-primary/30'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-sm font-semibold">{preset.label}</div>
+                {activeQuickPreset === preset.id && <Badge variant="bullish">활성</Badge>}
+              </div>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{preset.description}</p>
+            </button>
+          ))}
+        </div>
+      </Card>
+
+      <Card className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold">현재 필터 상태</div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              선택된 타임프레임 {req.timeframes?.length ?? 0}개 · 활성 필터 {activeFilterCount}개 · 정렬 기준{' '}
+              {SORT_OPTIONS.find(option => option.value === (req.sort_by ?? 'composite_score'))?.label}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={run}
+              className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            >
+              <Search size={14} />
+              스크리너 실행
+            </button>
+            <button
+              onClick={resetFilters}
+              className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <FilterX size={14} />
+              필터 초기화
+            </button>
+            {results.length > 0 && (
+              <button
+                onClick={() => exportToCsv(results)}
+                className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+                title="검색 결과를 CSV로 내보내기"
+              >
+                <Download size={14} />
+                CSV 내보내기
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <Badge variant="muted">타임프레임 {req.timeframes?.map(timeframe => TIMEFRAME_OPTIONS.find(option => option.value === timeframe)?.label ?? timeframe).join(', ')}</Badge>
+          <Badge variant="muted">정렬 {SORT_OPTIONS.find(option => option.value === (req.sort_by ?? 'composite_score'))?.label}</Badge>
+          {(req.exclude_no_signal ?? true) && <Badge variant="warning">No Signal 제외</Badge>}
+          {(req.min_trade_readiness_score ?? 0) >= 0.4 && <Badge variant="bullish">준비도 엄격</Badge>}
+          {(req.min_freshness_score ?? 0) >= 0.4 && <Badge variant="neutral">신선도 엄격</Badge>}
+          {(req.min_reentry_score ?? 0) >= 0.3 && <Badge variant="neutral">재진입 엄격</Badge>}
+        </div>
+      </Card>
 
       <div className="grid grid-cols-1 gap-4 rounded-lg border border-border bg-card p-4 md:grid-cols-2 lg:grid-cols-3">
         <FilterGroup label="타임프레임">
@@ -397,28 +589,28 @@ export default function ScreenerPage() {
           </div>
         </FilterGroup>
 
-        <SliderGroup label="최소 교과서 유사도" value={req.min_textbook_similarity ?? 0} onChange={value => setReq(current => ({ ...current, min_textbook_similarity: value }))} />
-        <SliderGroup label="최소 상승 확률" value={req.min_p_up ?? 0} onChange={value => setReq(current => ({ ...current, min_p_up: value }))} />
-        <SliderGroup label="최소 신뢰도" value={req.min_confidence ?? 0} onChange={value => setReq(current => ({ ...current, min_confidence: value }))} />
-        <SliderGroup label="최소 표본 신뢰도" value={req.min_sample_reliability ?? 0} onChange={value => setReq(current => ({ ...current, min_sample_reliability: value }))} />
-        <SliderGroup label="최소 데이터 품질" value={req.min_data_quality ?? 0} onChange={value => setReq(current => ({ ...current, min_data_quality: value }))} />
-        <SliderGroup label="최소 거래 준비도" value={req.min_trade_readiness_score ?? 0} onChange={value => setReq(current => ({ ...current, min_trade_readiness_score: value }))} />
-        <SliderGroup label="최소 진입 구간" value={req.min_entry_window_score ?? 0} onChange={value => setReq(current => ({ ...current, min_entry_window_score: value }))} />
-        <SliderGroup label="최소 패턴 신선도" value={req.min_freshness_score ?? 0} onChange={value => setReq(current => ({ ...current, min_freshness_score: value }))} />
-        <SliderGroup label="최소 재진입 구조" value={req.min_reentry_score ?? 0} onChange={value => setReq(current => ({ ...current, min_reentry_score: value }))} />
-        <SliderGroup label="최소 박스 수축도" value={req.min_reentry_compression_score ?? 0} onChange={value => setReq(current => ({ ...current, min_reentry_compression_score: value }))} />
-        <SliderGroup label="최소 거래량 복원" value={req.min_reentry_volume_recovery_score ?? 0} onChange={value => setReq(current => ({ ...current, min_reentry_volume_recovery_score: value }))} />
-        <SliderGroup label="최소 기준선 유지력" value={req.min_reentry_trigger_hold_score ?? 0} onChange={value => setReq(current => ({ ...current, min_reentry_trigger_hold_score: value }))} />
-        <SliderGroup label="최소 꼬리 흡수력" value={req.min_reentry_wick_absorption_score ?? 0} onChange={value => setReq(current => ({ ...current, min_reentry_wick_absorption_score: value }))} />
-        <SliderGroup label="최소 실패 부담 관리" value={req.min_reentry_failure_burden_score ?? 0} onChange={value => setReq(current => ({ ...current, min_reentry_failure_burden_score: value }))} />
-        <SliderGroup label="최소 활성 셋업" value={req.min_active_setup_score ?? 0} onChange={value => setReq(current => ({ ...current, min_active_setup_score: value }))} />
-        <SliderGroup label="최소 정렬 점수" value={req.min_confluence_score ?? 0} onChange={value => setReq(current => ({ ...current, min_confluence_score: value }))} />
-        <SliderGroup label="최소 백테스트 edge" value={req.min_historical_edge_score ?? 0} onChange={value => setReq(current => ({ ...current, min_historical_edge_score: value }))} />
+        <SliderGroup label="최소 교과서 유사도" value={req.min_textbook_similarity ?? 0} onChange={value => updateReq(setReq, setActiveQuickPreset, { min_textbook_similarity: value })} />
+        <SliderGroup label="최소 상승 확률" value={req.min_p_up ?? 0} onChange={value => updateReq(setReq, setActiveQuickPreset, { min_p_up: value })} />
+        <SliderGroup label="최소 신뢰도" value={req.min_confidence ?? 0} onChange={value => updateReq(setReq, setActiveQuickPreset, { min_confidence: value })} />
+        <SliderGroup label="최소 표본 신뢰도" value={req.min_sample_reliability ?? 0} onChange={value => updateReq(setReq, setActiveQuickPreset, { min_sample_reliability: value })} />
+        <SliderGroup label="최소 데이터 품질" value={req.min_data_quality ?? 0} onChange={value => updateReq(setReq, setActiveQuickPreset, { min_data_quality: value })} />
+        <SliderGroup label="최소 거래 준비도" value={req.min_trade_readiness_score ?? 0} onChange={value => updateReq(setReq, setActiveQuickPreset, { min_trade_readiness_score: value })} />
+        <SliderGroup label="최소 진입 구간" value={req.min_entry_window_score ?? 0} onChange={value => updateReq(setReq, setActiveQuickPreset, { min_entry_window_score: value })} />
+        <SliderGroup label="최소 패턴 신선도" value={req.min_freshness_score ?? 0} onChange={value => updateReq(setReq, setActiveQuickPreset, { min_freshness_score: value })} />
+        <SliderGroup label="최소 재진입 구조" value={req.min_reentry_score ?? 0} onChange={value => updateReq(setReq, setActiveQuickPreset, { min_reentry_score: value })} />
+        <SliderGroup label="최소 박스 수축도" value={req.min_reentry_compression_score ?? 0} onChange={value => updateReq(setReq, setActiveQuickPreset, { min_reentry_compression_score: value })} />
+        <SliderGroup label="최소 거래량 복원" value={req.min_reentry_volume_recovery_score ?? 0} onChange={value => updateReq(setReq, setActiveQuickPreset, { min_reentry_volume_recovery_score: value })} />
+        <SliderGroup label="최소 기준선 유지력" value={req.min_reentry_trigger_hold_score ?? 0} onChange={value => updateReq(setReq, setActiveQuickPreset, { min_reentry_trigger_hold_score: value })} />
+        <SliderGroup label="최소 꼬리 흡수력" value={req.min_reentry_wick_absorption_score ?? 0} onChange={value => updateReq(setReq, setActiveQuickPreset, { min_reentry_wick_absorption_score: value })} />
+        <SliderGroup label="최소 실패 부담 관리" value={req.min_reentry_failure_burden_score ?? 0} onChange={value => updateReq(setReq, setActiveQuickPreset, { min_reentry_failure_burden_score: value })} />
+        <SliderGroup label="최소 활성 셋업" value={req.min_active_setup_score ?? 0} onChange={value => updateReq(setReq, setActiveQuickPreset, { min_active_setup_score: value })} />
+        <SliderGroup label="최소 정렬 점수" value={req.min_confluence_score ?? 0} onChange={value => updateReq(setReq, setActiveQuickPreset, { min_confluence_score: value })} />
+        <SliderGroup label="최소 백테스트 edge" value={req.min_historical_edge_score ?? 0} onChange={value => updateReq(setReq, setActiveQuickPreset, { min_historical_edge_score: value })} />
 
         <FilterGroup label="정렬 기준">
           <select
             value={req.sort_by ?? 'composite_score'}
-            onChange={event => setReq(current => ({ ...current, sort_by: event.target.value as ScreenerRequest['sort_by'] }))}
+            onChange={event => updateReq(setReq, setActiveQuickPreset, { sort_by: event.target.value as ScreenerRequest['sort_by'] })}
             className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
           >
             {SORT_OPTIONS.map(option => (
@@ -432,7 +624,7 @@ export default function ScreenerPage() {
         <FilterGroup label="결과 개수">
           <select
             value={req.limit ?? 20}
-            onChange={event => setReq(current => ({ ...current, limit: Number(event.target.value) }))}
+            onChange={event => updateReq(setReq, setActiveQuickPreset, { limit: Number(event.target.value) })}
             className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
           >
             {[10, 20, 30, 50].map(value => (
@@ -448,32 +640,12 @@ export default function ScreenerPage() {
             <input
               type="checkbox"
               checked={req.exclude_no_signal ?? true}
-              onChange={event => setReq(current => ({ ...current, exclude_no_signal: event.target.checked }))}
+              onChange={event => updateReq(setReq, setActiveQuickPreset, { exclude_no_signal: event.target.checked })}
               className="accent-primary"
             />
             <span className="text-xs text-muted-foreground">No Signal 종목 제외</span>
           </label>
         </FilterGroup>
-      </div>
-
-      <div className="flex items-center gap-2">
-        <button
-          onClick={run}
-          className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-        >
-          <Search size={14} />
-          스크리너 실행
-        </button>
-        {results.length > 0 && (
-          <button
-            onClick={() => exportToCsv(results)}
-            className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-            title="검색 결과를 CSV로 내보내기"
-          >
-            <Download size={14} />
-            CSV 내보내기
-          </button>
-        )}
       </div>
 
       {isLoading && (
@@ -503,7 +675,13 @@ export default function ScreenerPage() {
               조건 완화해서 다시 실행
             </button>
             <button
-              onClick={() => setReq(current => ({ ...current, timeframes: ['1d', '1wk'], limit: Math.max(current.limit ?? 20, 30) }))}
+              onClick={() => {
+                updateReq(setReq, setActiveQuickPreset, {
+                  timeframes: ['1d', '1wk'],
+                  limit: Math.max(req.limit ?? 20, 30),
+                })
+                setSubmitted(true)
+              }}
               className="rounded-md border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
             >
               일봉 + 주봉으로 넓혀보기
@@ -514,6 +692,18 @@ export default function ScreenerPage() {
 
       {!isLoading && !isError && data && results.length > 0 && (
         <div className="space-y-4">
+          <Card className="space-y-4 border-primary/20 bg-primary/5">
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <Sparkles size={15} className="text-primary" />
+              상위 후보 빠른 요약
+            </div>
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+              {topCandidates.map((item, index) => (
+                <TopCandidateCard key={`${item.timeframe}-${item.symbol.code}`} item={item} rank={index + 1} />
+              ))}
+            </div>
+          </Card>
+
           {intradayMode && (
             <>
               <div className="flex flex-wrap gap-2">
@@ -581,7 +771,7 @@ export default function ScreenerPage() {
                 <Card className="border-amber-500/20 bg-amber-500/5 text-amber-100">
                   <div className="text-sm font-semibold">빠른 예열 후보만 표시 중입니다</div>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    지금 보이는 점수와 평균값은 임시값입니다. 백그라운드 분봉 스캔이 끝나면 실제 패턴·준비도·재진입 구조로 자동 교체됩니다.
+                    지금 보이는 점수와 평균값은 임시값입니다. 백그라운드 분봉 스캔이 끝나면 실제 패턴, 준비도, 재진입 구조로 자동 교체됩니다.
                   </p>
                 </Card>
               )}
@@ -635,6 +825,15 @@ export default function ScreenerPage() {
       )}
     </div>
   )
+}
+
+function updateReq(
+  setReq: React.Dispatch<React.SetStateAction<ScreenerRequest>>,
+  setActiveQuickPreset: React.Dispatch<React.SetStateAction<QuickPresetId | null>>,
+  patch: Partial<ScreenerRequest>,
+) {
+  setReq(current => ({ ...current, ...patch }))
+  setActiveQuickPreset(null)
 }
 
 function FilterGroup({ label, children }: { label: string; children: ReactNode }) {
@@ -692,9 +891,36 @@ function SummaryStat({ label, value }: { label: string; value: string }) {
   )
 }
 
+function TopCandidateCard({ item, rank }: { item: DashboardItem; rank: number }) {
+  return (
+    <div className="rounded-xl border border-border bg-background/60 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <div className="text-xs text-muted-foreground">상위 후보 #{rank}</div>
+          <div className="mt-1 text-sm font-semibold">
+            {item.symbol.name} <span className="font-mono text-xs text-muted-foreground">{item.symbol.code}</span>
+          </div>
+        </div>
+        <Badge variant="muted">{item.timeframe_label}</Badge>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-1.5 text-xs">
+        <Badge variant={item.p_up >= 0.6 ? 'bullish' : 'neutral'}>상승 {fmtPct(item.p_up, 0)}</Badge>
+        <Badge variant={item.trade_readiness_score >= 0.6 ? 'bullish' : 'neutral'}>준비 {fmtPct(item.trade_readiness_score ?? 0, 0)}</Badge>
+        <Badge variant={item.entry_window_score >= 0.55 ? 'bullish' : 'warning'}>진입 {fmtPct(item.entry_window_score ?? 0, 0)}</Badge>
+      </div>
+      <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{item.action_plan_summary || item.reason_summary}</p>
+      {item.next_trigger && (
+        <div className="mt-2 text-xs text-primary">
+          다음 트리거: {item.next_trigger}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function buildScreenerGuidance(items: DashboardItem[]): string {
   if (items.length === 0) {
-    return '현재 조건에 맞는 결과가 없습니다. 신선도·준비도 조건을 조금 완화하거나 다른 타임프레임을 함께 보는 것이 좋습니다.'
+    return '현재 조건에 맞는 결과가 없습니다. 신선도, 준비도 조건을 조금 완화하거나 다른 타임프레임을 함께 보는 것이 좋습니다.'
   }
 
   const realItems = items.filter(item => !isPlaceholderItem(item))
@@ -724,6 +950,47 @@ function buildScreenerGuidance(items: DashboardItem[]): string {
   }
 
   return `아직은 형성 중이거나 재확인이 필요한 후보가 많습니다. 무리한 진입보다 목표가 소진 여부, 신선도, 재축적 여부를 먼저 체크하는 편이 좋습니다${dominantReentryCase ? `. 현재 주된 유형은 ${dominantReentryCase}입니다.` : '.'}`
+}
+
+function countActiveFilters(req: ScreenerRequest): number {
+  let count = 0
+  if ((req.timeframes?.length ?? 0) !== (DEFAULT_SCREENER_REQUEST.timeframes?.length ?? 0) || req.timeframes?.some(value => !(DEFAULT_SCREENER_REQUEST.timeframes ?? []).includes(value))) count += 1
+  if ((req.pattern_types?.length ?? 0) > 0) count += 1
+  if ((req.states?.length ?? 0) > 0) count += 1
+  if ((req.markets?.length ?? 0) > 0) count += 1
+  if ((req.fetch_statuses?.length ?? 0) > 0) count += 1
+  if ((req.reentry_cases?.length ?? 0) > 0) count += 1
+
+  const numericKeys: Array<keyof ScreenerRequest> = [
+    'min_textbook_similarity',
+    'min_p_up',
+    'min_confidence',
+    'min_sample_reliability',
+    'min_data_quality',
+    'min_trade_readiness_score',
+    'min_entry_window_score',
+    'min_freshness_score',
+    'min_reentry_score',
+    'min_reentry_compression_score',
+    'min_reentry_volume_recovery_score',
+    'min_reentry_trigger_hold_score',
+    'min_reentry_wick_absorption_score',
+    'min_reentry_failure_burden_score',
+    'min_active_setup_score',
+    'min_confluence_score',
+    'min_historical_edge_score',
+    'limit',
+  ]
+  for (const key of numericKeys) {
+    if ((req[key] as number | undefined) !== (DEFAULT_SCREENER_REQUEST[key] as number | undefined)) {
+      count += 1
+    }
+  }
+
+  if ((req.sort_by ?? DEFAULT_SCREENER_REQUEST.sort_by) !== DEFAULT_SCREENER_REQUEST.sort_by) count += 1
+  if ((req.exclude_no_signal ?? DEFAULT_SCREENER_REQUEST.exclude_no_signal) !== DEFAULT_SCREENER_REQUEST.exclude_no_signal) count += 1
+
+  return count
 }
 
 function isPlaceholderItem(item: DashboardItem): boolean {
