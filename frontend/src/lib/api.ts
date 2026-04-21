@@ -85,22 +85,21 @@ export const aiApi = {
 }
 
 async function fallbackAiRecommendations(timeframe: Timeframe, limit: number): Promise<AiRecommendationResponse> {
-  const requests = [
-    api.get<DashboardResponse>('/dashboard/long-high-probability', { params: { timeframe, limit: Math.max(limit, 10) } }),
-    api.get<DashboardResponse>('/dashboard/pattern-armed', { params: { timeframe, limit: Math.max(limit, 10) } }),
-    api.get<DashboardResponse>('/dashboard/forming-candidates', { params: { timeframe, limit: Math.max(limit, 10) } }),
-    api.get<DashboardResponse>('/dashboard/high-textbook-similarity', { params: { timeframe, limit: Math.max(limit, 10) } }),
-    api.get<DashboardResponse>('/dashboard/watchlist-no-signal', { params: { timeframe, limit: Math.max(limit, 10) } }),
-  ]
-  const settled = await Promise.allSettled(requests)
+  const overview = await api
+    .get<DashboardOverviewResponse>('/dashboard/overview', { params: { timeframe, limit: Math.max(limit, 10) } })
+    .then(response => response.data)
   const rows = new Map<string, DashboardItem>()
-  let timeframeLabel: string = timeframe
+  const timeframeLabel = overview.timeframe_label || timeframe
+  const sections: DashboardResponse[] = [
+    overview.long_high_probability,
+    overview.pattern_armed,
+    overview.forming_candidates,
+    overview.high_textbook_similarity,
+    overview.watchlist_no_signal,
+  ]
 
-  for (const result of settled) {
-    if (result.status !== 'fulfilled') continue
-    const response = result.value.data
-    timeframeLabel = response.timeframe_label || timeframeLabel
-    for (const item of response.items) {
+  for (const section of sections) {
+    for (const item of section.items) {
       const previous = rows.get(item.symbol.code)
       if (!previous || fallbackScore(item) > fallbackScore(previous)) {
         rows.set(item.symbol.code, item)
