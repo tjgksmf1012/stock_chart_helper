@@ -1,7 +1,7 @@
 import axios, { type InternalAxiosRequestConfig } from 'axios'
 import type {
   SymbolInfo, OHLCVBar, AnalysisResult, PriceInfo,
-  AiRecommendationResponse, DashboardOverviewResponse, DashboardResponse, PatternLibraryEntry, ScreenerRequest, DashboardItem, ScanStatusResponse, Timeframe,
+  AiRecommendationItem, AiRecommendationResponse, DashboardOverviewResponse, DashboardResponse, PatternLibraryEntry, ScreenerRequest, DashboardItem, ScanStatusResponse, Timeframe,
   IntradayCandidateWarmupRequest, IntradayWarmupJobStatus, IntradayWarmupRequest, IntradayWarmupResponse, PatternStatsResponse, RuntimeStatusResponse,
   WatchlistItem, OutcomeRecord, OutcomesSummary, OutcomeStatus,
 } from '@/types/api'
@@ -76,8 +76,154 @@ export const dashboardApi = {
 }
 
 export const aiApi = {
-  recommendations: (timeframe: Timeframe, limit = 8) =>
-    api.get<AiRecommendationResponse>('/ai/recommendations', { params: { timeframe, limit } }).then(r => r.data),
+  recommendations: async (timeframe: Timeframe, limit = 8) => {
+    try {
+      return await api.get<AiRecommendationResponse>('/ai/recommendations', { params: { timeframe, limit } }).then(r => r.data)
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        return fallbackAiRecommendations(timeframe, limit)
+      }
+      throw error
+    }
+  },
+}
+
+async function fallbackAiRecommendations(timeframe: Timeframe, limit: number): Promise<AiRecommendationResponse> {
+  const requests = [
+    api.get<DashboardResponse>('/dashboard/long-high-probability', { params: { timeframe, limit: Math.max(limit, 10) } }),
+    api.get<DashboardResponse>('/dashboard/pattern-armed', { params: { timeframe, limit: Math.max(limit, 10) } }),
+    api.get<DashboardResponse>('/dashboard/forming-candidates', { params: { timeframe, limit: Math.max(limit, 10) } }),
+    api.get<DashboardResponse>('/dashboard/high-textbook-similarity', { params: { timeframe, limit: Math.max(limit, 10) } }),
+    api.get<DashboardResponse>('/dashboard/watchlist-no-signal', { params: { timeframe, limit: Math.max(limit, 10) } }),
+  ]
+  const settled = await Promise.allSettled(requests)
+  const rows = new Map<string, DashboardItem>()
+  let timeframeLabel: string = timeframe
+
+  for (const result of settled) {
+    if (result.status !== 'fulfilled') continue
+    const response = result.value.data
+    timeframeLabel = response.timeframe_label || timeframeLabel
+    for (const item of response.items) {
+      const previous = rows.get(item.symbol.code)
+      if (!previous || fallbackScore(item) > fallbackScore(previous)) {
+        rows.set(item.symbol.code, item)
+      }
+    }
+  }
+
+  const ranked = Array.from(rows.values())
+    .map(item => makeFallbackRecommendation(item))
+    .sort((a, b) => b.score - a.score)
+  const items = rerankAiItems(ranked.slice(0, limit))
+  const priorityItems = rerankAiItems(ranked.filter(item => item.stance === 'priority_watch').slice(0, limit))
+  const watchItems = rerankAiItems(ranked.filter(item => item.stance === 'wait_for_trigger' || item.stance === 'avoid_chase').slice(0, limit))
+  const riskItems = rerankAiItems(ranked.filter(item => item.stance === 'risk_review').slice(0, limit))
+
+  return {
+    generated_at: new Date().toISOString(),
+    timeframe,
+    timeframe_label: timeframeLabel,
+    market_brief: `${timeframeLabel} 후보를 기존 스캔 API로 재계산했습니다. 우선 검토 ${priorityItems.length}개, 트리거 대기 ${watchItems.length}개, 리스크 점검 ${riskItems.length}개입니다.`,
+    portfolio_guidance: priorityItems[0]
+      ? `${priorityItems[0].symbol.name}처럼 준비도와 데이터 품질이 같이 맞는 후보를 먼저 보고, 같은 방향 후보가 과하게 겹치지 않게 관리하세요.`
+      : watchItems[0]
+        ? `${watchItems[0].symbol.name} 같은 트리거 대기 후보가 중심입니다. 확인 신호 전에는 관찰 비중을 유지하는 쪽이 좋습니다.`
+        : '강한 후보가 적습니다. 공격보다 관망과 리스크 점검이 우선입니다.',
+    items,
+    priority_items: priorityItems,
+    watch_items: watchItems,
+    risk_items: riskItems,
+    disclaimer: '투자 권유가 아닌 기술적 분석 보조 의견입니다. 실제 매매 전 재무, 뉴스, 수급, 손절 기준을 직접 확인하세요.',
+  }
+}
+
+function makeFallbackRecommendation(item: DashboardItem): AiRecommendationItem {
+  const score = fallbackScore(item)
+  const stance = fallbackStance(item, score)
+  return {
+    rank: 0,
+    symbol: item.symbol,
+    timeframe: item.timeframe,
+    timeframe_label: item.timeframe_label,
+    stance,
+    stance_label: stance === 'priority_watch' ? '우선 검토' : stance === 'wait_for_trigger' ? '트리거 대기' : stance === 'avoid_chase' ? '추격 금지' : '리스크 점검',
+    score,
+    confidence: clamp01(0.35 * item.confidence + 0.25 * item.sample_reliability + 0.25 * item.data_quality + 0.15 * item.liquidity_score),
+    source_category: item.live_intraday_candidate ? 'live_intraday' : item.no_signal_flag ? 'risk_watch' : item.state === 'forming' ? 'forming_pattern' : 'active_pattern',
+    summary:
+      stance === 'priority_watch'
+        ? `${item.symbol.name}은 패턴 구조와 거래 준비도가 함께 들어와 우선 관찰 후보입니다.`
+        : stance === 'avoid_chase'
+          ? `${item.symbol.name}은 방향성은 보이나 진입 구간 점수가 낮아 추격보다 눌림 확인이 우선입니다.`
+          : stance === 'wait_for_trigger'
+            ? `${item.symbol.name}은 구조는 살아 있지만 확인 트리거를 기다리는 편이 좋습니다.`
+            : `${item.symbol.name}은 현재 리스크와 데이터 품질을 먼저 점검해야 합니다.`,
+    reasons: [
+      `상승확률 ${(item.p_up * 100).toFixed(1)}%, 하락확률 ${(item.p_down * 100).toFixed(1)}%`,
+      `거래준비도 ${(item.trade_readiness_score * 100).toFixed(0)}%, 진입구간 ${(item.entry_window_score * 100).toFixed(0)}%`,
+      `데이터 품질 ${(item.data_quality * 100).toFixed(0)}%, 신뢰도 ${(item.confidence * 100).toFixed(0)}%`,
+      item.reason_summary || item.confluence_summary,
+    ].filter(Boolean),
+    risk_flags: item.risk_flags?.length ? item.risk_flags : item.trend_warning ? [item.trend_warning] : [],
+    next_actions: [
+      item.next_trigger,
+      ...(item.confirmation_checklist ?? []).slice(0, 3),
+      stance === 'priority_watch' ? '확인 신호와 손절 기준을 동시에 고정' : '트리거 충족 전에는 관심종목에만 보관',
+    ].filter(Boolean),
+    position_hint:
+      stance === 'priority_watch'
+        ? '우선 관찰 후보입니다. 진입은 확인 트리거 이후가 적합합니다.'
+        : stance === 'risk_review'
+          ? '현재는 방어적 판단이 우선입니다.'
+          : '관심종목에 두고 트리거가 맞을 때만 다시 평가하세요.',
+    pattern_type: item.pattern_type,
+    state: item.state,
+    p_up: item.p_up,
+    p_down: item.p_down,
+    trade_readiness_score: item.trade_readiness_score,
+    entry_window_score: item.entry_window_score,
+    freshness_score: item.freshness_score,
+    reward_risk_ratio: item.reward_risk_ratio,
+    data_quality: item.data_quality,
+    confluence_score: item.confluence_score,
+    next_trigger: item.next_trigger,
+    chart_path: `/chart/${item.symbol.code}`,
+  }
+}
+
+function fallbackScore(item: DashboardItem) {
+  const edge = clamp01((item.p_up - item.p_down + 0.2) / 0.55)
+  const raw =
+    0.2 * item.trade_readiness_score +
+    0.16 * item.entry_window_score +
+    0.12 * item.freshness_score +
+    0.1 * item.reentry_score +
+    0.1 * item.active_setup_score +
+    0.1 * item.historical_edge_score +
+    0.08 * item.confluence_score +
+    0.06 * item.data_quality +
+    0.04 * item.liquidity_score +
+    0.04 * edge -
+    (item.no_signal_flag ? 0.22 : 0) -
+    Math.min((item.risk_flags?.length ?? 0) * 0.035, 0.14)
+  return Math.round(clamp01(raw) * 1000) / 10
+}
+
+function fallbackStance(item: DashboardItem, score: number): AiRecommendationItem['stance'] {
+  if (item.no_signal_flag || item.data_quality < 0.38 || item.action_plan === 'cooling') return 'risk_review'
+  if (item.entry_window_score < 0.34 && item.p_up >= 0.58) return 'avoid_chase'
+  if (score >= 68 && item.p_up >= 0.55 && item.trade_readiness_score >= 0.5) return 'priority_watch'
+  if (score >= 52) return 'wait_for_trigger'
+  return 'risk_review'
+}
+
+function rerankAiItems(items: AiRecommendationItem[]) {
+  return items.map((item, index) => ({ ...item, rank: index + 1 }))
+}
+
+function clamp01(value: number) {
+  return Math.max(0, Math.min(1, value))
 }
 
 export const patternsApi = {
