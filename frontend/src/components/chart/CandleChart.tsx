@@ -47,8 +47,8 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
   useEffect(() => {
     if (!containerRef.current) return
 
-    const containerWidth = containerRef.current.clientWidth || containerRef.current.getBoundingClientRect().width || 600
     const chart = createChart(containerRef.current, {
+      autoSize: true,
       layout: {
         background: { type: ColorType.Solid, color: CHART_COLORS.background },
         textColor: CHART_COLORS.text,
@@ -60,8 +60,6 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
       crosshair: { mode: 1 },
       rightPriceScale: { borderColor: CHART_COLORS.border },
       timeScale: { borderColor: CHART_COLORS.border, timeVisible: true, secondsVisible: false },
-      width: containerWidth,
-      height: height - 80,
     })
 
     const candleSeries = chart.addCandlestickSeries({
@@ -84,15 +82,7 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
     candleRef.current = candleSeries
     volumeRef.current = volSeries
 
-    const resizeObserver = new ResizeObserver(() => {
-      if (containerRef.current) {
-        chart.resize(containerRef.current.clientWidth, height - 80)
-      }
-    })
-    resizeObserver.observe(containerRef.current)
-
     return () => {
-      resizeObserver.disconnect()
       chart.remove()
     }
   }, [height])
@@ -224,7 +214,7 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
 
   return (
     <div className="space-y-1">
-      <div ref={containerRef} className="chart-container w-full rounded-lg" style={{ height }} />
+      <div ref={containerRef} className="chart-container w-full rounded-lg" style={{ height: height - 80 }} />
       {analysis && (chartPattern || projectionScenarios.length > 0 || analysis.no_signal_flag) && (
         <div className="space-y-2 px-2 text-xs text-muted-foreground">
           <div className="flex flex-wrap items-center gap-4">
