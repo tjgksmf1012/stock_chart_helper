@@ -7,6 +7,7 @@ safe to run in the browser.
 from __future__ import annotations
 
 import json
+from json import JSONDecodeError
 from typing import Any
 
 import httpx
@@ -27,12 +28,13 @@ async def apply_openai_recommendation_overlay(response: AiRecommendationResponse
     try:
         overlay = await _request_overlay(payload)
     except Exception as exc:  # pragma: no cover - network/provider dependent
-        logger.warning("OpenAI recommendation overlay failed", error=str(exc))
+        error_code = _classify_openai_error(exc)
+        logger.warning("OpenAI recommendation overlay failed", error=str(exc), error_code=error_code)
         return response.model_copy(
             update={
                 "llm_enabled": False,
                 "llm_model": settings.openai_model,
-                "llm_error": "openai_unavailable",
+                "llm_error": error_code,
             }
         )
 
@@ -183,3 +185,20 @@ def _extract_output_text(data: dict[str, Any]) -> str:
             if content.get("type") in {"output_text", "text"} and content.get("text"):
                 chunks.append(str(content["text"]))
     return "".join(chunks)
+
+
+def _classify_openai_error(exc: Exception) -> str:
+    if isinstance(exc, httpx.TimeoutException):
+        return "openai_timeout"
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+        if status in {401, 403}:
+            return "openai_auth_error"
+        if status == 429:
+            return "openai_rate_limited"
+        if 400 <= status < 500:
+            return "openai_bad_request"
+        return "openai_provider_error"
+    if isinstance(exc, JSONDecodeError):
+        return "openai_output_parse_error"
+    return "openai_unavailable"
