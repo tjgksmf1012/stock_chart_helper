@@ -44,7 +44,7 @@ async def health() -> dict:
     return {"status": "ok", "version": "0.3.0"}
 
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 async def root() -> dict:
     return {"status": "ok", "service": "stock-chart-helper-api", "version": "0.3.0"}
 
