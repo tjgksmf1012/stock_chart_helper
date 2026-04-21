@@ -22,9 +22,13 @@ function resolveApiBase() {
 }
 
 const _base = resolveApiBase()
+const _directBase = import.meta.env.VITE_API_BASE_URL
+  ? `${String(import.meta.env.VITE_API_BASE_URL).replace(/\/$/, '')}/api/v1`
+  : 'https://stock-chart-helper-api.onrender.com/api/v1'
 
 interface RetryableAxiosConfig extends InternalAxiosRequestConfig {
   __retryCount?: number
+  __directFallbackTried?: boolean
 }
 
 const api = axios.create({ baseURL: _base, timeout: 120_000 })
@@ -42,7 +46,19 @@ api.interceptors.response.use(undefined, async error => {
     status === 503 ||
     status === 504
 
-  if (!config || method !== 'get' || !isTransient || (config.__retryCount ?? 0) >= 2) {
+  if (!config || method !== 'get' || !isTransient) {
+    return Promise.reject(error)
+  }
+
+  if ((config.baseURL ?? _base) === '/api/v1' && !config.__directFallbackTried) {
+    config.__directFallbackTried = true
+    config.__retryCount = 0
+    config.baseURL = _directBase
+    await new Promise(resolve => window.setTimeout(resolve, 700))
+    return api.request(config)
+  }
+
+  if ((config.__retryCount ?? 0) >= 2) {
     return Promise.reject(error)
   }
 
