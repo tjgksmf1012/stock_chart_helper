@@ -4,7 +4,7 @@ import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api.routes import dashboard, outcomes, patterns, screener, symbols, system, watchlist
+from .api.routes import ai, dashboard, outcomes, patterns, screener, symbols, system, watchlist
 from .core.config import get_settings
 
 logger = structlog.get_logger()
@@ -30,6 +30,7 @@ app.add_middleware(
 )
 
 app.include_router(symbols.router, prefix="/api/v1")
+app.include_router(ai.router, prefix="/api/v1")
 app.include_router(dashboard.router, prefix="/api/v1")
 app.include_router(patterns.router, prefix="/api/v1")
 app.include_router(screener.router, prefix="/api/v1")

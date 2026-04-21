@@ -1,12 +1,13 @@
 import { useEffect } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
-import { BarChart2, BookOpen, LayoutDashboard, ServerCog, SlidersHorizontal, Star, TrendingUp } from 'lucide-react'
+import { BarChart2, BookOpen, LayoutDashboard, ServerCog, SlidersHorizontal, Sparkles, Star, TrendingUp } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
 
 const NAV_ITEMS = [
   { to: '/', label: '대시보드', icon: LayoutDashboard, end: true },
+  { to: '/ai', label: 'AI 추천', icon: Sparkles, end: true },
   { to: '/chart', label: '차트 분석', icon: BarChart2, end: false },
   { to: '/watchlist', label: '관심종목', icon: Star, end: true },
   { to: '/library', label: '패턴 라이브러리', icon: BookOpen, end: true },

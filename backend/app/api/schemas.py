@@ -466,6 +466,48 @@ class PatternStatsResponse(BaseModel):
     items: list[PatternStatsEntry]
 
 
+class AiRecommendationItem(BaseModel):
+    rank: int
+    symbol: SymbolInfo
+    timeframe: str
+    timeframe_label: str
+    stance: str
+    stance_label: str
+    score: float
+    confidence: float
+    source_category: str
+    summary: str
+    reasons: list[str]
+    risk_flags: list[str]
+    next_actions: list[str]
+    position_hint: str
+    pattern_type: str | None
+    state: str | None
+    p_up: float
+    p_down: float
+    trade_readiness_score: float
+    entry_window_score: float
+    freshness_score: float
+    reward_risk_ratio: float
+    data_quality: float
+    confluence_score: float
+    next_trigger: str
+    chart_path: str
+
+
+class AiRecommendationResponse(BaseModel):
+    generated_at: str
+    timeframe: str
+    timeframe_label: str
+    market_brief: str
+    portfolio_guidance: str
+    items: list[AiRecommendationItem]
+    priority_items: list[AiRecommendationItem]
+    watch_items: list[AiRecommendationItem]
+    risk_items: list[AiRecommendationItem]
+    disclaimer: str
+
+
 class ScreenerRequest(BaseModel):
     pattern_types: list[str] | None = None
     states: list[str] | None = None

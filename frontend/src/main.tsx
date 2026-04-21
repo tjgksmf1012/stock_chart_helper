@@ -23,6 +23,7 @@ function lazyWithRetry<T extends { default: React.ComponentType<any> }>(
 }
 
 const DashboardPage = lazyWithRetry(() => import('./pages/DashboardPage'), 'DashboardPage')
+const AiRecommendationsPage = lazyWithRetry(() => import('./pages/AiRecommendationsPage'), 'AiRecommendationsPage')
 const ChartPage = lazyWithRetry(() => import('./pages/ChartPage'), 'ChartPage')
 const PatternLibraryPage = lazyWithRetry(() => import('./pages/PatternLibraryPage'), 'PatternLibraryPage')
 const PatternPerformancePage = lazyWithRetry(() => import('./pages/PatternPerformancePage'), 'PatternPerformancePage')
@@ -57,6 +58,7 @@ createRoot(document.getElementById('root')!).render(
             <Routes>
               <Route path="/" element={<Layout />}>
                 <Route index element={<DashboardPage />} />
+                <Route path="ai" element={<AiRecommendationsPage />} />
                 <Route path="chart" element={<ChartPage />} />
                 <Route path="chart/:symbol" element={<ChartPage />} />
                 <Route path="watchlist" element={<WatchlistPage />} />

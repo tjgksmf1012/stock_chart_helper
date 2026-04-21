@@ -1,7 +1,7 @@
-import axios from 'axios'
+import axios, { type InternalAxiosRequestConfig } from 'axios'
 import type {
   SymbolInfo, OHLCVBar, AnalysisResult, PriceInfo,
-  DashboardOverviewResponse, DashboardResponse, PatternLibraryEntry, ScreenerRequest, DashboardItem, ScanStatusResponse, Timeframe,
+  AiRecommendationResponse, DashboardOverviewResponse, DashboardResponse, PatternLibraryEntry, ScreenerRequest, DashboardItem, ScanStatusResponse, Timeframe,
   IntradayCandidateWarmupRequest, IntradayWarmupJobStatus, IntradayWarmupRequest, IntradayWarmupResponse, PatternStatsResponse, RuntimeStatusResponse,
   WatchlistItem, OutcomeRecord, OutcomesSummary, OutcomeStatus,
 } from '@/types/api'
@@ -9,11 +9,48 @@ import type {
 // In development the Vite proxy forwards /api → backend (see vite.config.ts).
 // In production set VITE_API_BASE_URL to your backend's public URL
 // (e.g. https://stock-chart-helper-api.onrender.com) and this will call it directly.
-const _base = import.meta.env.VITE_API_BASE_URL
-  ? `${String(import.meta.env.VITE_API_BASE_URL).replace(/\/$/, '')}/api/v1`
-  : '/api/v1'
+function resolveApiBase() {
+  const configured = import.meta.env.VITE_API_BASE_URL
+    ? `${String(import.meta.env.VITE_API_BASE_URL).replace(/\/$/, '')}/api/v1`
+    : '/api/v1'
 
-const api = axios.create({ baseURL: _base, timeout: 30_000 })
+  if (typeof window !== 'undefined' && window.location.hostname.endsWith('vercel.app')) {
+    return '/api/v1'
+  }
+
+  return configured
+}
+
+const _base = resolveApiBase()
+
+interface RetryableAxiosConfig extends InternalAxiosRequestConfig {
+  __retryCount?: number
+}
+
+const api = axios.create({ baseURL: _base, timeout: 45_000 })
+
+api.interceptors.response.use(undefined, async error => {
+  const config = error.config as RetryableAxiosConfig | undefined
+  const method = config?.method?.toLowerCase() ?? 'get'
+  const status = error.response?.status
+  const isTransient =
+    !error.response ||
+    status === 408 ||
+    status === 429 ||
+    status === 500 ||
+    status === 502 ||
+    status === 503 ||
+    status === 504
+
+  if (!config || method !== 'get' || !isTransient || (config.__retryCount ?? 0) >= 2) {
+    return Promise.reject(error)
+  }
+
+  const retryCount = (config.__retryCount ?? 0) + 1
+  config.__retryCount = retryCount
+  await new Promise(resolve => window.setTimeout(resolve, 1_200 * retryCount))
+  return api.request(config)
+})
 
 export const symbolsApi = {
   search: (q: string) => api.get<SymbolInfo[]>('/symbols/search', { params: { q } }).then(r => r.data),
@@ -36,6 +73,11 @@ export const dashboardApi = {
   liveIntraday: (timeframe: Timeframe, limit = 10) => api.get<DashboardResponse>('/dashboard/live-intraday-candidates', { params: { timeframe, limit } }).then(r => r.data),
   scanStatus: (timeframe: Timeframe) => api.get<ScanStatusResponse>('/dashboard/scan-status', { params: { timeframe } }).then(r => r.data),
   refreshScan: (timeframe: Timeframe) => api.post<ScanStatusResponse>('/dashboard/scan-refresh', null, { params: { timeframe } }).then(r => r.data),
+}
+
+export const aiApi = {
+  recommendations: (timeframe: Timeframe, limit = 8) =>
+    api.get<AiRecommendationResponse>('/ai/recommendations', { params: { timeframe, limit } }).then(r => r.data),
 }
 
 export const patternsApi = {

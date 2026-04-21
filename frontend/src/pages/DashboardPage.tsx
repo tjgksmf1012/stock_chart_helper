@@ -41,9 +41,39 @@ export default function DashboardPage() {
   const lastFinishedAtRef = useRef<string | null>(null)
   const lastStatusRef = useRef<string | null>(null)
 
-  const overviewQ = useQuery({
-    queryKey: ['dashboard', timeframe, 'overview'],
-    queryFn: () => dashboardApi.overview(timeframe),
+  const longQ = useQuery({
+    queryKey: ['dashboard', timeframe, 'long-high-probability'],
+    queryFn: () => dashboardApi.longHigh(timeframe),
+    ...opts,
+  })
+  const armedQ = useQuery({
+    queryKey: ['dashboard', timeframe, 'pattern-armed'],
+    queryFn: () => dashboardApi.armed(timeframe),
+    ...opts,
+  })
+  const liveQ = useQuery({
+    queryKey: ['dashboard', timeframe, 'live-intraday-candidates'],
+    queryFn: () => dashboardApi.liveIntraday(timeframe),
+    ...opts,
+  })
+  const formingQ = useQuery({
+    queryKey: ['dashboard', timeframe, 'forming-candidates'],
+    queryFn: () => dashboardApi.forming(timeframe),
+    ...opts,
+  })
+  const simQ = useQuery({
+    queryKey: ['dashboard', timeframe, 'high-textbook-similarity'],
+    queryFn: () => dashboardApi.highSimilarity(timeframe),
+    ...opts,
+  })
+  const shortQ = useQuery({
+    queryKey: ['dashboard', timeframe, 'short-high-probability'],
+    queryFn: () => dashboardApi.shortHigh(timeframe),
+    ...opts,
+  })
+  const noSigQ = useQuery({
+    queryKey: ['dashboard', timeframe, 'watchlist-no-signal'],
+    queryFn: () => dashboardApi.noSignal(timeframe),
     ...opts,
   })
   const statusQ = useQuery({
@@ -56,12 +86,13 @@ export default function DashboardPage() {
     },
   })
 
-  const isRefreshing = overviewQ.isFetching
+  const sectionQueries = [longQ, armedQ, liveQ, formingQ, simQ, shortQ, noSigQ] as const
+  const isRefreshing = sectionQueries.some(query => query.isFetching)
 
   const isScanActive = isTriggeringScan || statusQ.data?.is_running
 
   const refreshBoards = () => {
-    overviewQ.refetch()
+    sectionQueries.forEach(query => query.refetch())
     statusQ.refetch()
   }
 
@@ -70,7 +101,7 @@ export default function DashboardPage() {
     try {
       await dashboardApi.refreshScan(timeframe)
       statusQ.refetch()
-      overviewQ.refetch()
+      sectionQueries.forEach(query => query.refetch())
     } finally {
       setIsTriggeringScan(false)
     }
@@ -83,14 +114,14 @@ export default function DashboardPage() {
     const previousStatus = lastStatusRef.current
 
     if (status === 'ready' && lastFinishedAt && (previousFinishedAt !== lastFinishedAt || previousStatus !== 'ready')) {
-      overviewQ.refetch()
+      sectionQueries.forEach(query => query.refetch())
     }
 
     if (lastFinishedAt) {
       lastFinishedAtRef.current = lastFinishedAt
     }
     lastStatusRef.current = status
-  }, [overviewQ.refetch, statusQ.data?.last_finished_at, statusQ.data?.status])
+  }, [statusQ.data?.last_finished_at, statusQ.data?.status])
 
   useEffect(() => {
     setIntradayView('all')
@@ -127,14 +158,13 @@ export default function DashboardPage() {
     }
   }
 
-  const overview = overviewQ.data
-  const longData = filterDashboard(overview?.long_high_probability)
-  const armedData = filterDashboard(overview?.pattern_armed)
-  const liveData = filterDashboard(overview?.live_intraday_candidates)
-  const formingData = filterDashboard(overview?.forming_candidates)
-  const simData = filterDashboard(overview?.high_textbook_similarity)
-  const shortData = filterDashboard(overview?.short_high_probability)
-  const noSigData = filterDashboard(overview?.watchlist_no_signal)
+  const longData = filterDashboard(longQ.data)
+  const armedData = filterDashboard(armedQ.data)
+  const liveData = filterDashboard(liveQ.data)
+  const formingData = filterDashboard(formingQ.data)
+  const simData = filterDashboard(simQ.data)
+  const shortData = filterDashboard(shortQ.data)
+  const noSigData = filterDashboard(noSigQ.data)
 
   const filteredSections: Array<DashboardResponse | undefined> = [
     longData,
@@ -419,9 +449,9 @@ export default function DashboardPage() {
         title="상승 확률 상위"
         subtitle="상승 확률, 거래 준비도, 상위 타임프레임 정렬까지 함께 좋은 종목입니다."
         data={longData}
-        isLoading={overviewQ.isLoading}
-        isError={overviewQ.isError}
-        onRetry={() => overviewQ.refetch()}
+        isLoading={longQ.isLoading && !longData}
+        isError={longQ.isError && !longData}
+        onRetry={() => longQ.refetch()}
         intradayPreset={intradayMode ? intradayPreset : undefined}
         emptyMessage={sectionEmptyMessage}
       />
@@ -430,9 +460,9 @@ export default function DashboardPage() {
         title="패턴 완성 임박"
         subtitle="거의 다 만들어졌고 돌파 감시 단계에 가까운 후보입니다."
         data={armedData}
-        isLoading={overviewQ.isLoading}
-        isError={overviewQ.isError}
-        onRetry={() => overviewQ.refetch()}
+        isLoading={armedQ.isLoading && !armedData}
+        isError={armedQ.isError && !armedData}
+        onRetry={() => armedQ.refetch()}
         intradayPreset={intradayMode ? intradayPreset : undefined}
         emptyMessage={sectionEmptyMessage}
       />
@@ -442,9 +472,9 @@ export default function DashboardPage() {
           title="Live 분봉 후보"
           subtitle="실제 live KIS 분봉까지 연결해 확인 중인 후보입니다. 저장 분봉이나 공개 소스 기반 후보보다 우선 관찰할 묶음입니다."
           data={liveData}
-          isLoading={overviewQ.isLoading}
-          isError={overviewQ.isError}
-          onRetry={() => overviewQ.refetch()}
+          isLoading={liveQ.isLoading && !liveData}
+          isError={liveQ.isError && !liveData}
+          onRetry={() => liveQ.refetch()}
           intradayPreset={intradayPreset}
           emptyMessage={liveEmptyMessage}
         />
@@ -454,9 +484,9 @@ export default function DashboardPage() {
         title="형성 중 후보"
         subtitle="아직 forming 상태지만 구조가 살아 있어 관찰 가치가 있는 후보입니다. 완성 신호가 아니라 관찰용 후보군으로 보세요."
         data={formingData}
-        isLoading={overviewQ.isLoading}
-        isError={overviewQ.isError}
-        onRetry={() => overviewQ.refetch()}
+        isLoading={formingQ.isLoading && !formingData}
+        isError={formingQ.isError && !formingData}
+        onRetry={() => formingQ.refetch()}
         intradayPreset={intradayMode ? intradayPreset : undefined}
         emptyMessage={sectionEmptyMessage}
       />
@@ -465,9 +495,9 @@ export default function DashboardPage() {
         title="교과서 유사형"
         subtitle="교과서 구조와 유사도가 높은 후보입니다. 다만 최근성, 데이터 품질, 행동 가이드까지 같이 봐야 합니다."
         data={simData}
-        isLoading={overviewQ.isLoading}
-        isError={overviewQ.isError}
-        onRetry={() => overviewQ.refetch()}
+        isLoading={simQ.isLoading && !simData}
+        isError={simQ.isError && !simData}
+        onRetry={() => simQ.refetch()}
         intradayPreset={intradayMode ? intradayPreset : undefined}
         emptyMessage={sectionEmptyMessage}
       />
@@ -476,9 +506,9 @@ export default function DashboardPage() {
         title="하락 확률 상위"
         subtitle="약세 패턴과 하락 방향 정렬까지 함께 들어온 종목입니다."
         data={shortData}
-        isLoading={overviewQ.isLoading}
-        isError={overviewQ.isError}
-        onRetry={() => overviewQ.refetch()}
+        isLoading={shortQ.isLoading && !shortData}
+        isError={shortQ.isError && !shortData}
+        onRetry={() => shortQ.refetch()}
         intradayPreset={intradayMode ? intradayPreset : undefined}
         emptyMessage={sectionEmptyMessage}
       />
@@ -487,9 +517,9 @@ export default function DashboardPage() {
         title="No Signal / 관망"
         subtitle="데이터 품질, 구조, 손익비, 활성 과정 중 하나 이상이 부족해 보수적으로 관망 처리한 종목입니다."
         data={noSigData}
-        isLoading={overviewQ.isLoading}
-        isError={overviewQ.isError}
-        onRetry={() => overviewQ.refetch()}
+        isLoading={noSigQ.isLoading && !noSigData}
+        isError={noSigQ.isError && !noSigData}
+        onRetry={() => noSigQ.refetch()}
         intradayPreset={intradayMode ? intradayPreset : undefined}
         emptyMessage={sectionEmptyMessage}
       />

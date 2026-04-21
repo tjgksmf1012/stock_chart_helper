@@ -296,6 +296,48 @@ export interface DashboardOverviewResponse {
   watchlist_no_signal: DashboardResponse
 }
 
+export interface AiRecommendationItem {
+  rank: number
+  symbol: SymbolInfo
+  timeframe: Timeframe
+  timeframe_label: string
+  stance: 'priority_watch' | 'wait_for_trigger' | 'avoid_chase' | 'risk_review'
+  stance_label: string
+  score: number
+  confidence: number
+  source_category: string
+  summary: string
+  reasons: string[]
+  risk_flags: string[]
+  next_actions: string[]
+  position_hint: string
+  pattern_type: string | null
+  state: string | null
+  p_up: number
+  p_down: number
+  trade_readiness_score: number
+  entry_window_score: number
+  freshness_score: number
+  reward_risk_ratio: number
+  data_quality: number
+  confluence_score: number
+  next_trigger: string
+  chart_path: string
+}
+
+export interface AiRecommendationResponse {
+  generated_at: string
+  timeframe: Timeframe
+  timeframe_label: string
+  market_brief: string
+  portfolio_guidance: string
+  items: AiRecommendationItem[]
+  priority_items: AiRecommendationItem[]
+  watch_items: AiRecommendationItem[]
+  risk_items: AiRecommendationItem[]
+  disclaimer: string
+}
+
 export interface ScanStatusResponse {
   timeframe: Timeframe
   timeframe_label: string
