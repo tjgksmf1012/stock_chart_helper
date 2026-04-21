@@ -22,7 +22,7 @@ from ..core.redis import cache_get, cache_set
 
 logger = structlog.get_logger()
 
-_OVERLAY_CACHE_PREFIX = "ai:recommendation-overlay:v2"
+_OVERLAY_CACHE_PREFIX = "ai:recommendation-overlay:v3"
 _IN_FLIGHT_REFRESHES: set[str] = set()
 
 
