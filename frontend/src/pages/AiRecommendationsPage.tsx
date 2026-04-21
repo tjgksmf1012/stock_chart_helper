@@ -24,7 +24,7 @@ export default function AiRecommendationsPage() {
 
   const recommendationsQ = useQuery({
     queryKey: ['ai-recommendations', timeframe],
-    queryFn: () => aiApi.recommendations(timeframe, 10),
+    queryFn: () => aiApi.recommendations(timeframe, 6),
     staleTime: 30_000,
     refetchInterval: 90_000,
   })

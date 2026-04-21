@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 
 from ..api.schemas import AiRecommendationItem, AiRecommendationResponse, SymbolInfo
+from ..core.redis import cache_get, cache_set
 from .openai_recommendation_service import apply_openai_recommendation_overlay
 from .scanner import get_scan_results
 from .timeframe_service import DEFAULT_TIMEFRAME, timeframe_label
@@ -19,37 +21,57 @@ STANCE_LABELS = {
     "risk_review": "리스크 점검",
 }
 
+_RECOMMENDATION_CACHE_PREFIX = "ai:recommendations:v1"
+_IN_FLIGHT_RECOMMENDATIONS: set[str] = set()
+
 
 async def build_ai_recommendations(timeframe: str = DEFAULT_TIMEFRAME, limit: int = 8) -> AiRecommendationResponse:
     timeframe = timeframe or DEFAULT_TIMEFRAME
-    rows = await get_scan_results(timeframe)
-    ranked = [_make_recommendation(row, timeframe) for row in rows]
-    ranked.sort(key=lambda item: (item.score, item.confidence, item.p_up - item.p_down), reverse=True)
+    cache_key = f"{_RECOMMENDATION_CACHE_PREFIX}:{timeframe}:{limit}"
+    cached = await cache_get(cache_key)
+    if isinstance(cached, dict):
+        return AiRecommendationResponse.model_validate(cached)
 
-    items = _rerank(ranked[:limit])
-    priority_items = _rerank([item for item in ranked if item.stance == "priority_watch"][:limit])
-    watch_items = _rerank([item for item in ranked if item.stance in {"wait_for_trigger", "avoid_chase"}][:limit])
-    risk_items = _rerank(
-        sorted(
-            [item for item in ranked if item.stance == "risk_review"],
-            key=lambda item: (len(item.risk_flags), 1 - item.data_quality, item.p_down),
-            reverse=True,
-        )[:limit]
-    )
+    if cache_key in _IN_FLIGHT_RECOMMENDATIONS:
+        await asyncio.sleep(0.15)
+        cached = await cache_get(cache_key)
+        if isinstance(cached, dict):
+            return AiRecommendationResponse.model_validate(cached)
 
-    response = AiRecommendationResponse(
-        generated_at=datetime.utcnow().isoformat(),
-        timeframe=timeframe,
-        timeframe_label=timeframe_label(timeframe),
-        market_brief=_market_brief(ranked, timeframe),
-        portfolio_guidance=_portfolio_guidance(priority_items, watch_items, risk_items),
-        items=items,
-        priority_items=priority_items,
-        watch_items=watch_items,
-        risk_items=risk_items,
-        disclaimer=DISCLAIMER,
-    )
-    return await apply_openai_recommendation_overlay(response)
+    _IN_FLIGHT_RECOMMENDATIONS.add(cache_key)
+    try:
+        rows = await get_scan_results(timeframe)
+        ranked = [_make_recommendation(row, timeframe) for row in rows]
+        ranked.sort(key=lambda item: (item.score, item.confidence, item.p_up - item.p_down), reverse=True)
+
+        items = _rerank(ranked[:limit])
+        priority_items = _rerank([item for item in ranked if item.stance == "priority_watch"][:limit])
+        watch_items = _rerank([item for item in ranked if item.stance in {"wait_for_trigger", "avoid_chase"}][:limit])
+        risk_items = _rerank(
+            sorted(
+                [item for item in ranked if item.stance == "risk_review"],
+                key=lambda item: (len(item.risk_flags), 1 - item.data_quality, item.p_down),
+                reverse=True,
+            )[:limit]
+        )
+
+        response = AiRecommendationResponse(
+            generated_at=datetime.utcnow().isoformat(),
+            timeframe=timeframe,
+            timeframe_label=timeframe_label(timeframe),
+            market_brief=_market_brief(ranked, timeframe),
+            portfolio_guidance=_portfolio_guidance(priority_items, watch_items, risk_items),
+            items=items,
+            priority_items=priority_items,
+            watch_items=watch_items,
+            risk_items=risk_items,
+            disclaimer=DISCLAIMER,
+        )
+        response = await apply_openai_recommendation_overlay(response)
+        await cache_set(cache_key, response.model_dump(mode="json"), ttl=45)
+        return response
+    finally:
+        _IN_FLIGHT_RECOMMENDATIONS.discard(cache_key)
 
 
 def _make_recommendation(row: dict, timeframe: str) -> AiRecommendationItem:
