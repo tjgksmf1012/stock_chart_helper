@@ -104,7 +104,11 @@ async def _request_overlay(payload: dict[str, Any]) -> dict[str, Any]:
                 "content": json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
             },
         ],
+        "reasoning": {
+            "effort": "minimal",
+        },
         "text": {
+            "verbosity": "low",
             "format": {
                 "type": "json_schema",
                 "name": "recommendation_overlay",
