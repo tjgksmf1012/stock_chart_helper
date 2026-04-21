@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_model: str = "gpt-5-mini"
     openai_timeout_seconds: int = 25
+    openai_max_output_tokens: int = 5000
     openai_enable_recommendations: bool = True
 
     # KIS API (optional, for real-time data)

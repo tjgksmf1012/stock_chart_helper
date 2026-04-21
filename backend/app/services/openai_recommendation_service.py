@@ -94,7 +94,7 @@ async def _request_overlay(payload: dict[str, Any]) -> dict[str, Any]:
                 "strict": True,
             }
         },
-        "max_output_tokens": 1400,
+        "max_output_tokens": settings.openai_max_output_tokens,
     }
 
     async with httpx.AsyncClient(timeout=settings.openai_timeout_seconds) as client:
