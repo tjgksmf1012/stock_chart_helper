@@ -157,7 +157,7 @@ async def _request_overlay(payload: dict[str, Any]) -> dict[str, Any]:
     text = data.get("output_text") or _extract_output_text(data)
     if not text:
         raise ValueError("OpenAI response did not include text output")
-    return json.loads(text)
+    return _parse_overlay_json(text)
 
 
 def _make_prompt_payload(response: AiRecommendationResponse) -> dict[str, Any]:
@@ -328,6 +328,30 @@ def _extract_output_text(data: dict[str, Any]) -> str:
             if content.get("type") in {"output_text", "text"} and content.get("text"):
                 chunks.append(str(content["text"]))
     return "".join(chunks)
+
+
+def _parse_overlay_json(text: str) -> dict[str, Any]:
+    raw = text.strip()
+    candidates = [raw]
+
+    if raw.startswith("```"):
+        stripped = raw.strip("`")
+        if "\n" in stripped:
+            _, _, remainder = stripped.partition("\n")
+            candidates.append(remainder.strip())
+
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        candidates.append(raw[start : end + 1].strip())
+
+    for candidate in candidates:
+        try:
+            return json.loads(candidate)
+        except JSONDecodeError:
+            continue
+
+    raise JSONDecodeError("Unable to parse OpenAI overlay JSON", raw, 0)
 
 
 def _classify_openai_error(exc: Exception) -> str:
