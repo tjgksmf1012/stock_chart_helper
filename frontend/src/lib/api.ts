@@ -25,13 +25,15 @@ const _base = resolveApiBase()
 const _directBase = import.meta.env.VITE_API_BASE_URL
   ? `${String(import.meta.env.VITE_API_BASE_URL).replace(/\/$/, '')}/api/v1`
   : 'https://stock-chart-helper-api.onrender.com/api/v1'
+const REQUEST_TIMEOUT_MS = 20_000
+const MAX_DIRECT_RETRIES = 1
 
 interface RetryableAxiosConfig extends InternalAxiosRequestConfig {
   __retryCount?: number
   __directFallbackTried?: boolean
 }
 
-const api = axios.create({ baseURL: _base, timeout: 120_000 })
+const api = axios.create({ baseURL: _base, timeout: REQUEST_TIMEOUT_MS })
 
 api.interceptors.response.use(undefined, async error => {
   const config = error.config as RetryableAxiosConfig | undefined
@@ -58,7 +60,7 @@ api.interceptors.response.use(undefined, async error => {
     return api.request(config)
   }
 
-  if ((config.__retryCount ?? 0) >= 2) {
+  if ((config.__retryCount ?? 0) >= MAX_DIRECT_RETRIES) {
     return Promise.reject(error)
   }
 
