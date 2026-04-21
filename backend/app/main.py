@@ -44,6 +44,11 @@ async def health() -> dict:
     return {"status": "ok", "version": "0.3.0"}
 
 
+@app.get("/")
+async def root() -> dict:
+    return {"status": "ok", "service": "stock-chart-helper-api", "version": "0.3.0"}
+
+
 def _start_scheduler() -> None:
     try:
         from apscheduler.schedulers.asyncio import AsyncIOScheduler
