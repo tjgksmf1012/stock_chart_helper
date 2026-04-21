@@ -16,6 +16,7 @@ from ..schemas import (
     IntradayWarmupRequest,
     IntradayWarmupResponse,
     IntradayWarmupResult,
+    KisPrimeStatus,
     KisRuntimeStatus,
     RuntimeStatusResponse,
 )
@@ -30,6 +31,7 @@ from ...services.timeframe_service import get_timeframe_spec, is_intraday_timefr
 router = APIRouter(prefix="/system", tags=["system"])
 settings = get_settings()
 _warmup_task: asyncio.Task | None = None
+_kis_prime_task: asyncio.Task | None = None
 _warmup_status: dict[str, Any] = {
     "status": "idle",
     "is_running": False,
@@ -46,6 +48,29 @@ _warmup_status: dict[str, Any] = {
     "last_error": None,
     "trigger_accepted": None,
     "results": [],
+}
+_kis_prime_status: dict[str, Any] = {
+    "status": "idle",
+    "is_running": False,
+    "requested_at": None,
+    "finished_at": None,
+    "triggered_by": None,
+    "symbol": None,
+    "timeframe": None,
+    "ok": None,
+    "token_cached_before": False,
+    "token_cached_after": False,
+    "token_expires_at": None,
+    "token_expires_in_seconds": None,
+    "resolved_base_url": None,
+    "store_rows_before": 0,
+    "store_rows_after": 0,
+    "store_rows_added": 0,
+    "bars_returned": 0,
+    "data_source": None,
+    "fetch_status": None,
+    "message": None,
+    "last_error": None,
 }
 
 SCHEDULED_INTRADAY_WARMUP_PLANS: list[dict[str, Any]] = [
@@ -157,6 +182,7 @@ async def get_runtime_status() -> RuntimeStatusResponse:
             max_concurrent_requests=settings.kis_max_concurrent_requests,
             request_spacing_ms=settings.kis_request_spacing_ms,
             guidance=_kis_guidance(configured, token_cached, token_remaining),
+            last_prime=_get_kis_prime_status(),
         ),
         cache=CacheRuntimeStatus(**cache_status),
         intraday_store=IntradayStoreStatus(**intraday_store_status),
@@ -168,6 +194,152 @@ async def get_runtime_status() -> RuntimeStatusResponse:
             "운영 중에는 모든 분봉 후보를 실시간 호출하지 않고, 우선순위가 높은 후보부터 예열하는 방식으로 비용과 호출 수를 관리합니다.",
         ],
     )
+
+
+async def _resolve_kis_prime_symbol(symbol: str | None) -> str:
+    normalized = _normalize_symbol_codes([symbol] if symbol else [], max_count=1)
+    if normalized:
+        return normalized[0]
+
+    rows = await get_scan_results("1d")
+    for row in rows:
+        code = str(row.get("code") or "").strip()
+        if code:
+            return code.zfill(6) if code.isdigit() else code
+    return "005930"
+
+
+async def _prime_kis_once(
+    *,
+    symbol: str | None,
+    timeframe: str,
+    triggered_by: str,
+) -> KisPrimeStatus:
+    requested_at = datetime.utcnow().isoformat()
+    kis = get_kis_client()
+    if timeframe not in {"1m", "15m", "30m", "60m"}:
+        raise HTTPException(status_code=422, detail=f"Unsupported intraday timeframe: {timeframe}")
+
+    token_before = _read_token_cache_status(settings.kis_token_cache_path)
+    store_before = await get_intraday_store().get_status()
+    resolved_symbol = await _resolve_kis_prime_symbol(symbol)
+
+    _set_kis_prime_status(
+        status="running",
+        is_running=True,
+        requested_at=requested_at,
+        finished_at=None,
+        triggered_by=triggered_by,
+        symbol=resolved_symbol,
+        timeframe=timeframe,
+        ok=None,
+        token_cached_before=bool(token_before["token_cached"]),
+        token_cached_after=False,
+        token_expires_at=None,
+        token_expires_in_seconds=None,
+        resolved_base_url=token_before.get("resolved_base_url"),
+        store_rows_before=int(store_before.get("total_rows", 0)),
+        store_rows_after=int(store_before.get("total_rows", 0)),
+        store_rows_added=0,
+        bars_returned=0,
+        data_source=None,
+        fetch_status=None,
+        message=None,
+        last_error=None,
+    )
+
+    if not kis.configured:
+        result = KisPrimeStatus(
+            status="error",
+            is_running=False,
+            requested_at=requested_at,
+            finished_at=datetime.utcnow().isoformat(),
+            triggered_by=triggered_by,
+            symbol=resolved_symbol,
+            timeframe=timeframe,
+            ok=False,
+            token_cached_before=bool(token_before["token_cached"]),
+            token_cached_after=False,
+            resolved_base_url=token_before.get("resolved_base_url"),
+            store_rows_before=int(store_before.get("total_rows", 0)),
+            store_rows_after=int(store_before.get("total_rows", 0)),
+            store_rows_added=0,
+            bars_returned=0,
+            data_source="kis_intraday",
+            fetch_status="kis_not_configured",
+            message="KIS API 자격 증명이 비어 있어 토큰을 발급할 수 없습니다.",
+            last_error="kis_not_configured",
+        )
+        _set_kis_prime_status(**result.model_dump())
+        return result
+
+    try:
+        await kis.ensure_access_token()
+        fetcher = get_data_fetcher()
+        df = await fetcher.get_stock_ohlcv_by_timeframe(
+            resolved_symbol,
+            timeframe,
+            lookback_days=2,
+            allow_live_intraday=True,
+        )
+        token_after = _read_token_cache_status(settings.kis_token_cache_path)
+        store_after = await get_intraday_store().get_status()
+
+        fetch_status = str(df.attrs.get("fetch_status") or "live_ok")
+        message = str(df.attrs.get("fetch_message") or "KIS 토큰 프라이밍과 분봉 확인이 완료되었습니다.")
+        result = KisPrimeStatus(
+            status="ready",
+            is_running=False,
+            requested_at=requested_at,
+            finished_at=datetime.utcnow().isoformat(),
+            triggered_by=triggered_by,
+            symbol=resolved_symbol,
+            timeframe=timeframe,
+            ok=bool(token_after["token_cached"]),
+            token_cached_before=bool(token_before["token_cached"]),
+            token_cached_after=bool(token_after["token_cached"]),
+            token_expires_at=token_after["token_expires_at"],
+            token_expires_in_seconds=token_after["token_expires_in_seconds"],
+            resolved_base_url=token_after["resolved_base_url"] or kis._resolved_base_url,
+            store_rows_before=int(store_before.get("total_rows", 0)),
+            store_rows_after=int(store_after.get("total_rows", 0)),
+            store_rows_added=max(0, int(store_after.get("total_rows", 0)) - int(store_before.get("total_rows", 0))),
+            bars_returned=int(len(df)),
+            data_source=str(df.attrs.get("data_source") or "unknown"),
+            fetch_status=fetch_status,
+            message=message,
+            last_error=None,
+        )
+        _set_kis_prime_status(**result.model_dump())
+        return result
+    except Exception as exc:
+        token_after = _read_token_cache_status(settings.kis_token_cache_path)
+        store_after = await get_intraday_store().get_status()
+        result = KisPrimeStatus(
+            status="error",
+            is_running=False,
+            requested_at=requested_at,
+            finished_at=datetime.utcnow().isoformat(),
+            triggered_by=triggered_by,
+            symbol=resolved_symbol,
+            timeframe=timeframe,
+            ok=False,
+            token_cached_before=bool(token_before["token_cached"]),
+            token_cached_after=bool(token_after["token_cached"]),
+            token_expires_at=token_after["token_expires_at"],
+            token_expires_in_seconds=token_after["token_expires_in_seconds"],
+            resolved_base_url=token_after["resolved_base_url"] or kis._resolved_base_url,
+            store_rows_before=int(store_before.get("total_rows", 0)),
+            store_rows_after=int(store_after.get("total_rows", 0)),
+            store_rows_added=max(0, int(store_after.get("total_rows", 0)) - int(store_before.get("total_rows", 0))),
+            bars_returned=0,
+            data_source="kis_intraday",
+            fetch_status="kis_error",
+            message="KIS 토큰 프라이밍 또는 첫 분봉 수집이 실패했습니다.",
+            last_error=str(exc),
+        )
+        _set_kis_prime_status(**result.model_dump())
+        return result
 
 
 def _normalize_symbol_codes(symbols: list[str], max_count: int = 50) -> list[str]:
@@ -209,6 +381,14 @@ def _get_warmup_status(trigger_accepted: bool | None = None) -> IntradayWarmupJo
     if trigger_accepted is not None:
         payload["trigger_accepted"] = trigger_accepted
     return IntradayWarmupJobStatus(**payload)
+
+
+def _set_kis_prime_status(**kwargs: Any) -> None:
+    _kis_prime_status.update(kwargs)
+
+
+def _get_kis_prime_status() -> KisPrimeStatus:
+    return KisPrimeStatus(**dict(_kis_prime_status))
 
 
 async def _candidate_symbols_for_warmup(request: IntradayCandidateWarmupRequest) -> list[str]:
@@ -331,6 +511,16 @@ async def warmup_intraday_candidates(request: IntradayCandidateWarmupRequest) ->
 @router.get("/intraday/warmup-status", response_model=IntradayWarmupJobStatus)
 async def get_intraday_warmup_status() -> IntradayWarmupJobStatus:
     return _get_warmup_status()
+
+
+@router.get("/kis/prime-status", response_model=KisPrimeStatus)
+async def get_kis_prime_status() -> KisPrimeStatus:
+    return _get_kis_prime_status()
+
+
+@router.post("/kis/prime", response_model=KisPrimeStatus)
+async def prime_kis_runtime(symbol: str | None = None, timeframe: str = "1m") -> KisPrimeStatus:
+    return await _prime_kis_once(symbol=symbol, timeframe=timeframe, triggered_by="manual")
 
 
 async def _run_warmup_background(
@@ -498,3 +688,15 @@ async def trigger_intraday_candidate_warmup_background(request: IntradayCandidat
         allow_live=request.allow_live,
         lookback_days=request.lookback_days,
     )
+
+
+def trigger_background_kis_prime(*, symbol: str | None = None, timeframe: str = "1m", triggered_by: str = "startup") -> bool:
+    global _kis_prime_task
+    if _kis_prime_task and not _kis_prime_task.done():
+        return False
+
+    async def _runner() -> None:
+        await _prime_kis_once(symbol=symbol, timeframe=timeframe, triggered_by=triggered_by)
+
+    _kis_prime_task = asyncio.create_task(_runner())
+    return True

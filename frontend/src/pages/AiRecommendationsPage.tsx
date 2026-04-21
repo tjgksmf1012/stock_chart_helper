@@ -31,6 +31,7 @@ export default function AiRecommendationsPage() {
 
   const data = recommendationsQ.data
   const topItems = useMemo(() => data?.items.slice(0, 4) ?? [], [data?.items])
+  const llmBadge = useMemo(() => buildLlmBadge(data), [data])
 
   return (
     <div className="space-y-8">
@@ -90,6 +91,11 @@ export default function AiRecommendationsPage() {
             </div>
           ) : (
             <>
+              {llmBadge && (
+                <div className={cn('rounded-lg border px-3 py-2 text-xs leading-relaxed', llmBadge.className)}>
+                  {llmBadge.text}
+                </div>
+              )}
               <p className="text-sm leading-relaxed text-foreground">{data?.market_brief}</p>
               <p className="text-sm leading-relaxed text-muted-foreground">{data?.portfolio_guidance}</p>
 
@@ -166,6 +172,43 @@ export default function AiRecommendationsPage() {
       )}
     </div>
   )
+}
+
+function buildLlmBadge(data: { llm_enabled?: boolean; llm_status?: string; llm_cached_at?: string | null; llm_error?: string | null } | undefined) {
+  if (!data) return null
+
+  if (data.llm_enabled && data.llm_status === 'cached_refreshing') {
+    return {
+      className: 'border-cyan-500/20 bg-cyan-500/5 text-cyan-100',
+      text: `최근 OpenAI 코멘트를 보여주는 중입니다. 백그라운드에서 새 코멘트를 다시 생성하고 있어요.${data.llm_cached_at ? ` 마지막 AI 갱신 ${fmtDateTime(data.llm_cached_at)}.` : ''}`,
+    }
+  }
+
+  if (data.llm_enabled) {
+    return {
+      className: 'border-emerald-500/20 bg-emerald-500/5 text-emerald-100',
+      text: `OpenAI 코멘트가 적용된 상태입니다.${data.llm_cached_at ? ` 마지막 AI 갱신 ${fmtDateTime(data.llm_cached_at)}.` : ''}`,
+    }
+  }
+
+  if (data.llm_status === 'refreshing') {
+    return {
+      className: 'border-sky-500/20 bg-sky-500/5 text-sky-100',
+      text: '지금은 규칙 기반 코멘트를 먼저 보여주고 있습니다. OpenAI 해설은 백그라운드에서 생성 중이며, 다음 새로고침 때 자동 반영됩니다.',
+    }
+  }
+
+  if (data.llm_error) {
+    return {
+      className: 'border-amber-500/20 bg-amber-500/5 text-amber-100',
+      text: `OpenAI 해설이 바로 붙지 않아 규칙 기반 코멘트로 표시 중입니다. 최근 상태: ${data.llm_error}.`,
+    }
+  }
+
+  return {
+    className: 'border-border bg-background/60 text-muted-foreground',
+    text: '현재는 규칙 기반 코멘트를 표시 중입니다.',
+  }
 }
 
 function RecommendationBand({

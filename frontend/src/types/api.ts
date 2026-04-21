@@ -339,6 +339,10 @@ export interface AiRecommendationResponse {
   llm_enabled?: boolean
   llm_model?: string | null
   llm_error?: string | null
+  llm_status?: string
+  llm_cached_at?: string | null
+  llm_refreshing?: boolean
+  llm_source?: string
 }
 
 export interface ScanStatusResponse {
@@ -405,6 +409,7 @@ export interface KisRuntimeStatus {
   max_concurrent_requests: number
   request_spacing_ms: number
   guidance: string[]
+  last_prime?: KisPrimeStatus | null
 }
 
 export interface CacheRuntimeStatus {
@@ -449,6 +454,30 @@ export interface RuntimeStatusResponse {
   scheduler_enabled: boolean
   scheduled_warmups: ScheduledWarmupPlan[]
   data_notes: string[]
+}
+
+export interface KisPrimeStatus {
+  status: string
+  is_running: boolean
+  requested_at: string | null
+  finished_at: string | null
+  triggered_by: string | null
+  symbol: string | null
+  timeframe: string | null
+  ok: boolean | null
+  token_cached_before: boolean
+  token_cached_after: boolean
+  token_expires_at: string | null
+  token_expires_in_seconds: number | null
+  resolved_base_url: string | null
+  store_rows_before: number
+  store_rows_after: number
+  store_rows_added: number
+  bars_returned: number
+  data_source: string | null
+  fetch_status: string | null
+  message: string | null
+  last_error: string | null
 }
 
 export interface IntradayWarmupRequest {

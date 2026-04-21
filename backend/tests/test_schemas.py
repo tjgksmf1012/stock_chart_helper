@@ -14,8 +14,11 @@ import pytest
 from app.api.schemas import (
     AnalysisResult,
     DashboardItem,
+    KisPrimeStatus,
+    KisRuntimeStatus,
     OHLCVBar,
     PatternInfo,
+    RuntimeStatusResponse,
     ScreenerRequest,
     SymbolInfo,
 )
@@ -160,3 +163,47 @@ class TestDashboardItemDefaults:
         assert item.active_setup_score == 0.0
         assert item.risk_flags == []
         assert item.setup_stage == "neutral"
+
+
+class TestRuntimeStatusSchemas:
+    def test_runtime_status_accepts_nested_kis_prime(self):
+        prime = KisPrimeStatus(
+            status="ready",
+            is_running=False,
+            requested_at="2026-04-21T09:01:00",
+            finished_at="2026-04-21T09:01:03",
+            triggered_by="startup",
+            symbol="005930",
+            timeframe="1m",
+            ok=True,
+            token_cached_before=False,
+            token_cached_after=True,
+            store_rows_before=0,
+            store_rows_after=120,
+            store_rows_added=120,
+            bars_returned=120,
+            data_source="kis_intraday",
+            fetch_status="live_ok",
+            message="ok",
+        )
+        kis = KisRuntimeStatus(
+            configured=True,
+            environment="auto",
+            token_cached=True,
+            token_cache_path="data/kis_token_cache.json",
+            max_concurrent_requests=2,
+            request_spacing_ms=350,
+            guidance=["ready"],
+            last_prime=prime,
+        )
+        payload = RuntimeStatusResponse(
+            generated_at="2026-04-21T09:01:05",
+            app_name="Stock Chart Helper",
+            debug=False,
+            kis=kis,
+            cache={"backend": "redis", "redis_available": True, "memory_fallback_entries": 0},
+            intraday_store={"path": "data/intraday_cache.sqlite3", "retention_days": 45, "total_rows": 120, "symbol_count": 1},
+            scheduler_enabled=True,
+        )
+        assert payload.kis.last_prime is not None
+        assert payload.kis.last_prime.symbol == "005930"

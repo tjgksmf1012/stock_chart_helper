@@ -157,9 +157,12 @@ async def on_startup():
 
     _start_scheduler()
 
+    from .api.routes.system import trigger_background_kis_prime
     from .services.backtest_engine import get_pattern_stats_map
     from .services.scanner import get_scan_results
 
     asyncio.create_task(get_scan_results("1d"))
     asyncio.create_task(get_pattern_stats_map())
+    if settings.kis_app_key and settings.kis_app_secret:
+        trigger_background_kis_prime(triggered_by="startup")
     logger.info("Background scan and backtest warmup queued")

@@ -16,9 +16,12 @@ class Settings(BaseSettings):
     # OpenAI API (optional, for LLM-written recommendation commentary)
     openai_api_key: str = ""
     openai_model: str = "gpt-5-mini"
-    openai_timeout_seconds: int = 25
-    openai_max_output_tokens: int = 5000
+    openai_timeout_seconds: int = 12
+    openai_max_output_tokens: int = 1200
     openai_enable_recommendations: bool = True
+    openai_overlay_item_limit: int = 5
+    openai_overlay_cache_ttl_seconds: int = 1800
+    openai_overlay_refresh_after_seconds: int = 600
 
     # KIS API (optional, for real-time data)
     kis_app_key: str = ""

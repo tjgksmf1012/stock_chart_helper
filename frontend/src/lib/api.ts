@@ -2,7 +2,7 @@ import axios, { type InternalAxiosRequestConfig } from 'axios'
 import type {
   SymbolInfo, OHLCVBar, AnalysisResult, PriceInfo,
   AiRecommendationItem, AiRecommendationResponse, DashboardOverviewResponse, DashboardResponse, PatternLibraryEntry, ScreenerRequest, DashboardItem, ScanStatusResponse, Timeframe,
-  IntradayCandidateWarmupRequest, IntradayWarmupJobStatus, IntradayWarmupRequest, IntradayWarmupResponse, PatternStatsResponse, RuntimeStatusResponse,
+  IntradayCandidateWarmupRequest, IntradayWarmupJobStatus, IntradayWarmupRequest, IntradayWarmupResponse, KisPrimeStatus, PatternStatsResponse, RuntimeStatusResponse,
   WatchlistItem, OutcomeRecord, OutcomesSummary, OutcomeStatus,
 } from '@/types/api'
 
@@ -286,6 +286,9 @@ export const outcomesApi = {
 
 export const systemApi = {
   status: () => api.get<RuntimeStatusResponse>('/system/status').then(r => r.data),
+  kisPrimeStatus: () => api.get<KisPrimeStatus>('/system/kis/prime-status').then(r => r.data),
+  primeKis: (params?: { symbol?: string; timeframe?: string }) =>
+    api.post<KisPrimeStatus>('/system/kis/prime', null, { params }).then(r => r.data),
   warmupStatus: () => api.get<IntradayWarmupJobStatus>('/system/intraday/warmup-status').then(r => r.data),
   warmupIntraday: (req: IntradayWarmupRequest) =>
     api.post<IntradayWarmupResponse>('/system/intraday/warmup', req).then(r => r.data),

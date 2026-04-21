@@ -192,13 +192,13 @@ export default function DashboardPage() {
   const intradaySummary = intradayMode ? buildIntradaySummary(filteredSections) : null
   const intradayEmptyMessage =
     intradayMode && statusQ.data?.status === 'warming' && (statusQ.data?.cached_result_count ?? 0) === 0
-      ? `${timeframeLabel(timeframe)} 후보를 백그라운드에서 예열 중입니다. 잠시 후 카드가 자동으로 채워집니다.`
+      ? `${timeframeLabel(timeframe)} 후보를 지금 백그라운드에서 다시 계산 중입니다. 아직 실제 결과가 준비되지 않아 카드가 잠시 비어 보일 수 있고, 준비되는 순서대로 자동으로 채워집니다.`
       : undefined
   const intradayFallbackMessage =
     intradayMode && ['fallback_seed', 'placeholder_seed'].includes(statusQ.data?.candidate_source ?? '')
       ? statusQ.data?.candidate_source === 'placeholder_seed'
-        ? `지금은 ${timeframeLabel(timeframe)} 빠른 예열 후보를 먼저 보여주고 있습니다. 백그라운드 분봉 스캔이 끝나면 실제 분석 결과로 자동 교체됩니다.`
-        : `지금은 ${timeframeLabel(timeframe)} 즉시 fallback 후보를 먼저 보여주고 있습니다. 백그라운드 정리가 끝나면 카드가 더 정확한 결과로 바뀝니다.`
+        ? `지금은 ${timeframeLabel(timeframe)}의 임시 후보를 먼저 보여주고 있습니다. 이 목록은 첫 화면을 빠르게 열기 위한 것이고, 백그라운드 스캔이 끝나면 실제 분석 결과로 자동 교체됩니다.`
+        : `지금은 ${timeframeLabel(timeframe)}의 fallback 후보를 먼저 보여주고 있습니다. 본 스캔 정리가 끝나면 카드가 더 정확한 결과로 자동 업데이트됩니다.`
       : null
   const liveEmptyMessage = getLiveSectionEmptyMessage(statusQ.data, timeframe) ?? intradayEmptyMessage
   const sectionEmptyMessage = getDefaultSectionEmptyMessage(statusQ.data, timeframe) ?? intradayEmptyMessage
@@ -678,7 +678,7 @@ function statusLabel(status: string | undefined): string {
     case 'queued':
       return '대기 중'
     case 'warming':
-      return '예열 중'
+      return '백그라운드 준비 중'
     case 'ready':
       return '준비됨'
     case 'error':
@@ -765,13 +765,13 @@ function candidateSourceLabel(source: string | null | undefined): string {
 function getDefaultSectionEmptyMessage(status: ScanStatusResponse | undefined, timeframe: Timeframe): string | undefined {
   if (!status) return undefined
   if (status.status === 'warming' && (status.cached_result_count ?? 0) === 0) {
-    return `${timeframeLabel(timeframe)} 후보를 백그라운드에서 예열 중입니다. 잠시 후 카드가 자동으로 채워집니다.`
+    return `${timeframeLabel(timeframe)} 후보를 지금 백그라운드에서 다시 계산 중입니다. 첫 결과가 아직 준비되지 않아 카드가 비어 보일 수 있지만, 준비되는 순서대로 자동으로 채워집니다.`
   }
   if (status.candidate_source === 'placeholder_seed') {
-    return `지금은 ${timeframeLabel(timeframe)} 빠른 예열 후보를 먼저 보여주는 단계입니다. 실제 분석 카드가 곧 자동으로 교체됩니다.`
+    return `지금은 ${timeframeLabel(timeframe)} 임시 후보를 먼저 보여주는 단계입니다. 이 구간에서는 빠른 미리보기만 보이고, 실제 분석 카드가 준비되면 자동으로 교체됩니다.`
   }
   if (status.candidate_source === 'fallback_seed') {
-    return `지금은 ${timeframeLabel(timeframe)} 빠른 fallback 후보를 먼저 보여주는 단계라 섹션별 후보 수가 적을 수 있습니다.`
+    return `지금은 ${timeframeLabel(timeframe)} fallback 후보를 먼저 보여주는 단계라 섹션별 후보 수가 평소보다 적을 수 있습니다.`
   }
   return undefined
 }
@@ -779,19 +779,19 @@ function getDefaultSectionEmptyMessage(status: ScanStatusResponse | undefined, t
 function getLiveSectionEmptyMessage(status: ScanStatusResponse | undefined, timeframe: Timeframe): string | undefined {
   if (!status) return undefined
   if (status.status === 'warming' && (status.cached_result_count ?? 0) === 0) {
-    return `${timeframeLabel(timeframe)} live 후보를 수집 중입니다. 잠시 후 자동으로 다시 채워집니다.`
+    return `${timeframeLabel(timeframe)} live 후보를 아직 수집 중입니다. 실시간 분봉 검토가 끝나기 전까지는 이 영역이 잠시 비어 있을 수 있습니다.`
   }
   if (status.candidate_source === 'placeholder_seed') {
-    return `지금은 ${timeframeLabel(timeframe)} 빠른 예열 후보만 먼저 보여주고 있어 live 분봉 후보가 잠시 비어 있을 수 있습니다.`
+    return `지금은 ${timeframeLabel(timeframe)} 임시 후보만 먼저 보여주고 있어 live 분봉 후보가 잠시 비어 있을 수 있습니다. 실제 live 검토가 끝나면 자동으로 채워집니다.`
   }
   if (status.intraday_live_phase === 'off_hours') {
-    return '지금은 장외 절약 모드라 live 분봉 후보를 비워 두고 있습니다. forming / watch 후보를 먼저 확인해 보세요.'
+    return '지금은 장외 절약 모드라 live 분봉 후보를 의도적으로 비워 두고 있습니다. 이 시간대에는 forming / watch 후보를 먼저 보는 쪽이 정상입니다.'
   }
   if ((status.intraday_live_candidate_limit ?? 0) === 0) {
-    return '현재 시간대에서는 중요도 기준을 통과하는 live 분봉 후보가 아직 없습니다.'
+    return '현재 시간대 기준으로는 live 분봉까지 확인할 만큼 우선순위가 높은 후보가 아직 없습니다.'
   }
   if (status.candidate_source === 'fallback_seed') {
-    return `지금은 ${timeframeLabel(timeframe)} 빠른 fallback 후보를 먼저 보여주고 있어 live 후보가 잠시 비어 있을 수 있습니다.`
+    return `지금은 ${timeframeLabel(timeframe)} fallback 후보를 먼저 보여주고 있어 live 후보가 잠시 비어 있을 수 있습니다.`
   }
   return '현재 조건에서 바로 live 분봉까지 볼 만한 후보가 없습니다.'
 }

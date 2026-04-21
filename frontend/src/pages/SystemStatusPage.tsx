@@ -9,7 +9,7 @@ import { QueryError } from '@/components/ui/QueryError'
 import { StatRow } from '@/components/ui/StatRow'
 import { systemApi } from '@/lib/api'
 import { fmtDateTime } from '@/lib/utils'
-import type { IntradayWarmupJobStatus, RuntimeStatusResponse, Timeframe } from '@/types/api'
+import type { IntradayWarmupJobStatus, KisPrimeStatus, RuntimeStatusResponse, Timeframe } from '@/types/api'
 
 const INTRADAY_TIMEFRAMES = ['15m', '30m', '60m']
 
@@ -65,11 +65,19 @@ export default function SystemStatusPage() {
     },
   })
 
+  const kisPrime = useMutation({
+    mutationFn: () => systemApi.primeKis({ timeframe: '1m' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['system', 'status'] })
+    },
+  })
+
   const data = statusQ.data
   const warmupStatus = warmupStatusQ.data
   const isWarming = manualWarmup.isPending || candidateWarmup.isPending || Boolean(warmupStatus?.is_running)
   const readiness = useMemo(() => (data ? buildReadiness(data) : null), [data])
   const parsedSymbols = parseSymbols(manualSymbols)
+  const lastPrime = data?.kis.last_prime
 
   return (
     <div className="space-y-5">
@@ -171,6 +179,20 @@ export default function SystemStatusPage() {
                   KIS API 상태
                 </CardTitle>
               </CardHeader>
+              <div className="mb-4 flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => kisPrime.mutate()}
+                  disabled={kisPrime.isPending}
+                  className="rounded-md border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs text-primary hover:bg-primary/15 disabled:opacity-60"
+                >
+                  {kisPrime.isPending ? 'KIS 프라이밍 중' : '토큰 발급 + 첫 분봉 확인'}
+                </button>
+                {lastPrime?.finished_at && (
+                  <Badge variant={lastPrime.ok ? 'bullish' : 'warning'}>
+                    최근 프라이밍 {fmtDateTime(lastPrime.finished_at)}
+                  </Badge>
+                )}
+              </div>
               <div className="space-y-2">
                 <StatRow label="환경" value={data.kis.environment} />
                 <StatRow label="토큰 캐시" value={data.kis.token_cached ? '있음' : '없음'} />
@@ -181,6 +203,7 @@ export default function SystemStatusPage() {
                 <StatRow label="요청 간격" value={`${data.kis.request_spacing_ms}ms`} />
                 <StatRow label="토큰 캐시 파일" value={data.kis.token_cache_path} />
               </div>
+              {lastPrime && <KisPrimeCard status={lastPrime} />}
             </Card>
 
             <Card>
@@ -412,6 +435,34 @@ function WarmupJobStatusCard({ status }: { status: IntradayWarmupJobStatus }) {
           </div>
         ))}
       </div>
+    </div>
+  )
+}
+
+function KisPrimeCard({ status }: { status: KisPrimeStatus }) {
+  if (status.status === 'idle' && !status.finished_at && !status.is_running) {
+    return null
+  }
+
+  return (
+    <div className="mt-4 rounded-lg border border-border bg-background/60 p-3">
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <Badge variant={status.ok ? 'bullish' : status.is_running ? 'neutral' : 'warning'}>
+          {status.is_running ? '프라이밍 진행 중' : status.ok ? '프라이밍 완료' : '프라이밍 점검 필요'}
+        </Badge>
+        {status.symbol && <Badge variant="muted">{status.symbol} {status.timeframe ?? '1m'}</Badge>}
+        {status.store_rows_added > 0 && <Badge variant="bullish">분봉 {status.store_rows_added}개 추가</Badge>}
+      </div>
+
+      <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+        <StatRow label="토큰 캐시" value={status.token_cached_after ? '발급/재사용 완료' : '아직 없음'} />
+        <StatRow label="분봉 반환" value={`${status.bars_returned}개`} />
+        <StatRow label="데이터 소스" value={status.data_source ?? '-'} />
+        <StatRow label="상태" value={status.fetch_status ?? '-'} />
+      </div>
+
+      {status.message && <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{status.message}</p>}
+      {status.last_error && <p className="mt-2 text-xs text-red-300">{status.last_error}</p>}
     </div>
   )
 }

@@ -70,6 +70,16 @@ class KISClient:
             "timestamp": output.get("stck_cntg_hour"),
         }
 
+    async def ensure_access_token(self) -> dict[str, Any]:
+        if not self.configured:
+            raise RuntimeError("KIS client is not configured.")
+
+        await self._get_access_token()
+        return {
+            "configured": True,
+            "resolved_base_url": self._resolved_base_url,
+        }
+
     async def fetch_today_minute_bars(
         self,
         code: str,

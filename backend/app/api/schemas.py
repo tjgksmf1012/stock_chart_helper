@@ -332,6 +332,7 @@ class KisRuntimeStatus(BaseModel):
     max_concurrent_requests: int
     request_spacing_ms: int
     guidance: list[str] = Field(default_factory=list)
+    last_prime: KisPrimeStatus | None = None
 
 
 class CacheRuntimeStatus(BaseModel):
@@ -376,6 +377,30 @@ class RuntimeStatusResponse(BaseModel):
     scheduler_enabled: bool
     scheduled_warmups: list[ScheduledWarmupPlan] = Field(default_factory=list)
     data_notes: list[str] = Field(default_factory=list)
+
+
+class KisPrimeStatus(BaseModel):
+    status: str = "idle"
+    is_running: bool = False
+    requested_at: str | None = None
+    finished_at: str | None = None
+    triggered_by: str | None = None
+    symbol: str | None = None
+    timeframe: str | None = None
+    ok: bool | None = None
+    token_cached_before: bool = False
+    token_cached_after: bool = False
+    token_expires_at: str | None = None
+    token_expires_in_seconds: int | None = None
+    resolved_base_url: str | None = None
+    store_rows_before: int = 0
+    store_rows_after: int = 0
+    store_rows_added: int = 0
+    bars_returned: int = 0
+    data_source: str | None = None
+    fetch_status: str | None = None
+    message: str | None = None
+    last_error: str | None = None
 
 
 class IntradayWarmupRequest(BaseModel):
@@ -509,6 +534,10 @@ class AiRecommendationResponse(BaseModel):
     llm_enabled: bool = False
     llm_model: str | None = None
     llm_error: str | None = None
+    llm_status: str = "rule_only"
+    llm_cached_at: str | None = None
+    llm_refreshing: bool = False
+    llm_source: str = "rule_based"
 
 
 class ScreenerRequest(BaseModel):
