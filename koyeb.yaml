@@ -1,0 +1,32 @@
+name: stock-chart-helper
+services:
+  - name: api
+    type: web
+    git:
+      repository: github.com/tjgksmf1012/stock_chart_helper
+      branch: main
+    docker:
+      dockerfile: backend/Dockerfile
+      context: backend
+    instance_type: free
+    ports:
+      - port: 8000
+        protocol: http
+    routes:
+      - port: 8000
+        path: /
+    health_checks:
+      - protocol: http
+        path: /health
+        port: 8000
+        grace_period: 10
+        interval: 30
+        timeout: 5
+        restart_limit: 3
+    env:
+      - key: PORT
+        value: "8000"
+      - key: DEPLOYMENT_PLATFORM
+        value: koyeb
+      - key: ENABLE_PLATFORM_KEEPALIVE
+        value: "false"
