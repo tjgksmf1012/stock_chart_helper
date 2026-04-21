@@ -336,6 +336,9 @@ export interface AiRecommendationResponse {
   watch_items: AiRecommendationItem[]
   risk_items: AiRecommendationItem[]
   disclaimer: string
+  llm_enabled?: boolean
+  llm_model?: string | null
+  llm_error?: string | null
 }
 
 export interface ScanStatusResponse {

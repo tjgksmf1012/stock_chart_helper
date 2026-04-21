@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from ..api.schemas import AiRecommendationItem, AiRecommendationResponse, SymbolInfo
+from .openai_recommendation_service import apply_openai_recommendation_overlay
 from .scanner import get_scan_results
 from .timeframe_service import DEFAULT_TIMEFRAME, timeframe_label
 
@@ -36,7 +37,7 @@ async def build_ai_recommendations(timeframe: str = DEFAULT_TIMEFRAME, limit: in
         )[:limit]
     )
 
-    return AiRecommendationResponse(
+    response = AiRecommendationResponse(
         generated_at=datetime.utcnow().isoformat(),
         timeframe=timeframe,
         timeframe_label=timeframe_label(timeframe),
@@ -48,6 +49,7 @@ async def build_ai_recommendations(timeframe: str = DEFAULT_TIMEFRAME, limit: in
         risk_items=risk_items,
         disclaimer=DISCLAIMER,
     )
+    return await apply_openai_recommendation_overlay(response)
 
 
 def _make_recommendation(row: dict, timeframe: str) -> AiRecommendationItem:

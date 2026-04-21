@@ -506,6 +506,9 @@ class AiRecommendationResponse(BaseModel):
     watch_items: list[AiRecommendationItem]
     risk_items: list[AiRecommendationItem]
     disclaimer: str
+    llm_enabled: bool = False
+    llm_model: str | None = None
+    llm_error: str | None = None
 
 
 class ScreenerRequest(BaseModel):

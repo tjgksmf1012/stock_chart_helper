@@ -13,6 +13,12 @@ class Settings(BaseSettings):
     self_healthcheck_url: str = ""
     enable_platform_keepalive: bool = False
 
+    # OpenAI API (optional, for LLM-written recommendation commentary)
+    openai_api_key: str = ""
+    openai_model: str = "gpt-5-mini"
+    openai_timeout_seconds: int = 25
+    openai_enable_recommendations: bool = True
+
     # KIS API (optional, for real-time data)
     kis_app_key: str = ""
     kis_app_secret: str = ""
