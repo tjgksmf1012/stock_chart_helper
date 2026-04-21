@@ -161,10 +161,11 @@ def _kis_guidance(configured: bool, token_cached: bool, token_remaining: int | N
 async def get_runtime_status() -> RuntimeStatusResponse:
     kis = get_kis_client()
     token_status = _read_token_cache_status(settings.kis_token_cache_path)
+    runtime_token_status = await kis.get_cached_token_status()
     cache_status = await cache_backend_status()
     intraday_store_status = await get_intraday_store().get_status()
     configured = kis.configured
-    token_cached = bool(token_status["token_cached"])
+    token_cached = bool(token_status["token_cached"] or runtime_token_status["token_cached"])
     token_remaining = token_status["token_expires_in_seconds"]
 
     return RuntimeStatusResponse(
@@ -177,7 +178,7 @@ async def get_runtime_status() -> RuntimeStatusResponse:
             token_cached=token_cached,
             token_expires_at=token_status["token_expires_at"],
             token_expires_in_seconds=token_remaining,
-            resolved_base_url=token_status["resolved_base_url"] or kis._resolved_base_url,
+            resolved_base_url=token_status["resolved_base_url"] or runtime_token_status["resolved_base_url"] or kis._resolved_base_url,
             token_cache_path=settings.kis_token_cache_path,
             max_concurrent_requests=settings.kis_max_concurrent_requests,
             request_spacing_ms=settings.kis_request_spacing_ms,
@@ -221,6 +222,7 @@ async def _prime_kis_once(
         raise HTTPException(status_code=422, detail=f"Unsupported intraday timeframe: {timeframe}")
 
     token_before = _read_token_cache_status(settings.kis_token_cache_path)
+    runtime_token_before = await kis.get_cached_token_status()
     store_before = await get_intraday_store().get_status()
     resolved_symbol = await _resolve_kis_prime_symbol(symbol)
 
@@ -233,7 +235,7 @@ async def _prime_kis_once(
         symbol=resolved_symbol,
         timeframe=timeframe,
         ok=None,
-        token_cached_before=bool(token_before["token_cached"]),
+        token_cached_before=bool(token_before["token_cached"] or runtime_token_before["token_cached"]),
         token_cached_after=False,
         token_expires_at=None,
         token_expires_in_seconds=None,
@@ -258,7 +260,7 @@ async def _prime_kis_once(
             symbol=resolved_symbol,
             timeframe=timeframe,
             ok=False,
-            token_cached_before=bool(token_before["token_cached"]),
+            token_cached_before=bool(token_before["token_cached"] or runtime_token_before["token_cached"]),
             token_cached_after=False,
             resolved_base_url=token_before.get("resolved_base_url"),
             store_rows_before=int(store_before.get("total_rows", 0)),
@@ -283,10 +285,12 @@ async def _prime_kis_once(
             allow_live_intraday=True,
         )
         token_after = _read_token_cache_status(settings.kis_token_cache_path)
+        runtime_token_after = await kis.get_cached_token_status()
         store_after = await get_intraday_store().get_status()
 
         fetch_status = str(df.attrs.get("fetch_status") or "live_ok")
         message = str(df.attrs.get("fetch_message") or "KIS 토큰 프라이밍과 분봉 확인이 완료되었습니다.")
+        token_cached_after = bool(token_after["token_cached"] or runtime_token_after["token_cached"])
         result = KisPrimeStatus(
             status="ready",
             is_running=False,
@@ -295,12 +299,12 @@ async def _prime_kis_once(
             triggered_by=triggered_by,
             symbol=resolved_symbol,
             timeframe=timeframe,
-            ok=bool(token_after["token_cached"]),
-            token_cached_before=bool(token_before["token_cached"]),
-            token_cached_after=bool(token_after["token_cached"]),
+            ok=bool(token_cached_after or len(df) > 0),
+            token_cached_before=bool(token_before["token_cached"] or runtime_token_before["token_cached"]),
+            token_cached_after=token_cached_after,
             token_expires_at=token_after["token_expires_at"],
             token_expires_in_seconds=token_after["token_expires_in_seconds"],
-            resolved_base_url=token_after["resolved_base_url"] or kis._resolved_base_url,
+            resolved_base_url=token_after["resolved_base_url"] or runtime_token_after["resolved_base_url"] or kis._resolved_base_url,
             store_rows_before=int(store_before.get("total_rows", 0)),
             store_rows_after=int(store_after.get("total_rows", 0)),
             store_rows_added=max(0, int(store_after.get("total_rows", 0)) - int(store_before.get("total_rows", 0))),
@@ -314,6 +318,7 @@ async def _prime_kis_once(
         return result
     except Exception as exc:
         token_after = _read_token_cache_status(settings.kis_token_cache_path)
+        runtime_token_after = await kis.get_cached_token_status()
         store_after = await get_intraday_store().get_status()
         result = KisPrimeStatus(
             status="error",
@@ -324,11 +329,11 @@ async def _prime_kis_once(
             symbol=resolved_symbol,
             timeframe=timeframe,
             ok=False,
-            token_cached_before=bool(token_before["token_cached"]),
-            token_cached_after=bool(token_after["token_cached"]),
+            token_cached_before=bool(token_before["token_cached"] or runtime_token_before["token_cached"]),
+            token_cached_after=bool(token_after["token_cached"] or runtime_token_after["token_cached"]),
             token_expires_at=token_after["token_expires_at"],
             token_expires_in_seconds=token_after["token_expires_in_seconds"],
-            resolved_base_url=token_after["resolved_base_url"] or kis._resolved_base_url,
+            resolved_base_url=token_after["resolved_base_url"] or runtime_token_after["resolved_base_url"] or kis._resolved_base_url,
             store_rows_before=int(store_before.get("total_rows", 0)),
             store_rows_after=int(store_after.get("total_rows", 0)),
             store_rows_added=max(0, int(store_after.get("total_rows", 0)) - int(store_before.get("total_rows", 0))),

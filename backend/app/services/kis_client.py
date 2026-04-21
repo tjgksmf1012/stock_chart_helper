@@ -80,6 +80,14 @@ class KISClient:
             "resolved_base_url": self._resolved_base_url,
         }
 
+    async def get_cached_token_status(self) -> dict[str, Any]:
+        token = await self._read_cached_token()
+        return {
+            "configured": self.configured,
+            "token_cached": bool(token),
+            "resolved_base_url": self._resolved_base_url,
+        }
+
     async def fetch_today_minute_bars(
         self,
         code: str,
