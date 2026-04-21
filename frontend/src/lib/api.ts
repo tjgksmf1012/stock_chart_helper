@@ -10,15 +10,11 @@ import type {
 // In production set VITE_API_BASE_URL to your backend's public URL
 // (e.g. https://stock-chart-helper-api.onrender.com) and this will call it directly.
 function resolveApiBase() {
-  const configured = import.meta.env.VITE_API_BASE_URL
-    ? `${String(import.meta.env.VITE_API_BASE_URL).replace(/\/$/, '')}/api/v1`
-    : '/api/v1'
-
-  if (typeof window !== 'undefined' && window.location.hostname.endsWith('vercel.app')) {
-    return '/api/v1'
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return `${String(import.meta.env.VITE_API_BASE_URL).replace(/\/$/, '')}/api/v1`
   }
 
-  return configured
+  return '/api/v1'
 }
 
 const _base = resolveApiBase()
