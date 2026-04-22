@@ -455,6 +455,65 @@ export default function SystemStatusPage() {
             </div>
           </Card>
 
+          {(data.scheduled_daily_scans ?? []).length > 0 && (
+            <Card className="space-y-3">
+              <div className="flex items-center gap-2 text-sm font-semibold">
+                <Clock3 size={15} className="text-primary" />
+                자동 일봉 스캔 스케줄
+              </div>
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                장마감 후 확정 일봉 스캔이 scan-history에 저장되어 다음날 후보, 품질 리포트, 신호 검증의 기준 데이터가 됩니다.
+              </p>
+              <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
+                {(data.scheduled_daily_scans ?? []).map(plan => (
+                  <div key={plan.id} className="rounded-lg border border-border bg-background/60 p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="text-xs font-semibold text-foreground">{plan.label}</div>
+                        <div className="mt-1 text-[11px] text-muted-foreground">{plan.purpose}</div>
+                      </div>
+                      <Badge variant={plan.id === 'close_scan' ? 'bullish' : 'muted'}>{plan.schedule}</Badge>
+                    </div>
+                    <div className="mt-3 text-xs text-muted-foreground">기준 타임프레임: {plan.timeframe}</div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
+          {(data.storage_roles ?? []).length > 0 && (
+            <Card className="space-y-3">
+              <div className="flex items-center gap-2 text-sm font-semibold">
+                <Database size={15} className="text-primary" />
+                저장소 역할 분리
+              </div>
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                Redis는 빠르게 다시 만들 수 있는 캐시, Neon은 오래 남겨야 하는 운용 기록, 로컬 SQLite는 분봉 체감 속도용 저장소로 분리해서 봅니다.
+              </p>
+              <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
+                {(data.storage_roles ?? []).map(role => (
+                  <div key={role.name} className="rounded-lg border border-border bg-background/60 p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="text-xs font-semibold text-foreground">{role.name}</div>
+                        <div className="mt-1 text-[11px] text-muted-foreground">{role.role}</div>
+                      </div>
+                      <Badge variant={role.backend === 'postgresql' ? 'bullish' : 'muted'}>{role.backend}</Badge>
+                    </div>
+                    <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{role.persistence}</p>
+                    <div className="mt-3 flex flex-wrap gap-1">
+                      {role.examples.map(example => (
+                        <span key={example} className="rounded-md border border-border bg-card/70 px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                          {example}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
           <Card>
             <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
               <Clock3 size={12} />

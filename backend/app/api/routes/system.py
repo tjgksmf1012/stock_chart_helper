@@ -19,6 +19,8 @@ from ..schemas import (
     KisPrimeStatus,
     KisRuntimeStatus,
     RuntimeStatusResponse,
+    ScheduledDailyScanPlan,
+    StorageRoleStatus,
     ScanHistoryRunSummary,
     ScanQualityReportResponse,
 )
@@ -106,6 +108,67 @@ SCHEDULED_INTRADAY_WARMUP_PLANS: list[dict[str, Any]] = [
     },
 ]
 
+SCHEDULED_DAILY_SCAN_PLANS: list[dict[str, str]] = [
+    {
+        "id": "morning_scan",
+        "label": "장초반 일봉 후보 점검",
+        "timeframe": "1d",
+        "schedule": "평일 09:10 KST",
+        "purpose": "전일 기준 후보를 장 시작 후 다시 확인합니다.",
+    },
+    {
+        "id": "midday_scan",
+        "label": "장중 일봉 후보 재점검",
+        "timeframe": "1d",
+        "schedule": "평일 13:30 KST",
+        "purpose": "장중 가격 변화 이후 후보 우선순위를 다시 정렬합니다.",
+    },
+    {
+        "id": "close_scan",
+        "label": "장마감 일봉 확정 스캔",
+        "timeframe": "1d",
+        "schedule": "평일 16:00 KST",
+        "purpose": "마감 후 확정 일봉 기준으로 다음날 볼 후보와 scan-history를 저장합니다.",
+    },
+    {
+        "id": "close_outcome_evaluation",
+        "label": "장마감 신호 결과 점검",
+        "timeframe": "1d",
+        "schedule": "평일 16:20 KST",
+        "purpose": "저장된 pending 신호를 목표가/무효화가 터치 여부로 자동 정리합니다.",
+    },
+]
+
+
+def _storage_roles(cache_status: dict[str, Any], intraday_store_status: dict[str, Any]) -> list[StorageRoleStatus]:
+    redis_state = "연결됨" if cache_status.get("redis_available") else "메모리 fallback"
+    return [
+        StorageRoleStatus(
+            name="Redis / Upstash",
+            backend=str(cache_status.get("backend") or "unknown"),
+            role="빠른 응답을 위한 단기 캐시",
+            persistence=f"{redis_state}. 재계산 가능한 스캔 결과, AI 코멘트, 품질 리포트 캐시를 보관합니다.",
+            examples=["dashboard scan cache", "AI recommendation cache", "scan quality report cache"],
+        ),
+        StorageRoleStatus(
+            name="Neon PostgreSQL",
+            backend="postgresql",
+            role="장기 보존이 필요한 운용 기록",
+            persistence="영속 저장. scan-history, 후보 스냅샷, 저장 신호 결과를 장기 분석 재료로 보관합니다.",
+            examples=["scan_runs", "scan_candidate_snapshots", "signal_outcomes"],
+        ),
+        StorageRoleStatus(
+            name="Render local SQLite",
+            backend="sqlite",
+            role="분봉 체감 속도를 위한 로컬 저장소",
+            persistence=(
+                f"{intraday_store_status.get('retention_days', 45)}일 보관. "
+                "운영 인스턴스 재배포/디스크 정책에 영향을 받을 수 있어 장기 성과 데이터로 보지 않습니다."
+            ),
+            examples=["intraday 1m/15m/30m/60m cache"],
+        ),
+    ]
+
 
 def _read_token_cache_status(path_text: str) -> dict[str, Any]:
     path = Path(path_text)
@@ -191,7 +254,9 @@ async def get_runtime_status() -> RuntimeStatusResponse:
         cache=CacheRuntimeStatus(**cache_status),
         intraday_store=IntradayStoreStatus(**intraday_store_status),
         scheduler_enabled=True,
+        scheduled_daily_scans=[ScheduledDailyScanPlan(**plan) for plan in SCHEDULED_DAILY_SCAN_PLANS],
         scheduled_warmups=SCHEDULED_INTRADAY_WARMUP_PLANS,
+        storage_roles=_storage_roles(cache_status, intraday_store_status),
         data_notes=[
             "월봉·주봉·일봉은 KRX 일봉 데이터를 기준으로 집계합니다.",
             "분봉은 KIS 당일 분봉, Yahoo 공개 분봉, 로컬 저장 캐시를 조합해 사용합니다.",

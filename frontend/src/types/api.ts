@@ -497,6 +497,22 @@ export interface ScheduledWarmupPlan {
   schedule: string
 }
 
+export interface ScheduledDailyScanPlan {
+  id: string
+  label: string
+  timeframe: Timeframe | string
+  schedule: string
+  purpose: string
+}
+
+export interface StorageRoleStatus {
+  name: string
+  backend: string
+  role: string
+  persistence: string
+  examples: string[]
+}
+
 export interface RuntimeStatusResponse {
   generated_at: string
   app_name: string
@@ -505,7 +521,9 @@ export interface RuntimeStatusResponse {
   cache: CacheRuntimeStatus
   intraday_store: IntradayStoreStatus
   scheduler_enabled: boolean
+  scheduled_daily_scans: ScheduledDailyScanPlan[]
   scheduled_warmups: ScheduledWarmupPlan[]
+  storage_roles: StorageRoleStatus[]
   data_notes: string[]
 }
 

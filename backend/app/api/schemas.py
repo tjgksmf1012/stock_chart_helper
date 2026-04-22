@@ -412,6 +412,22 @@ class ScheduledWarmupPlan(BaseModel):
     schedule: str
 
 
+class ScheduledDailyScanPlan(BaseModel):
+    id: str
+    label: str
+    timeframe: str
+    schedule: str
+    purpose: str
+
+
+class StorageRoleStatus(BaseModel):
+    name: str
+    backend: str
+    role: str
+    persistence: str
+    examples: list[str] = Field(default_factory=list)
+
+
 class RuntimeStatusResponse(BaseModel):
     generated_at: str
     app_name: str
@@ -420,7 +436,9 @@ class RuntimeStatusResponse(BaseModel):
     cache: CacheRuntimeStatus
     intraday_store: IntradayStoreStatus
     scheduler_enabled: bool
+    scheduled_daily_scans: list[ScheduledDailyScanPlan] = Field(default_factory=list)
     scheduled_warmups: list[ScheduledWarmupPlan] = Field(default_factory=list)
+    storage_roles: list[StorageRoleStatus] = Field(default_factory=list)
     data_notes: list[str] = Field(default_factory=list)
 
 
