@@ -798,6 +798,145 @@ def _opportunity_profile(pattern: PatternResult, current_close: float) -> dict[s
     }
 
 
+def _ichimoku_profile(df: pd.DataFrame) -> dict[str, Any]:
+    if df.empty or len(df) < 60:
+        return {
+            "score": 0.5,
+            "bias": "neutral",
+            "cloud_position": "unknown",
+            "prior_high_structure": "unknown",
+            "summary": "일목균형표를 읽기에는 바 수가 아직 부족합니다.",
+            "signals": ["구름대 해석보다 패턴 구조와 핵심 가격대를 먼저 확인하세요."],
+            "caution": "데이터가 더 쌓이면 구름 지지/이탈 해석 품질이 올라갑니다.",
+        }
+
+    high = pd.to_numeric(df["high"], errors="coerce")
+    low = pd.to_numeric(df["low"], errors="coerce")
+    close = pd.to_numeric(df["close"], errors="coerce")
+    conversion = (high.rolling(9).max() + low.rolling(9).min()) / 2
+    base = (high.rolling(26).max() + low.rolling(26).min()) / 2
+    span_a = (conversion + base) / 2
+    span_b = (high.rolling(52).max() + low.rolling(52).min()) / 2
+
+    current_close = float(close.iloc[-1])
+    current_conversion = float(conversion.iloc[-1]) if pd.notna(conversion.iloc[-1]) else current_close
+    current_base = float(base.iloc[-1]) if pd.notna(base.iloc[-1]) else current_close
+    current_span_a = float(span_a.iloc[-1]) if pd.notna(span_a.iloc[-1]) else current_close
+    current_span_b = float(span_b.iloc[-1]) if pd.notna(span_b.iloc[-1]) else current_close
+    cloud_top = max(current_span_a, current_span_b)
+    cloud_bottom = min(current_span_a, current_span_b)
+    cloud_thickness = abs(current_span_a - current_span_b) / max(current_close, 1.0)
+
+    if current_close >= cloud_top * 1.01:
+        cloud_position = "above_cloud"
+    elif current_close >= cloud_top * 0.995:
+        cloud_position = "cloud_top_test"
+    elif current_close >= cloud_bottom * 0.995:
+        cloud_position = "inside_cloud"
+    elif current_close >= cloud_bottom * 0.975:
+        cloud_position = "cloud_bottom_test"
+    else:
+        cloud_position = "below_cloud"
+
+    recent = close.tail(min(len(close), 90))
+    recent_high = float(recent.iloc[:-5].max()) if len(recent) > 5 else float(recent.max())
+    older_window = close.iloc[max(0, len(close) - 140): max(0, len(close) - 35)]
+    older_high = float(older_window.max()) if not older_window.empty else recent_high
+
+    if current_close >= max(recent_high, older_high) * 1.005:
+        prior_high_structure = "all_highs_cleared"
+    elif current_close >= recent_high * 1.005 and current_close < older_high * 1.005:
+        prior_high_structure = "recent_high_cleared_old_high_pending"
+    elif abs(current_close - recent_high) / max(recent_high, 1.0) <= 0.015:
+        prior_high_structure = "recent_high_test"
+    else:
+        prior_high_structure = "prior_high_below"
+
+    signals: list[str] = []
+    score = 0.50
+
+    if cloud_position == "above_cloud":
+        score += 0.16
+        signals.append("가격이 구름 위에 있어 추세 우위가 유지됩니다.")
+    elif cloud_position == "cloud_top_test":
+        score += 0.10
+        signals.append("구름 상단 지지 여부가 핵심입니다.")
+    elif cloud_position == "inside_cloud":
+        score -= 0.04
+        signals.append("가격이 구름 안에 있어 방향성 확인이 더 필요합니다.")
+    elif cloud_position == "cloud_bottom_test":
+        score -= 0.10
+        signals.append("구름 하단 이탈 여부를 먼저 확인해야 합니다.")
+    else:
+        score -= 0.16
+        signals.append("가격이 구름 아래에 있어 저항 부담이 큽니다.")
+
+    if current_conversion >= current_base:
+        score += 0.08
+        signals.append("전환선이 기준선 위라 단기 탄력이 유지됩니다.")
+    else:
+        score -= 0.08
+        signals.append("전환선이 기준선 아래라 단기 힘이 약합니다.")
+
+    lag_reference = float(close.iloc[-27]) if len(close) >= 27 else current_close
+    lagging_bullish = current_close >= lag_reference
+    if lagging_bullish:
+        score += 0.05
+        signals.append("후행스팬도 과거 가격 위에 있어 추세 확인에 우호적입니다.")
+    else:
+        score -= 0.05
+        signals.append("후행스팬이 과거 가격 아래라 추세 확인이 약합니다.")
+
+    if cloud_thickness >= 0.08:
+        caution = "구름 두께가 두꺼워 지지·저항 강도가 큰 구간입니다."
+        if cloud_position in {"inside_cloud", "below_cloud"}:
+            score -= 0.05
+    elif cloud_thickness <= 0.03:
+        caution = "구름 두께가 얇아 돌파는 쉬울 수 있지만 지지 신뢰도도 얇습니다."
+    else:
+        caution = ""
+
+    if current_close >= cloud_top and current_conversion >= current_base and lagging_bullish:
+        bias = "bullish"
+        score += 0.05
+    elif current_close <= cloud_bottom and current_conversion <= current_base and not lagging_bullish:
+        bias = "bearish"
+        score -= 0.05
+    else:
+        bias = "neutral"
+
+    summary_parts = []
+    if cloud_position == "cloud_top_test":
+        summary_parts.append("구름 상단 지지 확인이 붙으면 다시 출발할 수 있는 자리입니다.")
+    elif cloud_position == "cloud_bottom_test":
+        summary_parts.append("구름 하단 이탈 시 구조가 빠르게 약해질 수 있습니다.")
+    elif cloud_position == "inside_cloud":
+        summary_parts.append("구름 안이라 방향 결론을 서두르기보다 이탈 방향을 확인하는 편이 좋습니다.")
+    elif cloud_position == "above_cloud":
+        summary_parts.append("구름 위에서 쉬고 있어 눌림 지지 확인만 되면 재가속 해석이 가능합니다.")
+    else:
+        summary_parts.append("구름 아래라 바로 추격하기보다 저항 해소 여부가 먼저입니다.")
+
+    if prior_high_structure == "recent_high_cleared_old_high_pending":
+        summary_parts.append("직전 고점은 넘겼지만 더 큰 이전 고점은 아직 남아 있습니다.")
+    elif prior_high_structure == "all_highs_cleared":
+        summary_parts.append("직전 고점과 더 큰 이전 고점 정리가 함께 된 구조입니다.")
+    elif prior_high_structure == "recent_high_test":
+        summary_parts.append("직전 고점 테스트 구간이라 종가 안착 여부가 중요합니다.")
+    else:
+        summary_parts.append("이전 고점 정리가 아직 충분하지 않습니다.")
+
+    return {
+        "score": round(max(0.0, min(1.0, score)), 3),
+        "bias": bias,
+        "cloud_position": cloud_position,
+        "prior_high_structure": prior_high_structure,
+        "summary": " ".join(summary_parts),
+        "signals": signals[:5],
+        "caution": caution,
+    }
+
+
 def _entry_window_profile(
     *,
     timeframe: str,
@@ -1903,6 +2042,7 @@ def _decision_support_profile(
     trend_alignment_score: float,
     wyckoff_phase: str,
     intraday_session_score: float,
+    ichimoku: dict[str, Any],
     fetch_status: str,
     target_hit_at: str | None,
     invalidated_at: str | None,
@@ -1933,6 +2073,8 @@ def _decision_support_profile(
         flags.append("신호가 나온 지 시간이 지나 패턴 신선도가 약해졌습니다.")
     if trend_alignment_score < 0.45:
         flags.append("상위 추세와의 정렬이 좋지 않습니다.")
+    if float(ichimoku.get("score", 0.5)) < 0.42:
+        flags.append("일목 구조가 아직 약해 구름 지지 또는 이탈 확인이 더 필요합니다.")
     if bullish and wyckoff_phase in {"distribution", "markdown"}:
         flags.append("와이코프 국면이 상승 패턴과 잘 맞지 않습니다.")
     if bearish and wyckoff_phase in {"accumulation", "markup"}:
@@ -1954,6 +2096,8 @@ def _decision_support_profile(
     if pattern.neckline:
         relation = "돌파" if direction == "상승" else "이탈"
         checklist.append(f"목선 {pattern.neckline:,.0f} 부근에서 {relation} 여부 확인하기")
+    for signal in list(ichimoku.get("signals") or [])[:2]:
+        checklist.append(signal)
     if pattern.invalidation_level:
         checklist.append(f"무효화 기준 {pattern.invalidation_level:,.0f} 이탈 여부 확인하기")
     if pattern.target_level and action_plan.get("action_plan") != "cooling":
@@ -1975,6 +2119,9 @@ def _decision_support_profile(
         next_trigger = "데이터 품질 또는 패턴 완성도가 좋아진 뒤 다시 평가하는 것이 좋습니다."
     else:
         next_trigger = "현재는 목표 소진·무효화 여부와 같은 종료 신호를 우선 확인하는 편이 좋습니다."
+
+    if ichimoku.get("summary"):
+        next_trigger = f"{next_trigger} {ichimoku['summary']}"
 
     if not flags:
         flags.append("크게 치명적인 리스크는 보이지 않지만 무효화 기준 확인은 여전히 필요합니다.")
@@ -2017,6 +2164,7 @@ def _trade_readiness_profile(
     historical_edge_score: float,
     trend_alignment_score: float,
     intraday_session_score: float,
+    ichimoku_score: float,
     target_hit_at: str | None,
     invalidated_at: str | None,
     bars_since_signal: int | None,
@@ -2068,9 +2216,9 @@ def _trade_readiness_profile(
     reentry_label = str((reentry or {}).get("reentry_label") or "재확인 필요")
     reentry_summary = str((reentry or {}).get("reentry_summary") or "")
     evidence_score = 0.56 * sample_reliability + 0.44 * historical_edge_score
-    context_score = trend_alignment_score
+    context_score = 0.58 * trend_alignment_score + 0.42 * ichimoku_score
     if is_intraday_timeframe(timeframe):
-        context_score = 0.62 * trend_alignment_score + 0.38 * intraday_session_score
+        context_score = 0.42 * trend_alignment_score + 0.24 * intraday_session_score + 0.34 * ichimoku_score
 
     if pattern.state in {"played_out", "invalidated"} or target_hit_at or invalidated_at:
         timing_score = min(timing_score, 0.16)
@@ -2151,6 +2299,12 @@ def _trade_readiness_profile(
             "score": round(context_score, 3),
             "weight": 0.04,
             "note": "상위 추세와 장중 세션 컨디션을 반영합니다.",
+        },
+        {
+            "label": "일목 구조",
+            "score": round(ichimoku_score, 3),
+            "weight": 0.06,
+            "note": "구름대 위치, 전환선/기준선 배열, 전고점 구조를 함께 반영합니다.",
         },
         {
             "label": "실전 액션",
@@ -2794,6 +2948,7 @@ def build_no_signal_snapshot(
         historical_edge_score=0.0,
         trend_alignment_score=0.0,
         intraday_session_score=0.5,
+        ichimoku_score=0.5,
         target_hit_at=None,
         invalidated_at=None,
         bars_since_signal=None,
@@ -2827,6 +2982,15 @@ def build_no_signal_snapshot(
         intraday_session_phase="neutral",
         intraday_session_score=0.5,
         intraday_session_note="",
+        ichimoku={
+            "score": 0.5,
+            "bias": "neutral",
+            "cloud_position": "unknown",
+            "prior_high_structure": "unknown",
+            "summary": "활성 패턴이 없어 구름대 해석은 보조적으로만 보세요.",
+            "signals": ["핵심 가격대와 추세 재확인을 먼저 권장합니다."],
+            "caution": "",
+        },
         action_plan=action_plan["action_plan"],
         action_plan_label=action_plan["action_plan_label"],
         action_plan_summary=action_plan["action_plan_summary"],
@@ -2932,6 +3096,7 @@ async def analyze_symbol_dataframe(
     trend_profile = _trend_alignment_profile(df, best_pattern.pattern_type)
     wyckoff_profile = _wyckoff_profile(df, best_pattern.pattern_type)
     intraday_profile = _intraday_session_profile(df, timeframe, best_pattern.pattern_type)
+    ichimoku = _ichimoku_profile(df)
     regime_match = trend_profile["trend_alignment_score"]
     opportunity = _opportunity_profile(best_pattern, current_close)
     entry_window = _entry_window_profile(
@@ -3014,6 +3179,14 @@ async def analyze_symbol_dataframe(
             risk_penalty += 0.06
         elif intraday_profile["intraday_session_score"] > 0.82:
             risk_penalty -= 0.02
+    if ichimoku["cloud_position"] in {"below_cloud", "cloud_bottom_test"}:
+        risk_penalty += 0.10
+    elif ichimoku["cloud_position"] == "inside_cloud":
+        risk_penalty += 0.04
+    elif ichimoku["cloud_position"] in {"above_cloud", "cloud_top_test"}:
+        risk_penalty -= 0.02
+    if ichimoku["prior_high_structure"] == "recent_high_cleared_old_high_pending":
+        risk_penalty += 0.04
     if _is_bullish(best_pattern.pattern_type):
         if wyckoff_profile["wyckoff_phase"] == "markdown":
             risk_penalty += 0.16
@@ -3153,6 +3326,7 @@ async def analyze_symbol_dataframe(
         trend_profile["trend_alignment_score"],
         wyckoff_profile["wyckoff_phase"],
         intraday_profile["intraday_session_score"],
+        ichimoku,
         profile["fetch_status"],
         best_target_hit_at,
         best_invalidated_at,
@@ -3178,10 +3352,12 @@ async def analyze_symbol_dataframe(
         historical_edge_score=probability.historical_edge_score,
         trend_alignment_score=trend_profile["trend_alignment_score"],
         intraday_session_score=intraday_profile["intraday_session_score"],
+        ichimoku_score=float(ichimoku["score"]),
         target_hit_at=best_target_hit_at,
         invalidated_at=best_invalidated_at,
         bars_since_signal=bars_since_signal,
     )
+    action_plan["action_plan_summary"] = f"{action_plan['action_plan_summary']} {ichimoku['summary']}".strip()
     if probability.no_signal_flag:
         projection_label = "관망 시나리오"
         projection_summary = "활성 매매 신호가 부족해 미래 가격선을 그리지 않고 핵심 기준선 재확인만 권장합니다."
@@ -3239,6 +3415,7 @@ async def analyze_symbol_dataframe(
         intraday_session_phase=intraday_profile["intraday_session_phase"],
         intraday_session_score=intraday_profile["intraday_session_score"],
         intraday_session_note=intraday_profile["intraday_session_note"],
+        ichimoku=ichimoku,
         action_plan=action_plan["action_plan"],
         action_plan_label=action_plan["action_plan_label"],
         action_plan_summary=action_plan["action_plan_summary"],

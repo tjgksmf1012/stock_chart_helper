@@ -37,6 +37,8 @@ interface RoutineDeck {
   afterMarket: DashboardItem[]
 }
 
+type RoutineMode = 'premarket' | 'intraday' | 'afterMarket'
+
 const DASHBOARD_SNAPSHOT_PREFIX = 'stock-chart-helper:dashboard-snapshot:v1'
 
 const INTRADAY_VIEW_OPTIONS: Array<[IntradayView, string]> = [
@@ -755,52 +757,92 @@ function RoutineDesk({
   isFetchingPrices: boolean
   onOpen: (item: DashboardItem) => void
 }) {
+  const hour = new Date().getHours()
+  const sessionMode: RoutineMode = hour < 9 ? 'premarket' : hour < 16 ? 'intraday' : 'afterMarket'
+  const routineColumns: Array<{
+    mode: RoutineMode
+    title: string
+    subtitle: string
+    tone: 'primary' | 'sky' | 'amber'
+    items: DashboardItem[]
+    empty: string
+  }> = [
+    {
+      mode: 'premarket',
+      title: '?? 5?',
+      subtitle: '?? ?? ? ??? ????',
+      tone: 'primary',
+      items: deck.premarket,
+      empty: '?? ??? ?? ????.',
+    },
+    {
+      mode: 'intraday',
+      title: '?? ???',
+      subtitle: '???? ??? ?? ??? ?????',
+      tone: 'sky',
+      items: deck.intraday,
+      empty: '?? ??? ??? ?? ????.',
+    },
+    {
+      mode: 'afterMarket',
+      title: '?? ??',
+      subtitle: '???? ?? ??? ?????',
+      tone: 'amber',
+      items: deck.afterMarket,
+      empty: '?? ?? ??? ?? ????.',
+    },
+  ]
+  const orderedColumns = [
+    ...routineColumns.filter(column => column.mode === sessionMode),
+    ...routineColumns.filter(column => column.mode !== sessionMode),
+  ]
+
   return (
     <section className="space-y-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <div className="text-sm font-semibold">오늘 운용 루틴</div>
+          <div className="text-sm font-semibold">?? ?? ??</div>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            장전에는 후보를 압축하고, 장중에는 현재가와 트리거를 확인하고, 장후에는 무효화와 기록 대상을 정리합니다.
+            ???? ?? ??? ?? ????, ??? ??? ?? ???? ??? ??? ? ?? ??????.
           </p>
         </div>
         <div className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
           <RefreshCw size={12} className={isFetchingPrices ? 'animate-spin' : ''} />
-          상위 후보 현재가 자동 갱신
+          ?? ?? ??? ?? ??
         </div>
       </div>
 
+      <div className="flex flex-wrap gap-2">
+        {routineColumns.map(column => (
+          <span
+            key={column.mode}
+            className={cn(
+              'rounded-lg border px-3 py-1.5 text-xs',
+              column.mode === sessionMode
+                ? 'border-primary/25 bg-primary/10 text-primary'
+                : 'border-border bg-background/60 text-muted-foreground',
+            )}
+          >
+            {column.title}
+            {column.mode === sessionMode ? ' ? ?? ??' : ''}
+          </span>
+        ))}
+      </div>
+
       <div className="grid gap-4 xl:grid-cols-3">
-        <RoutineColumn
-          title="장전 5선"
-          subtitle="오늘 먼저 볼 후보만 압축"
-          tone="primary"
-          items={deck.premarket}
-          prices={prices}
-          mode="premarket"
-          empty="장전 후보가 아직 없습니다."
-          onOpen={onOpen}
-        />
-        <RoutineColumn
-          title="장중 모니터"
-          subtitle="현재가와 조건 충족 여부 확인"
-          tone="sky"
-          items={deck.intraday}
-          prices={prices}
-          mode="intraday"
-          empty="장중 모니터 대상이 아직 없습니다."
-          onOpen={onOpen}
-        />
-        <RoutineColumn
-          title="장후 정리"
-          subtitle="보류·무효화·기록 대상 정리"
-          tone="amber"
-          items={deck.afterMarket}
-          prices={prices}
-          mode="afterMarket"
-          empty="장후 정리할 후보가 아직 없습니다."
-          onOpen={onOpen}
-        />
+        {orderedColumns.map(column => (
+          <RoutineColumn
+            key={column.mode}
+            title={column.title}
+            subtitle={column.subtitle}
+            tone={column.tone}
+            items={column.items}
+            prices={prices}
+            mode={column.mode}
+            empty={column.empty}
+            onOpen={onOpen}
+          />
+        ))}
       </div>
     </section>
   )

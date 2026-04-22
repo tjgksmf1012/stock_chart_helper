@@ -88,6 +88,50 @@ class ScoreFactor(BaseModel):
     note: str = ""
 
 
+class IchimokuSummary(BaseModel):
+    score: float = 0.0
+    bias: str = "neutral"
+    cloud_position: str = "unknown"
+    prior_high_structure: str = "unknown"
+    summary: str = ""
+    signals: list[str] = Field(default_factory=list)
+    caution: str = ""
+
+
+class ReferenceCaseItem(BaseModel):
+    key: str
+    symbol_code: str
+    symbol_name: str
+    timeframe: str
+    timeframe_label: str
+    pattern_type: str
+    state: str
+    signal_date: str
+    resolution_date: str | None = None
+    similarity_score: float
+    cloud_position: str
+    prior_high_structure: str
+    ichimoku_summary: str
+    setup_summary: str
+    outcome_label: str
+    outcome_summary: str
+    matched_features: list[str] = Field(default_factory=list)
+    sparkline: list[float] = Field(default_factory=list)
+    chart_path: str
+
+
+class ReferenceCaseResponse(BaseModel):
+    generated_at: str
+    symbol_code: str
+    symbol_name: str
+    timeframe: str
+    timeframe_label: str
+    pattern_type: str
+    state: str
+    ichimoku: IchimokuSummary
+    items: list[ReferenceCaseItem] = Field(default_factory=list)
+
+
 class AnalysisResult(BaseModel):
     symbol: SymbolInfo
     timeframe: str
@@ -117,6 +161,7 @@ class AnalysisResult(BaseModel):
     intraday_session_phase: str
     intraday_session_score: float
     intraday_session_note: str
+    ichimoku: IchimokuSummary = Field(default_factory=IchimokuSummary)
     action_plan: str = "watch"
     action_plan_label: str = "관찰 후보"
     action_plan_summary: str = ""

@@ -87,6 +87,7 @@ export function AnalysisPanel({ analysis, symbol, timeframe }: AnalysisPanelProp
       {activeTab === 'pattern' && (
         <div className="space-y-3">
           <MarketContextCard analysis={analysis} />
+          <IchimokuCard analysis={analysis} />
           {bestPattern && <BestPatternCard pattern={bestPattern} analysis={analysis} />}
           <PatternsListCard analysis={analysis} />
           <CautionCard />
@@ -180,6 +181,41 @@ function ProjectionCard({ analysis }: { analysis: AnalysisResult }) {
       {analysis.projection_caution && (
         <div className="rounded-lg border border-sky-400/15 bg-sky-400/5 p-3 text-xs leading-relaxed text-sky-100">
           {analysis.projection_caution}
+        </div>
+      )}
+    </Card>
+  )
+}
+
+function IchimokuCard({ analysis }: { analysis: AnalysisResult }) {
+  return (
+    <Card className="space-y-3">
+      <div className="flex items-center gap-2 text-sm font-semibold">
+        <Layers3 size={15} className="text-primary" />
+        일목균형표 해석
+      </div>
+      <div className="rounded-lg border border-border bg-background/55 p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="muted">{analysis.ichimoku.cloud_position}</Badge>
+          <Badge variant="neutral">{analysis.ichimoku.prior_high_structure}</Badge>
+          <Badge variant={analysis.ichimoku.bias === 'bullish' ? 'bullish' : analysis.ichimoku.bias === 'bearish' ? 'bearish' : 'muted'}>
+            점수 {fmtPct(analysis.ichimoku.score, 0)}
+          </Badge>
+        </div>
+        <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{analysis.ichimoku.summary}</p>
+      </div>
+
+      <div className="space-y-2">
+        {analysis.ichimoku.signals.map(signal => (
+          <div key={signal} className="rounded-lg border border-border bg-background/50 px-3 py-2 text-xs text-muted-foreground">
+            {signal}
+          </div>
+        ))}
+      </div>
+
+      {analysis.ichimoku.caution && (
+        <div className="rounded-lg border border-amber-400/20 bg-amber-400/8 p-3 text-xs leading-relaxed text-amber-100">
+          {analysis.ichimoku.caution}
         </div>
       )}
     </Card>

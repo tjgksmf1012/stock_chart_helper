@@ -83,6 +83,50 @@ export interface ScoreFactor {
   note: string
 }
 
+export interface IchimokuSummary {
+  score: number
+  bias: 'bullish' | 'bearish' | 'neutral' | string
+  cloud_position: string
+  prior_high_structure: string
+  summary: string
+  signals: string[]
+  caution: string
+}
+
+export interface ReferenceCaseItem {
+  key: string
+  symbol_code: string
+  symbol_name: string
+  timeframe: Timeframe
+  timeframe_label: string
+  pattern_type: string
+  state: string
+  signal_date: string
+  resolution_date: string | null
+  similarity_score: number
+  cloud_position: string
+  prior_high_structure: string
+  ichimoku_summary: string
+  setup_summary: string
+  outcome_label: string
+  outcome_summary: string
+  matched_features: string[]
+  sparkline: number[]
+  chart_path: string
+}
+
+export interface ReferenceCaseResponse {
+  generated_at: string
+  symbol_code: string
+  symbol_name: string
+  timeframe: Timeframe
+  timeframe_label: string
+  pattern_type: string
+  state: string
+  ichimoku: IchimokuSummary
+  items: ReferenceCaseItem[]
+}
+
 export interface AnalysisResult {
   symbol: SymbolInfo
   timeframe: Timeframe
@@ -112,6 +156,7 @@ export interface AnalysisResult {
   intraday_session_phase: string
   intraday_session_score: number
   intraday_session_note: string
+  ichimoku: IchimokuSummary
   action_plan: string
   action_plan_label: string
   action_plan_summary: string

@@ -87,6 +87,14 @@ _BACKTEST_CONFIG = {
 _backtest_running = False
 
 
+def get_backtest_universe() -> list[str]:
+    return list(_BACKTEST_UNIVERSE)
+
+
+def get_backtest_config(timeframe: str) -> dict[str, int]:
+    return dict(_BACKTEST_CONFIG.get(timeframe, _BACKTEST_CONFIG["1d"]))
+
+
 def _edge_score(win_rate: float, avg_mfe_pct: float, avg_mae_pct: float, avg_bars_to_outcome: float, max_forward: int) -> float:
     rr = avg_mfe_pct / max(avg_mae_pct, 0.01)
     rr_score = max(0.0, min(1.0, rr / 2.5))

@@ -5,13 +5,14 @@ from datetime import date, timedelta
 
 from fastapi import APIRouter, HTTPException, Query
 
-from ..schemas import AnalysisResult, OHLCVBar, PriceInfo, SymbolInfo
+from ..schemas import AnalysisResult, OHLCVBar, PriceInfo, ReferenceCaseResponse, SymbolInfo
 from ...core.config import get_settings
 from ...core.redis import cache_get, cache_set
 from ...services.analysis_service import analyze_symbol_dataframe, build_no_signal_snapshot
 import pandas as pd
 
 from ...services.data_fetcher import get_data_fetcher
+from ...services.reference_case_service import build_reference_cases
 from ...services.scanner import FALLBACK_CODES, get_scan_results
 from ...services.timeframe_service import DEFAULT_TIMEFRAME, SUPPORTED_TIMEFRAMES, get_timeframe_spec
 
@@ -156,7 +157,7 @@ async def get_analysis(
     timeframe: str = Query(default=DEFAULT_TIMEFRAME),
 ) -> AnalysisResult:
     timeframe = _validate_timeframe(timeframe)
-    cache_key = f"analysis:v7:{symbol}:{timeframe}"
+    cache_key = f"analysis:v8:{symbol}:{timeframe}"
     cached = await cache_get(cache_key)
     if cached:
         return AnalysisResult(**cached)
@@ -186,6 +187,40 @@ async def get_analysis(
     )
     await cache_set(cache_key, result.model_dump(), settings.pattern_cache_ttl)
     return result
+
+
+@router.get("/{symbol}/reference-cases")
+async def get_reference_cases(
+    symbol: str,
+    timeframe: str = Query(default=DEFAULT_TIMEFRAME),
+    limit: int = Query(default=6, ge=1, le=12),
+) -> ReferenceCaseResponse:
+    timeframe = _validate_timeframe(timeframe)
+
+    fetcher = get_data_fetcher()
+    df = await fetcher.get_stock_ohlcv_by_timeframe(symbol, timeframe)
+
+    name = await fetcher.get_stock_name(symbol)
+    market_cap = await fetcher.get_market_cap(symbol)
+    universe = await fetcher.get_universe()
+    matched = universe.loc[universe["code"] == symbol]
+    market = matched.iloc[0]["market"] if not matched.empty else "KRX"
+
+    symbol_info = SymbolInfo(
+        code=symbol,
+        name=name,
+        market=market,
+        sector=None,
+        market_cap=market_cap,
+        is_in_universe=market_cap is not None and market_cap >= settings.min_market_cap_billion,
+    )
+
+    analysis = (
+        await analyze_symbol_dataframe(symbol_info, timeframe, df)
+        if not df.empty
+        else build_no_signal_snapshot(symbol_info, timeframe, df)
+    )
+    return await build_reference_cases(symbol_code=symbol, timeframe=timeframe, analysis=analysis, limit=limit)
 
 
 @router.get("/{symbol}/price")

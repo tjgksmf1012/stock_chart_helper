@@ -1,7 +1,7 @@
 import axios, { type InternalAxiosRequestConfig } from 'axios'
 import type {
   SymbolInfo, OHLCVBar, AnalysisResult, PriceInfo,
-  AiRecommendationItem, AiRecommendationResponse, DashboardOverviewResponse, DashboardResponse, PatternLibraryEntry, ScreenerRequest, DashboardItem, ScanStatusResponse, Timeframe,
+  AiRecommendationItem, AiRecommendationResponse, DashboardOverviewResponse, DashboardResponse, PatternLibraryEntry, ScreenerRequest, DashboardItem, ReferenceCaseResponse, ScanStatusResponse, Timeframe,
   IntradayCandidateWarmupRequest, IntradayWarmupJobStatus, IntradayWarmupRequest, IntradayWarmupResponse, KisPrimeStatus, PatternStatsResponse, RuntimeStatusResponse,
   WatchlistItem, OutcomeEvaluationResponse, OutcomeRecord, OutcomesSummary, OutcomeStatus,
 } from '@/types/api'
@@ -73,6 +73,8 @@ export const symbolsApi = {
     api.get<OHLCVBar[]>(`/symbols/${symbol}/bars`, { params: { timeframe, days } }).then(r => r.data),
   getAnalysis: (symbol: string, timeframe: Timeframe) =>
     api.get<AnalysisResult>(`/symbols/${symbol}/analysis`, { params: { timeframe } }).then(r => r.data),
+  getReferenceCases: (symbol: string, timeframe: Timeframe, limit = 6) =>
+    api.get<ReferenceCaseResponse>(`/symbols/${symbol}/reference-cases`, { params: { timeframe, limit } }).then(r => r.data),
   getPrice: (symbol: string) =>
     api.get<PriceInfo>(`/symbols/${symbol}/price`).then(r => r.data),
 }

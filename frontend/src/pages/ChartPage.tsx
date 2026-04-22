@@ -144,7 +144,13 @@ export default function ChartPage() {
       ) ?? null,
     [chartOutcomeRecords, primaryPattern?.pattern_type],
   )
-  const referenceCases = buildReferenceCases(analysis, symbol, timeframe)
+  const referenceCasesQ = useQuery({
+    queryKey: ['reference-cases', symbol, timeframe, 'chart'],
+    queryFn: () => symbolsApi.getReferenceCases(symbol!, timeframe, 3),
+    enabled: Boolean(symbol && analysis?.patterns?.length),
+    staleTime: 300_000,
+  })
+  const referenceCases = referenceCasesQ.data?.items ?? []
   const contextAnalyses = contextQueries.flatMap(query => (query.data ? [query.data] : []))
   const contextSummary = summarizeContext(analysis, contextAnalyses)
   const hasBars = (barsQ.data?.length ?? 0) > 0
@@ -493,16 +499,30 @@ export default function ChartPage() {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <div className="text-sm font-semibold text-foreground">{referenceCase.title}</div>
-                      <div className="mt-1 text-xs text-primary">{referenceCase.tag}</div>
+                      <div className="text-sm font-semibold text-foreground">{referenceCase.symbol_name}</div>
+                      <div className="mt-1 text-xs text-primary">
+                        {PATTERN_NAMES[referenceCase.pattern_type] ?? referenceCase.pattern_type} · {referenceCase.outcome_label}
+                      </div>
                     </div>
                     <ExternalLink size={14} className="mt-0.5 text-muted-foreground" />
                   </div>
-                  <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{referenceCase.summary}</p>
-                  <div className="mt-3 text-[11px] text-muted-foreground/80">{referenceCase.focus}</div>
+                  <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{referenceCase.setup_summary}</p>
+                  <div className="mt-3 text-[11px] text-muted-foreground/80">
+                    유사도 {fmtPct(referenceCase.similarity_score, 0)} · 신호일 {referenceCase.signal_date}
+                  </div>
                 </button>
               ))}
             </div>
+            {referenceCasesQ.isError && (
+              <div className="rounded-lg border border-border bg-background/55 p-3 text-xs text-muted-foreground">
+                과거 유사 사례를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.
+              </div>
+            )}
+            {!referenceCasesQ.isLoading && !referenceCasesQ.isError && referenceCases.length === 0 && (
+              <div className="rounded-lg border border-border bg-background/55 p-3 text-xs text-muted-foreground">
+                아직 현재 패턴과 상태에 딱 맞는 과거 사례가 충분히 모이지 않았습니다.
+              </div>
+            )}
           </Card>
 
           <Card className="space-y-3">
