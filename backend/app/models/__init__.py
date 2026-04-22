@@ -4,6 +4,7 @@ from .pattern import PatternCandidate, TextbookMatch
 from .prediction import Prediction, RecommendationSnapshot
 from .backtest import BacktestRun
 from .regime import RegimeLabel
+from .outcome import SignalOutcome
 
 __all__ = [
     "Symbol",
@@ -12,4 +13,5 @@ __all__ = [
     "Prediction", "RecommendationSnapshot",
     "BacktestRun",
     "RegimeLabel",
+    "SignalOutcome",
 ]
