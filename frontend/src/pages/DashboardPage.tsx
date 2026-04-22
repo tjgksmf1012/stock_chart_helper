@@ -7,11 +7,11 @@ import { DashboardSection } from '@/components/dashboard/DashboardSection'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { QueryError } from '@/components/ui/QueryError'
-import { dashboardApi, symbolsApi, systemApi } from '@/lib/api'
+import { dashboardApi, outcomesApi, symbolsApi, systemApi } from '@/lib/api'
 import { TIMEFRAME_OPTIONS, normalizeDisplayTimeframe, timeframeLabel } from '@/lib/timeframes'
 import { cn, fmtDateTime, fmtPct, fmtPrice, INTRADAY_COLLECTION_MODE_LABELS, PATTERN_NAMES, SETUP_STAGE_LABELS } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
-import type { DashboardItem, DashboardResponse, PriceInfo, ScanStatusResponse, Timeframe } from '@/types/api'
+import type { DashboardItem, DashboardResponse, OutcomeRecord, OutcomeStatus, PriceInfo, ScanStatusResponse, Timeframe } from '@/types/api'
 
 type IntradayView = 'all' | 'live' | 'stored' | 'public' | 'mixed' | 'cooldown'
 type IntradayPreset = 'all' | 'ready-now' | 'watch' | 'recheck' | 'cooling'
@@ -83,6 +83,12 @@ export default function DashboardPage() {
       const current = query.state.data as ScanStatusResponse | undefined
       return current?.is_running || current?.candidate_source === 'placeholder_seed' ? 5_000 : 15_000
     },
+  })
+
+  const outcomesQ = useQuery({
+    queryKey: ['outcomes', 'dashboard', timeframe],
+    queryFn: outcomesApi.list,
+    staleTime: 60_000,
   })
 
   useEffect(() => {
@@ -201,6 +207,22 @@ export default function DashboardPage() {
       statusQ.refetch()
       routinePriceQueries.forEach(query => query.refetch())
     },
+  })
+  const pendingOutcomeRecords = useMemo(
+    () =>
+      (outcomesQ.data ?? [])
+        .filter(record => record.outcome === 'pending')
+        .filter(record => record.timeframe === timeframe || !record.timeframe)
+        .slice(0, 6),
+    [outcomesQ.data, timeframe],
+  )
+  const updateOutcomeMutation = useMutation({
+    mutationFn: ({ id, outcome }: { id: number; outcome: OutcomeStatus }) =>
+      outcomesApi.update(id, {
+        outcome,
+        exit_date: new Date().toISOString().slice(0, 10),
+      }),
+    onSuccess: () => outcomesQ.refetch(),
   })
 
   const openCandidate = (item: DashboardItem) => {
@@ -437,6 +459,14 @@ export default function DashboardPage() {
       </section>
 
       <RoutineDesk deck={routineDeck} prices={routinePrices} isFetchingPrices={routinePriceQueries.some(query => query.isFetching)} onOpen={openCandidate} />
+
+      <PendingDecisionDesk
+        records={pendingOutcomeRecords}
+        isLoading={outcomesQ.isLoading}
+        isUpdating={updateOutcomeMutation.isPending}
+        onOpen={code => nav(`/chart/${code}`)}
+        onUpdate={(id, outcome) => updateOutcomeMutation.mutate({ id, outcome })}
+      />
 
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
         <Card className="space-y-4">
@@ -849,6 +879,109 @@ function RoutineRow({
 
       <p className="mt-3 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{routineActionText(item, mode)}</p>
     </button>
+  )
+}
+
+const PENDING_OUTCOME_LABELS: Record<OutcomeStatus, string> = {
+  pending: '대기',
+  win: '성공',
+  loss: '실패',
+  stopped_out: '손절',
+  cancelled: '취소',
+}
+
+const PENDING_OUTCOME_TONES: Record<OutcomeStatus, string> = {
+  pending: 'border-sky-400/25 bg-sky-400/10 text-sky-100',
+  win: 'border-emerald-400/25 bg-emerald-400/10 text-emerald-100',
+  loss: 'border-red-400/25 bg-red-400/10 text-red-100',
+  stopped_out: 'border-amber-400/25 bg-amber-400/10 text-amber-100',
+  cancelled: 'border-border bg-background/70 text-muted-foreground',
+}
+
+function PendingDecisionDesk({
+  records,
+  isLoading,
+  isUpdating,
+  onOpen,
+  onUpdate,
+}: {
+  records: OutcomeRecord[]
+  isLoading: boolean
+  isUpdating: boolean
+  onOpen: (code: string) => void
+  onUpdate: (id: number, outcome: OutcomeStatus) => void
+}) {
+  if (isLoading || records.length === 0) {
+    return (
+      <section className="rounded-lg border border-border bg-card/55 p-4">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="text-sm font-semibold">미정리 판단</div>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              {isLoading ? '저장한 판단 기록을 확인하는 중입니다.' : '현재 장후에 닫아야 할 대기 기록이 없습니다.'}
+            </p>
+          </div>
+          {isLoading && <Loader2 size={14} className="animate-spin text-muted-foreground" />}
+        </div>
+      </section>
+    )
+  }
+
+  return (
+    <section className="space-y-3 rounded-lg border border-amber-400/20 bg-amber-400/8 p-4">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="text-sm font-semibold">미정리 판단</div>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            저장해둔 시나리오는 성공, 실패, 손절, 취소 중 하나로 닫아야 내 성과 데이터가 쌓입니다.
+          </p>
+        </div>
+        <span className="rounded-md border border-amber-400/25 bg-amber-400/10 px-2 py-1 text-xs text-amber-100">
+          대기 {records.length}건
+        </span>
+      </div>
+
+      <div className="grid gap-2 xl:grid-cols-2">
+        {records.map(record => (
+          <div key={record.id ?? `${record.symbol_code}-${record.signal_date}`} className="rounded-lg border border-border bg-background/60 p-3">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <button onClick={() => onOpen(record.symbol_code)} className="min-w-0 text-left">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-sm font-semibold text-foreground">{record.symbol_name}</span>
+                  <span className="font-mono text-[11px] text-muted-foreground">{record.symbol_code}</span>
+                  <span className={cn('rounded-md border px-1.5 py-0.5 text-[11px]', PENDING_OUTCOME_TONES.pending)}>
+                    {PENDING_OUTCOME_LABELS.pending}
+                  </span>
+                </div>
+                <div className="mt-1 flex flex-wrap gap-3 text-[11px] text-muted-foreground">
+                  <span>{PATTERN_NAMES[record.pattern_type] ?? record.pattern_type}</span>
+                  <span>{record.signal_date}</span>
+                  <span>진입 {record.entry_price > 0 ? fmtPrice(record.entry_price) : '-'}</span>
+                </div>
+              </button>
+
+              {record.id != null && (
+                <div className="flex shrink-0 flex-wrap justify-end gap-1">
+                  {(['win', 'loss', 'stopped_out', 'cancelled'] as OutcomeStatus[]).map(outcome => (
+                    <button
+                      key={outcome}
+                      onClick={() => onUpdate(record.id!, outcome)}
+                      disabled={isUpdating}
+                      className={cn(
+                        'rounded-md border px-2 py-1 text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+                        PENDING_OUTCOME_TONES[outcome],
+                      )}
+                    >
+                      {PENDING_OUTCOME_LABELS[outcome]}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   )
 }
 

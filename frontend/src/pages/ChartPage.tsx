@@ -6,6 +6,7 @@ import {
   ExternalLink,
   Bookmark,
   BookOpen,
+  CheckCircle2,
   Database,
   Layers3,
   Loader2,
@@ -31,7 +32,7 @@ import {
 } from '@/lib/timeframes'
 import { cn, fmtDateTime, fmtNumber, fmtPct, fmtPrice, PATTERN_NAMES } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
-import type { AnalysisResult, PatternInfo, PatternStatsEntry, Timeframe } from '@/types/api'
+import type { AnalysisResult, OutcomeRecord, OutcomeStatus, PatternInfo, PatternStatsEntry, Timeframe } from '@/types/api'
 
 export default function ChartPage() {
   const { symbol } = useParams<{ symbol: string }>()
@@ -120,6 +121,28 @@ export default function ChartPage() {
     () => getPatternStats(patternStatsQ.data?.items ?? [], primaryPattern, timeframe),
     [patternStatsQ.data?.items, primaryPattern, timeframe],
   )
+  const outcomesQ = useQuery({
+    queryKey: ['outcomes', 'chart', symbol],
+    queryFn: outcomesApi.list,
+    enabled: !!symbol,
+    staleTime: 45_000,
+  })
+  const chartOutcomeRecords = useMemo(
+    () =>
+      (outcomesQ.data ?? []).filter(
+        record => record.symbol_code === symbol && record.timeframe === timeframe,
+      ),
+    [outcomesQ.data, symbol, timeframe],
+  )
+  const savedRecord = useMemo(
+    () =>
+      chartOutcomeRecords.find(
+        record =>
+          record.outcome === 'pending' &&
+          record.pattern_type === (primaryPattern?.pattern_type ?? 'no_pattern'),
+      ) ?? null,
+    [chartOutcomeRecords, primaryPattern?.pattern_type],
+  )
   const referenceCases = buildReferenceCases(analysis, symbol, timeframe)
   const contextAnalyses = contextQueries.flatMap(query => (query.data ? [query.data] : []))
   const contextSummary = summarizeContext(analysis, contextAnalyses)
@@ -148,7 +171,20 @@ export default function ChartPage() {
         trade_readiness_at_signal: analysis.trade_readiness_score ?? 0,
       })
     },
-    onSuccess: result => setSavedId(result.id),
+    onSuccess: result => {
+      setSavedId(result.id)
+      outcomesQ.refetch()
+    },
+  })
+
+  const updateOutcomeMutation = useMutation({
+    mutationFn: ({ id, outcome }: { id: number; outcome: OutcomeStatus }) =>
+      outcomesApi.update(id, {
+        outcome,
+        exit_price: priceQ.data?.close,
+        exit_date: new Date().toISOString().slice(0, 10),
+      }),
+    onSuccess: () => outcomesQ.refetch(),
   })
 
   const openReferenceWindow = (focusCase?: string) => {
@@ -299,18 +335,18 @@ export default function ChartPage() {
                 </button>
                 <button
                   onClick={() => {
-                    if (!analysis || savedId != null) return
+                    if (!analysis || savedId != null || savedRecord) return
                     saveMutation.mutate()
                   }}
-                  disabled={savedId != null || saveMutation.isPending || !analysis}
+                  disabled={savedId != null || Boolean(savedRecord) || saveMutation.isPending || !analysis}
                   className={cn(
                     'inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors',
-                    savedId != null
+                    savedId != null || savedRecord
                       ? 'border-primary/30 bg-primary/15 text-primary'
                       : 'border-border bg-background/60 text-muted-foreground hover:text-foreground disabled:opacity-40',
                   )}
                 >
-                  <Bookmark size={13} className={savedId != null ? 'fill-current' : ''} />
+                  <Bookmark size={13} className={savedId != null || savedRecord ? 'fill-current' : ''} />
                   {savedId != null ? '신호 저장됨' : saveMutation.isPending ? '저장 중...' : '신호 저장'}
                 </button>
               </div>
@@ -324,6 +360,13 @@ export default function ChartPage() {
             </div>
 
             <PriceActionBar analysis={analysis} currentPrice={priceQ.data?.close ?? null} pattern={primaryPattern} stats={activePatternStats} />
+
+            <DecisionJournalCard
+              records={chartOutcomeRecords}
+              isLoading={outcomesQ.isLoading}
+              isUpdating={updateOutcomeMutation.isPending}
+              onUpdate={(id, outcome) => updateOutcomeMutation.mutate({ id, outcome })}
+            />
 
             {analysis.fetch_message && (
               <div className="rounded-lg border border-border bg-background/55 px-3 py-2 text-xs text-muted-foreground">
@@ -597,6 +640,22 @@ function HeroMetric({ label, value, tone }: { label: string; value: string; tone
   )
 }
 
+const CHART_OUTCOME_LABELS: Record<OutcomeStatus, string> = {
+  pending: '대기',
+  win: '성공',
+  loss: '실패',
+  stopped_out: '손절',
+  cancelled: '취소',
+}
+
+const CHART_OUTCOME_TONES: Record<OutcomeStatus, string> = {
+  pending: 'border-sky-400/25 bg-sky-400/10 text-sky-100',
+  win: 'border-emerald-400/25 bg-emerald-400/10 text-emerald-100',
+  loss: 'border-red-400/25 bg-red-400/10 text-red-100',
+  stopped_out: 'border-amber-400/25 bg-amber-400/10 text-amber-100',
+  cancelled: 'border-border bg-background/70 text-muted-foreground',
+}
+
 function PriceActionBar({
   analysis,
   currentPrice,
@@ -634,6 +693,99 @@ function PriceActionBar({
       </div>
     </div>
   )
+}
+
+function DecisionJournalCard({
+  records,
+  isLoading,
+  isUpdating,
+  onUpdate,
+}: {
+  records: OutcomeRecord[]
+  isLoading: boolean
+  isUpdating: boolean
+  onUpdate: (id: number, outcome: OutcomeStatus) => void
+}) {
+  const pending = records.filter(record => record.outcome === 'pending')
+  const completed = records.filter(record => record.outcome !== 'pending')
+  const latest = [...records].sort((left, right) => String(right.recorded_at ?? '').localeCompare(String(left.recorded_at ?? ''))).slice(0, 4)
+
+  return (
+    <div className="rounded-lg border border-border bg-background/60 p-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <CheckCircle2 size={14} className="text-primary" />
+            내 판단 기록
+          </div>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            이 종목에서 남긴 판단을 같은 화면에서 닫아야 나중에 내 승률과 패턴별 성과가 쌓입니다.
+          </p>
+        </div>
+        <div className="flex gap-2 text-[11px] text-muted-foreground">
+          <span className="rounded-md border border-border bg-card/65 px-2 py-1">대기 {pending.length}</span>
+          <span className="rounded-md border border-border bg-card/65 px-2 py-1">종료 {completed.length}</span>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="mt-3 flex items-center gap-2 rounded-lg border border-border bg-card/55 p-3 text-xs text-muted-foreground">
+          <Loader2 size={13} className="animate-spin" />
+          판단 기록을 불러오는 중입니다.
+        </div>
+      ) : latest.length === 0 ? (
+        <div className="mt-3 rounded-lg border border-border bg-card/55 p-3 text-xs leading-relaxed text-muted-foreground">
+          아직 이 종목의 기록이 없습니다. 위의 판단 저장 버튼으로 오늘 시나리오를 남겨두세요.
+        </div>
+      ) : (
+        <div className="mt-3 space-y-2">
+          {latest.map(record => (
+            <div key={record.id ?? `${record.signal_date}-${record.pattern_type}`} className="rounded-lg border border-border bg-card/55 p-3">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className={cn('rounded-md border px-1.5 py-0.5 text-[11px]', CHART_OUTCOME_TONES[record.outcome] ?? CHART_OUTCOME_TONES.pending)}>
+                      {CHART_OUTCOME_LABELS[record.outcome] ?? record.outcome}
+                    </span>
+                    <span className="text-xs font-medium text-foreground">{PATTERN_NAMES[record.pattern_type] ?? record.pattern_type}</span>
+                    <span className="font-mono text-[11px] text-muted-foreground">{record.signal_date}</span>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-muted-foreground">
+                    <span>진입 {formatOutcomePrice(record.entry_price)}</span>
+                    {record.target_price != null && <span>목표 {formatOutcomePrice(record.target_price)}</span>}
+                    {record.stop_price != null && <span>무효화 {formatOutcomePrice(record.stop_price)}</span>}
+                    {record.p_up_at_signal != null && <span>상승 {fmtPct(record.p_up_at_signal, 0)}</span>}
+                  </div>
+                </div>
+
+                {record.outcome === 'pending' && record.id != null && (
+                  <div className="flex shrink-0 flex-wrap justify-end gap-1">
+                    {(['win', 'loss', 'stopped_out', 'cancelled'] as OutcomeStatus[]).map(outcome => (
+                      <button
+                        key={outcome}
+                        onClick={() => onUpdate(record.id!, outcome)}
+                        disabled={isUpdating}
+                        className={cn(
+                          'rounded-md border px-2 py-1 text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+                          CHART_OUTCOME_TONES[outcome],
+                        )}
+                      >
+                        {CHART_OUTCOME_LABELS[outcome]}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function formatOutcomePrice(value: number | null | undefined) {
+  return value != null && value > 0 ? fmtPrice(value) : '-'
 }
 
 function PriceLevel({
