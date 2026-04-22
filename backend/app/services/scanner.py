@@ -538,7 +538,7 @@ async def get_scan_status(timeframe: str = DEFAULT_TIMEFRAME) -> dict[str, Any]:
     return status
 
 
-async def _fetch_universe_codes(limit: int = 100) -> list[tuple[str, str, str]]:
+async def _fetch_universe_codes(limit: int = 100) -> tuple[list[tuple[str, str, str]], str]:
     fetcher = get_data_fetcher()
     universe = await fetcher.get_universe()
     universe_names = (
@@ -572,16 +572,27 @@ async def _fetch_universe_codes(limit: int = 100) -> list[tuple[str, str, str]]:
 
         if rows:
             rows.sort(key=lambda item: item[3], reverse=True)
-            return [(code, name, market) for code, name, market, _ in rows[:limit]]
+            result = [(code, name, market) for code, name, market, _ in rows[:limit]]
+            logger.info("Universe loaded: %d stocks via pykrx market-cap (limit=%d)", len(result), limit)
+            return result, "krx_universe"
     except Exception as exc:
         logger.warning("Bulk market-cap universe fetch failed: %s", exc)
 
     if universe is not None and not universe.empty:
-        logger.warning("Falling back to broad universe ordering")
-        return _fallback_universe_rows(universe, limit)
+        result = _fallback_universe_rows(universe, limit)
+        logger.warning(
+            "Universe fallback: using broad FDR/pykrx universe (%d stocks, limit=%d). "
+            "pykrx market-cap fetch failed — check network/market hours.",
+            len(result), limit,
+        )
+        return result, "krx_universe_fdr"
 
-    logger.warning("Falling back to static scanner universe")
-    return FALLBACK_CODES[:limit]
+    logger.error(
+        "Universe STATIC FALLBACK: only %d hardcoded stocks will be scanned. "
+        "pykrx AND FDR universe both failed. Full market scan is NOT running.",
+        len(FALLBACK_CODES[:limit]),
+    )
+    return FALLBACK_CODES[:limit], "static_fallback"
 
 
 async def _build_confluence(
@@ -771,7 +782,8 @@ async def _analyze_one(
 
 async def _select_candidates(limit: int, timeframe: str) -> tuple[list[tuple[str, str, str]], str, set[str], str]:
     if timeframe in {"1d", "1wk", "1mo"}:
-        return await _fetch_universe_codes(limit), "krx_universe", set(), "neutral"
+        codes, universe_source = await _fetch_universe_codes(limit)
+        return codes, universe_source, set(), "neutral"
 
     seed_limit = max(settings.intraday_seed_limit, limit * settings.intraday_seed_multiplier)
     daily_candidates = await get_scan_results("1d")
@@ -810,10 +822,10 @@ async def _select_candidates(limit: int, timeframe: str) -> tuple[list[tuple[str
         live_codes = {str(row["code"]) for row in live_priority_rows[:live_limit]}
         return selected, "daily_seed", live_codes, live_phase
 
-    fallback = await _fetch_universe_codes(seed_limit)
+    fallback, fallback_source = await _fetch_universe_codes(seed_limit)
     live_limit, live_phase = _effective_live_intraday_limit(timeframe, len(fallback))
     live_codes = {code for code, _, _ in fallback[:live_limit]}
-    return fallback, "krx_universe_fallback", live_codes, live_phase
+    return fallback, fallback_source, live_codes, live_phase
 
 
 def _effective_batch_size(timeframe: str, requested: int, *, quick: bool = False) -> int:
@@ -1079,6 +1091,7 @@ async def run_scan(
             )
             await cache_set(cache_key, results, ttl=settings.dashboard_cache_ttl * 20)
             finished_at = datetime.utcnow()
+            snap = _status_snapshot(timeframe)
             _update_scan_status(
                 timeframe,
                 status="ready",
@@ -1086,6 +1099,10 @@ async def run_scan(
                 cached_result_count=len(results),
                 last_finished_at=finished_at.isoformat(),
                 duration_ms=int((finished_at - started_at).total_seconds() * 1000),
+                # explicitly preserve so these survive a subsequent get_scan_results call
+                candidate_source=snap.get("candidate_source"),
+                universe_size=snap.get("universe_size"),
+                candidate_count=snap.get("candidate_count"),
             )
             return results
         except Exception as exc:
@@ -1256,6 +1273,10 @@ async def get_scan_results(timeframe: str = DEFAULT_TIMEFRAME) -> list[dict[str,
             universe_size=universe_size,
             cached_result_count=len(cached),
             last_error=None,
+            # preserve timing metadata so they survive across get_scan_results calls
+            last_finished_at=previous.get("last_finished_at"),
+            last_started_at=previous.get("last_started_at"),
+            duration_ms=previous.get("duration_ms"),
         )
         return cached
 

@@ -398,13 +398,19 @@ export default function DashboardPage() {
             <StatusCell label="후보 생성 방식" value={candidateSourceLabel(status?.candidate_source)} />
           </div>
 
+          {candidateSourceWarning(status?.candidate_source) && (
+            <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-xs leading-relaxed text-amber-200">
+              {candidateSourceWarning(status?.candidate_source)}
+            </div>
+          )}
+
           <button
             onClick={triggerScan}
             disabled={Boolean(isScanActive)}
             className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isScanActive ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-            {isScanActive ? `${timeframeLabel(timeframe)} 스캔 진행 중` : `${timeframeLabel(timeframe)} 다시 스캔`}
+            {isScanActive ? `${timeframeLabel(timeframe)} 스캔 중 · 보통 2~3분` : `${timeframeLabel(timeframe)} 다시 스캔`}
           </button>
 
           <button
@@ -819,27 +825,27 @@ function RoutineDesk({
   }> = [
     {
       mode: 'premarket',
-      title: '?? 5?',
-      subtitle: '?? ?? ? ??? ????',
+      title: '장전 5선',
+      subtitle: '오늘 먼저 볼 후보만 압축',
       tone: 'primary',
       items: deck.premarket,
-      empty: '?? ??? ?? ????.',
+      empty: '장전 후보가 아직 없습니다.',
     },
     {
       mode: 'intraday',
-      title: '?? ???',
-      subtitle: '???? ??? ?? ??? ?????',
+      title: '장중 모니터',
+      subtitle: '현재가와 조건 충족 여부 확인',
       tone: 'sky',
       items: deck.intraday,
-      empty: '?? ??? ??? ?? ????.',
+      empty: '장중 모니터 대상이 아직 없습니다.',
     },
     {
       mode: 'afterMarket',
-      title: '?? ??',
-      subtitle: '???? ?? ??? ?????',
+      title: '장후 정리',
+      subtitle: '보류·무효화·기록 대상 정리',
       tone: 'amber',
       items: deck.afterMarket,
-      empty: '?? ?? ??? ?? ????.',
+      empty: '장후 정리할 후보가 아직 없습니다.',
     },
   ]
   const orderedColumns = [
@@ -851,14 +857,14 @@ function RoutineDesk({
     <section className="space-y-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <div className="text-sm font-semibold">?? ?? ??</div>
+          <div className="text-sm font-semibold">오늘 운용 루틴</div>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            ???? ?? ??? ?? ????, ??? ??? ?? ???? ??? ??? ? ?? ??????.
+            장전에는 후보를 압축하고, 장중에는 현재가와 트리거를 확인하고, 장후에는 무효화와 기록 대상을 정리합니다.
           </p>
         </div>
         <div className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
           <RefreshCw size={12} className={isFetchingPrices ? 'animate-spin' : ''} />
-          ?? ?? ??? ?? ??
+          상위 후보 현재가 자동 갱신
         </div>
       </div>
 
@@ -874,7 +880,7 @@ function RoutineDesk({
             )}
           >
             {column.title}
-            {column.mode === sessionMode ? ' ? ?? ??' : ''}
+            {column.mode === sessionMode ? ' · 현재 모드' : ''}
           </span>
         ))}
       </div>
@@ -1519,6 +1525,12 @@ function statusHeadline(status: ScanStatusResponse | undefined) {
 
 function statusSubline(status: ScanStatusResponse | undefined, timeframe: Timeframe) {
   if (!status) return `${timeframeLabel(timeframe)} 상태를 불러오는 중입니다.`
+  if (status.is_running) {
+    const cachedCount = status.cached_result_count ?? 0
+    return cachedCount > 0
+      ? `재스캔 진행 중입니다 (보통 2~3분). 기존 ${cachedCount}개 결과는 그대로 보입니다.`
+      : `${timeframeLabel(timeframe)} 스캔 진행 중입니다. 보통 2~3분 소요됩니다.`
+  }
   if (status.status === 'warming' && (status.cached_result_count ?? 0) === 0) {
     return `${timeframeLabel(timeframe)} 결과를 백그라운드에서 준비 중입니다. 임시 후보가 먼저 보일 수 있습니다.`
   }
@@ -1564,14 +1576,28 @@ function candidateSourceLabel(source: string | null | undefined): string {
     case 'cache_ready':
       return '캐시 완료'
     case 'krx_universe':
-      return 'KRX 전체 유니버스'
+      return 'KRX 전체 스캔'
+    case 'krx_universe_fdr':
+      return 'KRX 대체 스캔 (FDR)'
     case 'krx_universe_fallback':
       return 'KRX 대체 유니버스'
+    case 'static_fallback':
+      return '⚠️ 15종목 제한 스캔'
     case 'fallback':
       return '기본 후보'
     default:
       return '-'
   }
+}
+
+function candidateSourceWarning(source: string | null | undefined): string | null {
+  if (source === 'static_fallback') {
+    return 'pykrx와 FDR 유니버스 로드가 모두 실패해 하드코딩된 15개 종목만 스캔됐습니다. 백엔드 로그를 확인하세요.'
+  }
+  if (source === 'krx_universe_fdr') {
+    return 'pykrx 시가총액 기준 스캔 실패 — FDR 대체 유니버스로 스캔됐습니다.'
+  }
+  return null
 }
 
 function getDefaultSectionEmptyMessage(status: ScanStatusResponse | undefined, timeframe: Timeframe): string | undefined {
