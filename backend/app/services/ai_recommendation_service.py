@@ -199,6 +199,16 @@ def _action_line(row: dict, stance: str) -> str:
     risk_flags = [str(flag) for flag in (row.get("risk_flags") or []) if flag]
     no_signal_reason = str(row.get("no_signal_reason") or "").strip()
 
+    if stance == "risk_review":
+        if risk_flags:
+            return f"지금 할 일: 매수/추격 보류 -> 그 이후 {risk_flags[0]} 해소 여부 확인"
+        if no_signal_reason:
+            return f"지금 할 일: 관망 유지 -> 그 이후 {no_signal_reason}"
+        return "지금 할 일: 방어적으로 관망 -> 그 이후 점수와 트리거가 다시 정렬될 때 재평가"
+
+    if stance == "avoid_chase":
+        return "지금 할 일: 추격 대신 눌림 구간 대기 -> 그 이후 지지 확인 시 재평가"
+
     if trigger:
         follow_up = (
             "그 이후 종가 기준 유지 여부를 다시 확인"
@@ -209,8 +219,6 @@ def _action_line(row: dict, stance: str) -> str:
 
     if stance == "priority_watch":
         return "지금 할 일: 핵심 트리거 전까지 시나리오 유지 -> 그 이후 목표가와 무효화 기준 재확인"
-    if stance == "avoid_chase":
-        return "지금 할 일: 추격 대신 눌림 구간 대기 -> 그 이후 지지 확인 시 재평가"
     if no_signal_reason:
         return f"지금 할 일: 관망 유지 -> 그 이후 {no_signal_reason}"
     if risk_flags:

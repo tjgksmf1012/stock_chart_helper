@@ -245,14 +245,20 @@ function clamp01(value: number) {
 }
 
 function buildFallbackActionLine(item: DashboardItem, stance: AiRecommendationItem['stance']) {
+  if (stance === 'risk_review') {
+    if (item.risk_flags?.length) {
+      return `지금 할 일: 매수/추격 보류 -> 그 이후 ${item.risk_flags[0]} 해소 여부 확인`
+    }
+    return '지금 할 일: 방어적으로 관망 -> 그 이후 점수와 트리거가 다시 정렬될 때 재평가'
+  }
+  if (stance === 'avoid_chase') {
+    return '지금 할 일: 추격 대신 눌림 구간 대기 -> 그 이후 지지 확인 시 재평가'
+  }
   if (item.next_trigger) {
     return `지금 할 일: ${item.next_trigger} -> 그 이후 종가와 지지 유지 여부 재확인`
   }
   if (stance === 'priority_watch') {
     return '지금 할 일: 핵심 트리거 전까지 시나리오 유지 -> 그 이후 목표가와 무효화 기준 재확인'
-  }
-  if (stance === 'avoid_chase') {
-    return '지금 할 일: 추격 대신 눌림 구간 대기 -> 그 이후 지지 확인 시 재평가'
   }
   if (item.risk_flags?.length) {
     return `지금 할 일: ${item.risk_flags[0]} 점검 -> 그 이후 재평가`
