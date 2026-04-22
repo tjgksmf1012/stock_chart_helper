@@ -43,6 +43,16 @@ interface RoutineDeck {
 }
 
 type RoutineMode = 'premarket' | 'intraday' | 'afterMarket'
+type RoutineModeSelection = 'auto' | RoutineMode
+
+interface RoutineColumnDef {
+  mode: RoutineMode
+  title: string
+  subtitle: string
+  tone: 'primary' | 'sky' | 'amber'
+  items: DashboardItem[]
+  empty: string
+}
 
 const DASHBOARD_SNAPSHOT_PREFIX = 'stock-chart-helper:dashboard-snapshot:v1'
 
@@ -813,16 +823,12 @@ function RoutineDesk({
   isFetchingPrices: boolean
   onOpen: (item: DashboardItem) => void
 }) {
-  const hour = new Date().getHours()
-  const sessionMode: RoutineMode = hour < 9 ? 'premarket' : hour < 16 ? 'intraday' : 'afterMarket'
-  const routineColumns: Array<{
-    mode: RoutineMode
-    title: string
-    subtitle: string
-    tone: 'primary' | 'sky' | 'amber'
-    items: DashboardItem[]
-    empty: string
-  }> = [
+  const autoSessionMode = getKstRoutineMode()
+  const [modeSelection, setModeSelection] = useState<RoutineModeSelection>('auto')
+  const sessionMode: RoutineMode = modeSelection === 'auto' ? autoSessionMode : modeSelection
+  const sessionMeta = getRoutineModeMeta(sessionMode)
+  const currentItems = deck[sessionMode]
+  const routineColumns: RoutineColumnDef[] = [
     {
       mode: 'premarket',
       title: '장전 5선',
@@ -868,6 +874,56 @@ function RoutineDesk({
         </div>
       </div>
 
+      <Card className={cn('space-y-4', sessionMeta.panelClass)}>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant={sessionMeta.badgeVariant}>{sessionMeta.label}</Badge>
+              <span className="text-sm font-semibold text-foreground">{sessionMeta.title}</span>
+            </div>
+            <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">{sessionMeta.summary}</p>
+          </div>
+          <div className="grid grid-cols-3 gap-2 text-xs sm:min-w-72">
+            <RoutineCount label="장전" value={deck.premarket.length} active={sessionMode === 'premarket'} />
+            <RoutineCount label="장중" value={deck.intraday.length} active={sessionMode === 'intraday'} />
+            <RoutineCount label="장후" value={deck.afterMarket.length} active={sessionMode === 'afterMarket'} />
+          </div>
+        </div>
+
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="grid gap-2 md:grid-cols-3">
+            {sessionMeta.checkpoints.map(checkpoint => (
+              <div key={checkpoint.title} className="rounded-lg border border-border bg-background/55 p-3">
+                <div className="text-xs font-medium text-foreground">{checkpoint.title}</div>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{checkpoint.body}</p>
+              </div>
+            ))}
+          </div>
+          <div className="rounded-lg border border-border bg-background/55 p-3">
+            <div className="text-xs text-muted-foreground">현재 모드 핵심 후보</div>
+            <div className="mt-1 text-lg font-semibold text-foreground">{currentItems.length}개</div>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{sessionMeta.primaryAction}</p>
+          </div>
+        </div>
+      </Card>
+
+      <div className="flex flex-wrap gap-2">
+        {(['auto', 'premarket', 'intraday', 'afterMarket'] as RoutineModeSelection[]).map(mode => (
+          <button
+            key={mode}
+            onClick={() => setModeSelection(mode)}
+            className={cn(
+              'rounded-lg border px-3 py-1.5 text-xs transition-colors',
+              modeSelection === mode
+                ? 'border-primary/25 bg-primary/10 text-primary'
+                : 'border-border bg-background/60 text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {mode === 'auto' ? `자동 · ${getRoutineModeMeta(autoSessionMode).label}` : getRoutineModeMeta(mode).label}
+          </button>
+        ))}
+      </div>
+
       <div className="flex flex-wrap gap-2">
         {routineColumns.map(column => (
           <span
@@ -895,6 +951,7 @@ function RoutineDesk({
             items={column.items}
             prices={prices}
             mode={column.mode}
+            isActive={column.mode === sessionMode}
             empty={column.empty}
             onOpen={onOpen}
           />
@@ -904,6 +961,75 @@ function RoutineDesk({
   )
 }
 
+function RoutineCount({ label, value, active }: { label: string; value: number; active: boolean }) {
+  return (
+    <div className={cn('rounded-lg border p-2 text-center', active ? 'border-primary/25 bg-primary/10' : 'border-border bg-background/55')}>
+      <div className="text-[11px] text-muted-foreground">{label}</div>
+      <div className="mt-0.5 text-sm font-semibold text-foreground">{value}개</div>
+    </div>
+  )
+}
+
+function getKstRoutineMode(now = new Date()): RoutineMode {
+  const kst = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }))
+  const day = kst.getDay()
+  const hour = kst.getHours()
+  const minute = kst.getMinutes()
+  const minutes = hour * 60 + minute
+  const isWeekend = day === 0 || day === 6
+
+  if (isWeekend) return 'afterMarket'
+  if (minutes < 9 * 60) return 'premarket'
+  if (minutes <= 15 * 60 + 30) return 'intraday'
+  return 'afterMarket'
+}
+
+function getRoutineModeMeta(mode: RoutineMode) {
+  if (mode === 'premarket') {
+    return {
+      label: '장전',
+      title: '오늘의 5선과 핵심 가격대만 먼저 압축',
+      summary: '장 시작 전에는 종목 수를 줄이고 트리거, 무효화, 관심종목 여부를 먼저 확인합니다. 새 후보와 재확인 후보를 섞어 오늘 볼 순서를 정합니다.',
+      primaryAction: '상위 후보 5개만 열어 트리거와 무효화 가격을 확인하세요.',
+      badgeVariant: 'default' as const,
+      panelClass: 'border-primary/20 bg-primary/5',
+      checkpoints: [
+        { title: '후보 압축', body: '우선 후보와 재확인 후보를 합쳐 오늘 볼 5개만 남깁니다.' },
+        { title: '가격대 확인', body: '트리거, 무효화, 목표가가 너무 가까운지 먼저 봅니다.' },
+        { title: '관심종목 우선', body: '내 관심종목이면 같은 점수에서도 위로 올려 확인합니다.' },
+      ],
+    }
+  }
+  if (mode === 'intraday') {
+    return {
+      label: '장중',
+      title: '현재가와 트리거 근접 여부를 계속 감시',
+      summary: '장중에는 후보 설명보다 현재가 위치가 중요합니다. KIS 현재가를 갱신하고 live 분봉 후보, 트리거 근처 후보, 관심종목을 먼저 봅니다.',
+      primaryAction: '현재가를 갱신하고 트리거 근처 후보부터 차트로 열어 확인하세요.',
+      badgeVariant: 'neutral' as const,
+      panelClass: 'border-sky-400/20 bg-sky-400/5',
+      checkpoints: [
+        { title: '현재가 갱신', body: '상위 후보 현재가와 데이터 출처가 KIS인지 확인합니다.' },
+        { title: '트리거 감시', body: '돌파 추격보다 가격대 근처 유지와 눌림 지지를 봅니다.' },
+        { title: '분봉은 보조', body: '분봉은 타이밍 보조로만 쓰고 판단 기준은 일봉 가격대에 둡니다.' },
+      ],
+    }
+  }
+  return {
+    label: '장후',
+    title: '미정리 판단과 무효화 후보를 닫는 시간',
+    summary: '장후에는 새로운 매수 후보를 더 늘리기보다 오늘의 판단 기록을 닫고, 실패/손절/취소를 정리해 내 성과 데이터가 쌓이게 만듭니다.',
+    primaryAction: '미정리 판단을 자동 점검하고 성공, 실패, 손절, 취소 중 하나로 닫으세요.',
+    badgeVariant: 'warning' as const,
+    panelClass: 'border-amber-400/20 bg-amber-400/5',
+    checkpoints: [
+      { title: '자동 점검', body: '현재가 기준으로 목표가와 무효화 터치 여부를 먼저 확인합니다.' },
+      { title: '수동 정리', body: '자동 판정이 애매하면 성공, 실패, 손절, 취소를 직접 닫습니다.' },
+      { title: '내 성과 반영', body: '정리된 기록이 패턴별 내 성과와 다음 개인화의 재료가 됩니다.' },
+    ],
+  }
+}
+
 function RoutineColumn({
   title,
   subtitle,
@@ -911,6 +1037,7 @@ function RoutineColumn({
   items,
   prices,
   mode,
+  isActive,
   empty,
   onOpen,
 }: {
@@ -920,6 +1047,7 @@ function RoutineColumn({
   items: DashboardItem[]
   prices: Record<string, PriceInfo | undefined>
   mode: 'premarket' | 'intraday' | 'afterMarket'
+  isActive: boolean
   empty: string
   onOpen: (item: DashboardItem) => void
 }) {
@@ -930,10 +1058,17 @@ function RoutineColumn({
   }[tone]
 
   return (
-    <Card className={cn('space-y-3', toneClass)}>
-      <div>
-        <div className="text-sm font-semibold">{title}</div>
-        <div className="mt-1 text-xs text-muted-foreground">{subtitle}</div>
+    <Card className={cn('space-y-3', toneClass, isActive && 'ring-1 ring-primary/35')}>
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <div className="text-sm font-semibold">{title}</div>
+          <div className="mt-1 text-xs text-muted-foreground">{subtitle}</div>
+        </div>
+        {isActive && <Badge variant="default">집중</Badge>}
+      </div>
+
+      <div className="rounded-lg border border-border bg-background/55 p-2 text-xs text-muted-foreground">
+        {getRoutineModeMeta(mode).primaryAction}
       </div>
 
       {items.length === 0 ? (
