@@ -28,6 +28,13 @@ const PRIOR_HIGH_LABELS: Record<string, string> = {
   unknown: '전고점 해석 보류',
 }
 
+const CLOUD_THICKNESS_LABELS: Record<string, string> = {
+  thick: '두꺼운 구름',
+  normal: '보통 구름',
+  thin: '얇은 구름',
+  unknown: '두께 해석 보류',
+}
+
 export default function ReferenceChartsPage() {
   const nav = useNavigate()
   const [searchParams] = useSearchParams()
@@ -94,6 +101,10 @@ export default function ReferenceChartsPage() {
         <Card className="space-y-3">
           <div className="text-sm font-semibold">지금 포인트</div>
           <ChecklistItem title="구름 위치" body={focusSummary.cloud} />
+          <ChecklistItem
+            title="구름 두께"
+            body={`${CLOUD_THICKNESS_LABELS[referenceQ.data?.ichimoku.cloud_thickness_level ?? 'unknown'] ?? '두께 해석 보류'} · 거리 ${fmtPct(referenceQ.data?.ichimoku.cloud_distance_pct ?? 0, 1)}`}
+          />
           <ChecklistItem title="전고점 구조" body={focusSummary.priorHigh} />
           <ChecklistItem
             title="일목 해석"
@@ -101,6 +112,15 @@ export default function ReferenceChartsPage() {
           />
         </Card>
       </section>
+
+      {referenceQ.data && (
+        <section className="grid gap-3 md:grid-cols-4">
+          <MetricCard label="비교 표본" value={`${referenceQ.data.sample_count}건`} />
+          <MetricCard label="성공률" value={fmtPct(referenceQ.data.success_rate, 0)} />
+          <MetricCard label="부분 포함 성공률" value={fmtPct(referenceQ.data.partial_success_rate, 0)} />
+          <MetricCard label="평균 결과" value={fmtPct(referenceQ.data.avg_outcome_return_pct, 1)} />
+        </section>
+      )}
 
       {referenceQ.isError && (
         <Card>
@@ -136,6 +156,9 @@ function ReferenceCaseCard({ item }: { item: ReferenceCaseItem }) {
             <div className="text-sm font-semibold">{item.symbol_name}</div>
             <div className="font-mono text-xs text-muted-foreground">{item.symbol_code}</div>
             <Badge variant="muted">{item.timeframe_label}</Badge>
+            <Badge variant={item.match_grade === 'A' ? 'bullish' : item.match_grade === 'B' ? 'neutral' : 'muted'}>
+              매칭 {item.match_grade}
+            </Badge>
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <span>{PATTERN_NAMES[item.pattern_type] ?? item.pattern_type}</span>
@@ -158,7 +181,9 @@ function ReferenceCaseCard({ item }: { item: ReferenceCaseItem }) {
 
       <div className="grid gap-2 sm:grid-cols-2">
         <MiniTag title="구름대" body={CLOUD_POSITION_LABELS[item.cloud_position] ?? item.cloud_position} />
+        <MiniTag title="구름 두께" body={CLOUD_THICKNESS_LABELS[item.cloud_thickness_level] ?? item.cloud_thickness_level} />
         <MiniTag title="전고점" body={PRIOR_HIGH_LABELS[item.prior_high_structure] ?? item.prior_high_structure} />
+        <MiniTag title="결과 수익" body={fmtPct(item.outcome_return_pct, 1)} />
       </div>
 
       <div className="rounded-lg border border-border bg-background/55 p-3 text-sm leading-relaxed text-muted-foreground">
@@ -181,8 +206,20 @@ function ReferenceCaseCard({ item }: { item: ReferenceCaseItem }) {
       <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
         <span>신호일 {item.signal_date}</span>
         {item.resolution_date && <span>결과일 {item.resolution_date}</span>}
+        {item.bars_to_resolution && <span>{item.bars_to_resolution}봉 만에 결론</span>}
+        <span>최대 유리 {fmtPct(item.max_favorable_pct, 1)}</span>
+        <span>최대 불리 {fmtPct(item.max_adverse_pct, 1)}</span>
         <span>{item.ichimoku_summary}</span>
       </div>
+    </Card>
+  )
+}
+
+function MetricCard({ label, value }: { label: string; value: string }) {
+  return (
+    <Card className="space-y-1">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="text-lg font-semibold text-foreground">{value}</div>
     </Card>
   )
 }

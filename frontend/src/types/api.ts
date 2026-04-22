@@ -87,6 +87,9 @@ export interface IchimokuSummary {
   score: number
   bias: 'bullish' | 'bearish' | 'neutral' | string
   cloud_position: string
+  cloud_thickness_level: string
+  cloud_thickness_pct: number
+  cloud_distance_pct: number
   prior_high_structure: string
   summary: string
   signals: string[]
@@ -104,12 +107,18 @@ export interface ReferenceCaseItem {
   signal_date: string
   resolution_date: string | null
   similarity_score: number
+  match_grade: string
   cloud_position: string
+  cloud_thickness_level: string
   prior_high_structure: string
   ichimoku_summary: string
   setup_summary: string
   outcome_label: string
   outcome_summary: string
+  outcome_return_pct: number
+  max_favorable_pct: number
+  max_adverse_pct: number
+  bars_to_resolution: number | null
   matched_features: string[]
   sparkline: number[]
   chart_path: string
@@ -124,6 +133,11 @@ export interface ReferenceCaseResponse {
   pattern_type: string
   state: string
   ichimoku: IchimokuSummary
+  sample_count: number
+  success_rate: number
+  partial_success_rate: number
+  avg_similarity_score: number
+  avg_outcome_return_pct: number
   items: ReferenceCaseItem[]
 }
 

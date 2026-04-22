@@ -92,6 +92,9 @@ class IchimokuSummary(BaseModel):
     score: float = 0.0
     bias: str = "neutral"
     cloud_position: str = "unknown"
+    cloud_thickness_level: str = "unknown"
+    cloud_thickness_pct: float = 0.0
+    cloud_distance_pct: float = 0.0
     prior_high_structure: str = "unknown"
     summary: str = ""
     signals: list[str] = Field(default_factory=list)
@@ -109,12 +112,18 @@ class ReferenceCaseItem(BaseModel):
     signal_date: str
     resolution_date: str | None = None
     similarity_score: float
+    match_grade: str = "C"
     cloud_position: str
+    cloud_thickness_level: str = "unknown"
     prior_high_structure: str
     ichimoku_summary: str
     setup_summary: str
     outcome_label: str
     outcome_summary: str
+    outcome_return_pct: float = 0.0
+    max_favorable_pct: float = 0.0
+    max_adverse_pct: float = 0.0
+    bars_to_resolution: int | None = None
     matched_features: list[str] = Field(default_factory=list)
     sparkline: list[float] = Field(default_factory=list)
     chart_path: str
@@ -129,6 +138,11 @@ class ReferenceCaseResponse(BaseModel):
     pattern_type: str
     state: str
     ichimoku: IchimokuSummary
+    sample_count: int = 0
+    success_rate: float = 0.0
+    partial_success_rate: float = 0.0
+    avg_similarity_score: float = 0.0
+    avg_outcome_return_pct: float = 0.0
     items: list[ReferenceCaseItem] = Field(default_factory=list)
 
 

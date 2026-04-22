@@ -490,6 +490,14 @@ export default function ChartPage() {
             <p className="text-sm leading-relaxed text-muted-foreground">
               지금 보고 있는 차트와 닮은 과거 시나리오를 새 창으로 띄워 비교할 수 있게 묶어뒀습니다. 패턴 자체만 보는 용도보다, 어디서 쉬고 어디를 넘지 못했는지까지 함께 보는 데 초점을 맞췄습니다.
             </p>
+            {referenceCasesQ.data && (
+              <div className="grid gap-2 text-xs md:grid-cols-4">
+                <ReferenceMetric label="표본" value={`${referenceCasesQ.data.sample_count}건`} />
+                <ReferenceMetric label="성공률" value={fmtPct(referenceCasesQ.data.success_rate, 0)} />
+                <ReferenceMetric label="부분 포함" value={fmtPct(referenceCasesQ.data.partial_success_rate, 0)} />
+                <ReferenceMetric label="평균 결과" value={fmtPct(referenceCasesQ.data.avg_outcome_return_pct, 1)} />
+              </div>
+            )}
             <div className="grid gap-3 md:grid-cols-3">
               {referenceCases.map(referenceCase => (
                 <button
@@ -499,7 +507,12 @@ export default function ChartPage() {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <div className="text-sm font-semibold text-foreground">{referenceCase.symbol_name}</div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="text-sm font-semibold text-foreground">{referenceCase.symbol_name}</div>
+                        <Badge variant={referenceCase.match_grade === 'A' ? 'bullish' : referenceCase.match_grade === 'B' ? 'neutral' : 'muted'}>
+                          {referenceCase.match_grade}
+                        </Badge>
+                      </div>
                       <div className="mt-1 text-xs text-primary">
                         {PATTERN_NAMES[referenceCase.pattern_type] ?? referenceCase.pattern_type} · {referenceCase.outcome_label}
                       </div>
@@ -507,8 +520,15 @@ export default function ChartPage() {
                     <ExternalLink size={14} className="mt-0.5 text-muted-foreground" />
                   </div>
                   <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{referenceCase.setup_summary}</p>
-                  <div className="mt-3 text-[11px] text-muted-foreground/80">
-                    유사도 {fmtPct(referenceCase.similarity_score, 0)} · 신호일 {referenceCase.signal_date}
+                  <div className="mt-3 grid grid-cols-2 gap-1.5 text-[11px] text-muted-foreground/80">
+                    <span>유사도 {fmtPct(referenceCase.similarity_score, 0)}</span>
+                    <span>결과 {fmtPct(referenceCase.outcome_return_pct, 1)}</span>
+                    <span>최대 유리 {fmtPct(referenceCase.max_favorable_pct, 1)}</span>
+                    <span>최대 불리 {fmtPct(referenceCase.max_adverse_pct, 1)}</span>
+                  </div>
+                  <div className="mt-2 text-[11px] text-muted-foreground/80">
+                    신호일 {referenceCase.signal_date}
+                    {referenceCase.bars_to_resolution ? ` · ${referenceCase.bars_to_resolution}봉 만에 결론` : ''}
                   </div>
                 </button>
               ))}
@@ -693,6 +713,15 @@ function HeroMetric({ label, value, tone }: { label: string; value: string; tone
     <div className="rounded-lg border border-border bg-background/55 p-3">
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className={cn('mt-1 text-sm font-semibold', tone)}>{value}</div>
+    </div>
+  )
+}
+
+function ReferenceMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-background/55 p-2">
+      <div className="text-muted-foreground">{label}</div>
+      <div className="mt-0.5 font-semibold text-foreground">{value}</div>
     </div>
   )
 }

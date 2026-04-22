@@ -798,12 +798,33 @@ def _opportunity_profile(pattern: PatternResult, current_close: float) -> dict[s
     }
 
 
+def _cloud_thickness_level(cloud_thickness: float) -> str:
+    if cloud_thickness >= 0.08:
+        return "thick"
+    if cloud_thickness <= 0.03:
+        return "thin"
+    return "normal"
+
+
+def _cloud_distance_pct(current_close: float, cloud_top: float, cloud_bottom: float) -> float:
+    if current_close <= 0:
+        return 0.0
+    if current_close > cloud_top:
+        return round((current_close - cloud_top) / current_close, 4)
+    if current_close < cloud_bottom:
+        return round((current_close - cloud_bottom) / current_close, 4)
+    return 0.0
+
+
 def _ichimoku_profile(df: pd.DataFrame) -> dict[str, Any]:
     if df.empty or len(df) < 60:
         return {
             "score": 0.5,
             "bias": "neutral",
             "cloud_position": "unknown",
+            "cloud_thickness_level": "unknown",
+            "cloud_thickness_pct": 0.0,
+            "cloud_distance_pct": 0.0,
             "prior_high_structure": "unknown",
             "summary": "일목균형표를 읽기에는 바 수가 아직 부족합니다.",
             "signals": ["구름대 해석보다 패턴 구조와 핵심 가격대를 먼저 확인하세요."],
@@ -826,6 +847,8 @@ def _ichimoku_profile(df: pd.DataFrame) -> dict[str, Any]:
     cloud_top = max(current_span_a, current_span_b)
     cloud_bottom = min(current_span_a, current_span_b)
     cloud_thickness = abs(current_span_a - current_span_b) / max(current_close, 1.0)
+    cloud_thickness_level = _cloud_thickness_level(cloud_thickness)
+    cloud_distance_pct = _cloud_distance_pct(current_close, cloud_top, cloud_bottom)
 
     if current_close >= cloud_top * 1.01:
         cloud_position = "above_cloud"
@@ -887,11 +910,11 @@ def _ichimoku_profile(df: pd.DataFrame) -> dict[str, Any]:
         score -= 0.05
         signals.append("후행스팬이 과거 가격 아래라 추세 확인이 약합니다.")
 
-    if cloud_thickness >= 0.08:
+    if cloud_thickness_level == "thick":
         caution = "구름 두께가 두꺼워 지지·저항 강도가 큰 구간입니다."
         if cloud_position in {"inside_cloud", "below_cloud"}:
             score -= 0.05
-    elif cloud_thickness <= 0.03:
+    elif cloud_thickness_level == "thin":
         caution = "구름 두께가 얇아 돌파는 쉬울 수 있지만 지지 신뢰도도 얇습니다."
     else:
         caution = ""
@@ -930,6 +953,9 @@ def _ichimoku_profile(df: pd.DataFrame) -> dict[str, Any]:
         "score": round(max(0.0, min(1.0, score)), 3),
         "bias": bias,
         "cloud_position": cloud_position,
+        "cloud_thickness_level": cloud_thickness_level,
+        "cloud_thickness_pct": round(cloud_thickness, 4),
+        "cloud_distance_pct": cloud_distance_pct,
         "prior_high_structure": prior_high_structure,
         "summary": " ".join(summary_parts),
         "signals": signals[:5],

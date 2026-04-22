@@ -29,12 +29,18 @@ class _ReferenceSnapshot:
     signal_date: str
     resolution_date: str | None
     similarity_score: float
+    match_grade: str
     cloud_position: str
+    cloud_thickness_level: str
     prior_high_structure: str
     ichimoku_summary: str
     setup_summary: str
     outcome_label: str
     outcome_summary: str
+    outcome_return_pct: float
+    max_favorable_pct: float
+    max_adverse_pct: float
+    bars_to_resolution: int | None
     matched_features: list[str]
     sparkline: list[float]
 
@@ -52,6 +58,32 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return float(value)
     except Exception:
         return default
+
+
+def _cloud_thickness_level(cloud_thickness: float) -> str:
+    if cloud_thickness >= 0.08:
+        return "thick"
+    if cloud_thickness <= 0.03:
+        return "thin"
+    return "normal"
+
+
+def _cloud_distance_pct(current_close: float, cloud_top: float, cloud_bottom: float) -> float:
+    if current_close <= 0:
+        return 0.0
+    if current_close > cloud_top:
+        return round((current_close - cloud_top) / current_close, 4)
+    if current_close < cloud_bottom:
+        return round((current_close - cloud_bottom) / current_close, 4)
+    return 0.0
+
+
+def _match_grade(score: float) -> str:
+    if score >= 0.72:
+        return "A"
+    if score >= 0.58:
+        return "B"
+    return "C"
 
 
 def _sparkline_from_window(df: pd.DataFrame, size: int = 24) -> list[float]:
@@ -74,6 +106,9 @@ def _ichimoku_profile(df: pd.DataFrame) -> dict[str, Any]:
             "score": 0.5,
             "bias": "neutral",
             "cloud_position": "unknown",
+            "cloud_thickness_level": "unknown",
+            "cloud_thickness_pct": 0.0,
+            "cloud_distance_pct": 0.0,
             "prior_high_structure": "unknown",
             "summary": "일목 해석에 필요한 바 수가 아직 충분하지 않습니다.",
             "signals": ["구름대 해석 전에는 패턴과 가격대 중심으로 보세요."],
@@ -88,6 +123,9 @@ def _ichimoku_profile(df: pd.DataFrame) -> dict[str, Any]:
             "score": 0.5,
             "bias": "neutral",
             "cloud_position": "unknown",
+            "cloud_thickness_level": "unknown",
+            "cloud_thickness_pct": 0.0,
+            "cloud_distance_pct": 0.0,
             "prior_high_structure": "unknown",
             "summary": "일목 계산에 필요한 가격 데이터가 부족합니다.",
             "signals": [],
@@ -110,6 +148,8 @@ def _ichimoku_profile(df: pd.DataFrame) -> dict[str, Any]:
     cloud_top = max(current_span_a, current_span_b)
     cloud_bottom = min(current_span_a, current_span_b)
     cloud_thickness = abs(current_span_a - current_span_b) / max(current_close, 1.0)
+    cloud_thickness_level = _cloud_thickness_level(cloud_thickness)
+    cloud_distance_pct = _cloud_distance_pct(current_close, cloud_top, cloud_bottom)
 
     if current_close >= cloud_top * 1.01:
         cloud_position = "above_cloud"
@@ -173,11 +213,11 @@ def _ichimoku_profile(df: pd.DataFrame) -> dict[str, Any]:
         score -= 0.05
         signals.append("후행스팬이 과거 가격 아래라 추세 확인이 약합니다.")
 
-    if cloud_thickness >= 0.08:
+    if cloud_thickness_level == "thick":
         caution = "구름 두께가 두꺼워 저항 또는 지지 강도가 큰 구간입니다."
         if cloud_position in {"inside_cloud", "below_cloud"}:
             score -= 0.05
-    elif cloud_thickness <= 0.03:
+    elif cloud_thickness_level == "thin":
         caution = "구름 두께가 얇아 돌파는 쉬울 수 있지만 지지 신뢰도도 함께 얇습니다."
 
     if bullish_stack:
@@ -219,6 +259,9 @@ def _ichimoku_profile(df: pd.DataFrame) -> dict[str, Any]:
         "score": score,
         "bias": bias,
         "cloud_position": cloud_position,
+        "cloud_thickness_level": cloud_thickness_level,
+        "cloud_thickness_pct": round(cloud_thickness, 4),
+        "cloud_distance_pct": cloud_distance_pct,
         "prior_high_structure": prior_high_structure,
         "summary": " ".join(summary_parts),
         "signals": signals[:5],
@@ -232,9 +275,17 @@ def _distance_to_neckline(pattern: PatternResult, current_close: float) -> float
     return min(1.0, abs(current_close - pattern.neckline) / max(current_close * 0.12, 1.0))
 
 
-def _outcome_from_future(pattern: PatternResult, window_df: pd.DataFrame, future_df: pd.DataFrame) -> tuple[str, str, str | None]:
+def _outcome_from_future(pattern: PatternResult, window_df: pd.DataFrame, future_df: pd.DataFrame) -> dict[str, Any]:
     if future_df.empty:
-        return "관찰 진행", "이후 데이터가 부족해 결과를 끝까지 확인하지 못했습니다.", None
+        return {
+            "outcome_label": "관찰 진행",
+            "outcome_summary": "이후 데이터가 부족해 결과를 끝까지 확인하지 못했습니다.",
+            "resolution_date": None,
+            "outcome_return_pct": 0.0,
+            "max_favorable_pct": 0.0,
+            "max_adverse_pct": 0.0,
+            "bars_to_resolution": None,
+        }
 
     bullish = pattern.pattern_type in {
         "double_bottom",
@@ -248,29 +299,83 @@ def _outcome_from_future(pattern: PatternResult, window_df: pd.DataFrame, future
     entry = _safe_float(window_df["close"].iloc[-1], 0.0)
     target = pattern.target_level
     invalidation = pattern.invalidation_level
-    best_move = 0.0
+    max_favorable_pct = 0.0
+    max_adverse_pct = 0.0
+    final_close = _safe_float(future_df["close"].iloc[-1], entry)
 
-    for _, row in future_df.iterrows():
+    for index, row in future_df.iterrows():
         high = _safe_float(row.get("high"), entry)
         low = _safe_float(row.get("low"), entry)
         ts = row.get("datetime") or row.get("date")
         resolved = ts.isoformat() if hasattr(ts, "isoformat") else str(ts)
+        bars_to_resolution = int(index) + 1
         if bullish:
-            best_move = max(best_move, (high - entry) / max(entry, 1.0))
+            max_favorable_pct = max(max_favorable_pct, (high - entry) / max(entry, 1.0))
+            max_adverse_pct = max(max_adverse_pct, (entry - low) / max(entry, 1.0))
             if target is not None and high >= target:
-                return "성공", "목표가를 먼저 찍고 진행된 실제 과거 사례입니다.", resolved
+                return {
+                    "outcome_label": "성공",
+                    "outcome_summary": "목표가를 먼저 찍고 진행된 실제 과거 사례입니다.",
+                    "resolution_date": resolved,
+                    "outcome_return_pct": round((high - entry) / max(entry, 1.0), 4),
+                    "max_favorable_pct": round(max_favorable_pct, 4),
+                    "max_adverse_pct": round(max_adverse_pct, 4),
+                    "bars_to_resolution": bars_to_resolution,
+                }
             if invalidation is not None and low <= invalidation:
-                return "실패", "무효화 가격을 먼저 이탈한 실제 과거 사례입니다.", resolved
+                return {
+                    "outcome_label": "실패",
+                    "outcome_summary": "무효화 가격을 먼저 이탈한 실제 과거 사례입니다.",
+                    "resolution_date": resolved,
+                    "outcome_return_pct": round((low - entry) / max(entry, 1.0), 4),
+                    "max_favorable_pct": round(max_favorable_pct, 4),
+                    "max_adverse_pct": round(max_adverse_pct, 4),
+                    "bars_to_resolution": bars_to_resolution,
+                }
         else:
-            best_move = max(best_move, (entry - low) / max(entry, 1.0))
+            max_favorable_pct = max(max_favorable_pct, (entry - low) / max(entry, 1.0))
+            max_adverse_pct = max(max_adverse_pct, (high - entry) / max(entry, 1.0))
             if target is not None and low <= target:
-                return "성공", "목표가를 먼저 달성한 실제 과거 사례입니다.", resolved
+                return {
+                    "outcome_label": "성공",
+                    "outcome_summary": "목표가를 먼저 달성한 실제 과거 사례입니다.",
+                    "resolution_date": resolved,
+                    "outcome_return_pct": round((entry - low) / max(entry, 1.0), 4),
+                    "max_favorable_pct": round(max_favorable_pct, 4),
+                    "max_adverse_pct": round(max_adverse_pct, 4),
+                    "bars_to_resolution": bars_to_resolution,
+                }
             if invalidation is not None and high >= invalidation:
-                return "실패", "무효화 가격을 먼저 건드린 실제 과거 사례입니다.", resolved
+                return {
+                    "outcome_label": "실패",
+                    "outcome_summary": "무효화 가격을 먼저 건드린 실제 과거 사례입니다.",
+                    "resolution_date": resolved,
+                    "outcome_return_pct": round((entry - high) / max(entry, 1.0), 4),
+                    "max_favorable_pct": round(max_favorable_pct, 4),
+                    "max_adverse_pct": round(max_adverse_pct, 4),
+                    "bars_to_resolution": bars_to_resolution,
+                }
 
-    if best_move >= 0.035:
-        return "부분 성공", "목표가까지는 못 갔지만 유의미한 유리한 움직임이 나온 사례입니다.", None
-    return "관찰 진행", "뚜렷한 목표 달성도 무효화도 없이 정리된 사례입니다.", None
+    outcome_return_pct = (
+        (final_close - entry) / max(entry, 1.0)
+        if bullish
+        else (entry - final_close) / max(entry, 1.0)
+    )
+    if max_favorable_pct >= 0.035:
+        label = "부분 성공"
+        summary = "목표가까지는 못 갔지만 유의미한 유리한 움직임이 나온 사례입니다."
+    else:
+        label = "관찰 진행"
+        summary = "뚜렷한 목표 달성도 무효화도 없이 정리된 사례입니다."
+    return {
+        "outcome_label": label,
+        "outcome_summary": summary,
+        "resolution_date": None,
+        "outcome_return_pct": round(outcome_return_pct, 4),
+        "max_favorable_pct": round(max_favorable_pct, 4),
+        "max_adverse_pct": round(max_adverse_pct, 4),
+        "bars_to_resolution": None,
+    }
 
 
 def _similarity_score(
@@ -291,6 +396,9 @@ def _similarity_score(
     if candidate_ichimoku["cloud_position"] == current_ichimoku["cloud_position"]:
         score += 0.18
         matched.append("구름대 위치 유사")
+    if candidate_ichimoku.get("cloud_thickness_level") == current_ichimoku.get("cloud_thickness_level"):
+        score += 0.07
+        matched.append("구름 두께 유사")
     if candidate_ichimoku["prior_high_structure"] == current_ichimoku["prior_high_structure"]:
         score += 0.16
         matched.append("전고점 구조 유사")
@@ -307,7 +415,11 @@ def _similarity_score(
 
     current_cloud_score = _safe_float(current_ichimoku["score"], 0.5)
     candidate_cloud_score = _safe_float(candidate_ichimoku["score"], 0.5)
-    score += max(0.0, 0.08 - abs(current_cloud_score - candidate_cloud_score) * 0.12)
+    score += max(0.0, 0.07 - abs(current_cloud_score - candidate_cloud_score) * 0.12)
+
+    current_cloud_distance = _safe_float(current_ichimoku.get("cloud_distance_pct"), 0.0)
+    candidate_cloud_distance = _safe_float(candidate_ichimoku.get("cloud_distance_pct"), 0.0)
+    score += max(0.0, 0.06 - abs(current_cloud_distance - candidate_cloud_distance) * 1.2)
 
     return round(max(0.0, min(1.0, score)), 3), matched
 
@@ -384,7 +496,7 @@ async def _collect_symbol_cases(
             if similarity_score < 0.42:
                 continue
 
-            outcome_label, outcome_summary, resolution_date = _outcome_from_future(pattern, window_df, future_df)
+            outcome = _outcome_from_future(pattern, window_df, future_df)
             setup_summary = (
                 f"{timeframe_label(timeframe)} 기준 {name}의 {pattern_type} {state} 사례입니다. "
                 f"{window_ichimoku['summary']}"
@@ -398,14 +510,20 @@ async def _collect_symbol_cases(
                     pattern_type=pattern_type,
                     state=state,
                     signal_date=signal_date,
-                    resolution_date=resolution_date,
+                    resolution_date=outcome["resolution_date"],
                     similarity_score=similarity_score,
+                    match_grade=_match_grade(similarity_score),
                     cloud_position=window_ichimoku["cloud_position"],
+                    cloud_thickness_level=window_ichimoku["cloud_thickness_level"],
                     prior_high_structure=window_ichimoku["prior_high_structure"],
                     ichimoku_summary=window_ichimoku["summary"],
                     setup_summary=setup_summary,
-                    outcome_label=outcome_label,
-                    outcome_summary=outcome_summary,
+                    outcome_label=outcome["outcome_label"],
+                    outcome_summary=outcome["outcome_summary"],
+                    outcome_return_pct=outcome["outcome_return_pct"],
+                    max_favorable_pct=outcome["max_favorable_pct"],
+                    max_adverse_pct=outcome["max_adverse_pct"],
+                    bars_to_resolution=outcome["bars_to_resolution"],
                     matched_features=matched[:4],
                     sparkline=_sparkline_from_window(window_df),
                 )
@@ -421,7 +539,7 @@ async def build_reference_cases(
     analysis: AnalysisResult,
     limit: int = 6,
 ) -> ReferenceCaseResponse:
-    cache_key = f"reference_cases:v2:{symbol_code}:{timeframe}:{limit}"
+    cache_key = f"reference_cases:v3:{symbol_code}:{timeframe}:{limit}"
     cached = await cache_get(cache_key)
     if cached:
         return ReferenceCaseResponse(**cached)
@@ -525,12 +643,18 @@ async def build_reference_cases(
                 signal_date=item.signal_date,
                 resolution_date=item.resolution_date,
                 similarity_score=item.similarity_score,
+                match_grade=item.match_grade,
                 cloud_position=item.cloud_position,
+                cloud_thickness_level=item.cloud_thickness_level,
                 prior_high_structure=item.prior_high_structure,
                 ichimoku_summary=item.ichimoku_summary,
                 setup_summary=item.setup_summary,
                 outcome_label=item.outcome_label,
                 outcome_summary=item.outcome_summary,
+                outcome_return_pct=item.outcome_return_pct,
+                max_favorable_pct=item.max_favorable_pct,
+                max_adverse_pct=item.max_adverse_pct,
+                bars_to_resolution=item.bars_to_resolution,
                 matched_features=item.matched_features,
                 sparkline=item.sparkline,
                 chart_path=f"/chart/{item.symbol_code}",
@@ -539,6 +663,7 @@ async def build_reference_cases(
         if len(unique_items) >= limit:
             break
 
+    sample_count = len(unique_items)
     response = ReferenceCaseResponse(
         generated_at=datetime.utcnow().isoformat(),
         symbol_code=symbol_code,
@@ -548,6 +673,14 @@ async def build_reference_cases(
         pattern_type=best_pattern.pattern_type,
         state=best_pattern.state,
         ichimoku=analysis.ichimoku,
+        sample_count=sample_count,
+        success_rate=round(sum(1 for item in unique_items if item.outcome_label == "성공") / sample_count, 3) if sample_count else 0.0,
+        partial_success_rate=round(
+            sum(1 for item in unique_items if item.outcome_label in {"성공", "부분 성공"}) / sample_count,
+            3,
+        ) if sample_count else 0.0,
+        avg_similarity_score=round(sum(item.similarity_score for item in unique_items) / sample_count, 3) if sample_count else 0.0,
+        avg_outcome_return_pct=round(sum(item.outcome_return_pct for item in unique_items) / sample_count, 4) if sample_count else 0.0,
         items=unique_items,
     )
     await cache_set(cache_key, response.model_dump(), REFERENCE_CASES_TTL)
@@ -564,7 +697,7 @@ async def schedule_reference_case_warmup(
     if not analysis.patterns:
         return False
 
-    cache_key = f"reference_cases:v2:{symbol_code}:{timeframe}:{limit}"
+    cache_key = f"reference_cases:v3:{symbol_code}:{timeframe}:{limit}"
     cached = await cache_get(cache_key)
     if cached:
         return False
