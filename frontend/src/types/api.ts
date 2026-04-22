@@ -307,6 +307,7 @@ export interface AiRecommendationItem {
   confidence: number
   source_category: string
   summary: string
+  action_line: string
   reasons: string[]
   risk_flags: string[]
   next_actions: string[]

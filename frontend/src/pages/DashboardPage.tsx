@@ -1,18 +1,37 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Activity, Layers3, Loader2, RefreshCw, Sparkles } from 'lucide-react'
 
 import { DashboardSection } from '@/components/dashboard/DashboardSection'
+import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { QueryError } from '@/components/ui/QueryError'
 import { dashboardApi } from '@/lib/api'
 import { TIMEFRAME_OPTIONS, normalizeDisplayTimeframe, timeframeLabel } from '@/lib/timeframes'
-import { cn, fmtDateTime, fmtPct, INTRADAY_COLLECTION_MODE_LABELS, SETUP_STAGE_LABELS } from '@/lib/utils'
+import { cn, fmtDateTime, fmtPct, INTRADAY_COLLECTION_MODE_LABELS, PATTERN_NAMES, SETUP_STAGE_LABELS } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
 import type { DashboardItem, DashboardResponse, ScanStatusResponse, Timeframe } from '@/types/api'
 
 type IntradayView = 'all' | 'live' | 'stored' | 'public' | 'mixed' | 'cooldown'
 type IntradayPreset = 'all' | 'ready-now' | 'watch' | 'recheck' | 'cooling'
+type CandidateMovement = 'new' | 'steady' | 'weakening'
+
+interface CandidateSnapshot {
+  score: number
+  actionPlan: string
+  noSignal: boolean
+  updatedAt: string
+}
+
+interface FocusCandidate {
+  item: DashboardItem
+  movement: CandidateMovement
+  watched: boolean
+  score: number
+}
+
+const DASHBOARD_SNAPSHOT_PREFIX = 'stock-chart-helper:dashboard-snapshot:v1'
 
 const INTRADAY_VIEW_OPTIONS: Array<[IntradayView, string]> = [
   ['all', '전체'],
@@ -32,12 +51,14 @@ const INTRADAY_PRESET_OPTIONS: Array<[IntradayPreset, string]> = [
 ]
 
 export default function DashboardPage() {
-  const { selectedTimeframe, setTimeframe } = useAppStore()
+  const nav = useNavigate()
+  const { selectedTimeframe, setTimeframe, isWatched } = useAppStore()
   const timeframe = normalizeDisplayTimeframe(selectedTimeframe)
   const intradayMode = ['60m', '30m', '15m', '1m'].includes(timeframe)
   const [isTriggeringScan, setIsTriggeringScan] = useState(false)
   const [intradayView, setIntradayView] = useState<IntradayView>('all')
   const [intradayPreset, setIntradayPreset] = useState<IntradayPreset>('all')
+  const [snapshotBaseline, setSnapshotBaseline] = useState<Record<string, CandidateSnapshot>>({})
   const lastFinishedAtRef = useRef<string | null>(null)
   const lastStatusRef = useRef<string | null>(null)
 
@@ -124,6 +145,36 @@ export default function DashboardPage() {
       ]),
     [sections],
   )
+
+  const allDashboardItems = useMemo(
+    () =>
+      dedupeDashboardItems([
+        sections.longData,
+        sections.armedData,
+        sections.liveData,
+        sections.formingData,
+        sections.simData,
+        sections.shortData,
+        sections.noSigData,
+      ]),
+    [sections],
+  )
+
+  useEffect(() => {
+    setSnapshotBaseline(readDashboardSnapshot(timeframe))
+  }, [timeframe])
+
+  useEffect(() => {
+    if (allDashboardItems.length === 0) return
+    writeDashboardSnapshot(timeframe, allDashboardItems, overview?.generated_at)
+  }, [allDashboardItems, overview?.generated_at, timeframe])
+
+  const focusDeck = useMemo(() => buildFocusDeck(allDashboardItems, snapshotBaseline, isWatched), [allDashboardItems, snapshotBaseline, isWatched])
+
+  const openCandidate = (item: DashboardItem) => {
+    setTimeframe(item.timeframe)
+    nav(`/chart/${item.symbol.code}`)
+  }
 
   const status = statusQ.data
   const isScanActive = isTriggeringScan || status?.is_running
@@ -286,6 +337,61 @@ export default function DashboardPage() {
           {statusQ.isError && !statusQ.isLoading && (
             <QueryError compact message="스캔 상태를 불러오지 못했습니다." onRetry={() => statusQ.refetch()} />
           )}
+        </Card>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <Card className="space-y-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="text-sm font-semibold">오늘의 핵심 3-3-3</div>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                우선 확인 3개, 재확인 3개, 보류 3개만 먼저 잡아 피로도를 줄였습니다.
+              </p>
+            </div>
+            <Badge variant="muted">{timeframeLabel(timeframe)} 기준</Badge>
+          </div>
+
+          <div className="grid gap-3 xl:grid-cols-3">
+            <FocusColumn
+              title="우선"
+              tone="primary"
+              items={focusDeck.priority}
+              empty="지금 바로 볼 핵심 후보가 아직 없습니다."
+              onOpen={openCandidate}
+            />
+            <FocusColumn
+              title="재확인"
+              tone="sky"
+              items={focusDeck.recheck}
+              empty="다시 확인할 후보가 아직 없습니다."
+              onOpen={openCandidate}
+            />
+            <FocusColumn
+              title="보류"
+              tone="amber"
+              items={focusDeck.hold}
+              empty="보류 후보가 아직 없습니다."
+              onOpen={openCandidate}
+            />
+          </div>
+        </Card>
+
+        <Card className="space-y-4">
+          <div>
+            <div className="text-sm font-semibold">신호 변화</div>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              같은 후보가 계속 반복되어 보이는 피로감을 줄이기 위해 이전 스냅샷과 비교합니다.
+            </p>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <MovementStat label="신규" value={focusDeck.movementCounts.new} className="text-emerald-300" />
+            <MovementStat label="유지" value={focusDeck.movementCounts.steady} className="text-sky-300" />
+            <MovementStat label="약화" value={focusDeck.movementCounts.weakening} className="text-amber-300" />
+          </div>
+          <div className="rounded-lg border border-border bg-background/60 p-3 text-xs leading-relaxed text-muted-foreground">
+            관심종목은 같은 점수라면 위로 끌어올리고, 무효화/관망 신호는 자동으로 보류 쪽에 모읍니다.
+          </div>
         </Card>
       </section>
 
@@ -455,6 +561,96 @@ function StatusCell({ label, value }: { label: string; value: string }) {
   )
 }
 
+function FocusColumn({
+  title,
+  tone,
+  items,
+  empty,
+  onOpen,
+}: {
+  title: string
+  tone: 'primary' | 'sky' | 'amber'
+  items: FocusCandidate[]
+  empty: string
+  onOpen: (item: DashboardItem) => void
+}) {
+  const toneClass = {
+    primary: 'border-primary/25 bg-primary/10 text-primary',
+    sky: 'border-sky-400/25 bg-sky-400/10 text-sky-200',
+    amber: 'border-amber-400/25 bg-amber-400/10 text-amber-200',
+  }[tone]
+
+  return (
+    <div className="space-y-2">
+      <div className={cn('rounded-lg border px-3 py-2 text-xs font-semibold', toneClass)}>{title}</div>
+      {items.length === 0 ? (
+        <div className="rounded-lg border border-border bg-background/55 p-3 text-xs leading-relaxed text-muted-foreground">{empty}</div>
+      ) : (
+        items.map(candidate => <FocusCandidateCard key={`${candidate.item.timeframe}-${candidate.item.symbol.code}-${title}`} candidate={candidate} onOpen={onOpen} />)
+      )}
+    </div>
+  )
+}
+
+function FocusCandidateCard({ candidate, onOpen }: { candidate: FocusCandidate; onOpen: (item: DashboardItem) => void }) {
+  const { item, movement, watched } = candidate
+  const patternName = item.pattern_type ? PATTERN_NAMES[item.pattern_type] ?? item.pattern_type : 'No Signal'
+
+  return (
+    <button
+      onClick={() => onOpen(item)}
+      className="w-full rounded-lg border border-border bg-background/60 p-3 text-left transition-colors hover:border-primary/35 hover:bg-background/75"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="truncate text-sm font-semibold text-foreground">{item.symbol.name}</span>
+            <span className="font-mono text-[11px] text-muted-foreground">{item.symbol.code}</span>
+            {watched && <Badge variant="warning">관심</Badge>}
+          </div>
+          <div className="mt-1 truncate text-xs text-muted-foreground">{patternName}</div>
+        </div>
+        <MovementBadge movement={movement} />
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-2 text-[11px]">
+        <MiniMetric label="상승" value={fmtPct(item.p_up, 0)} />
+        <MiniMetric label="준비" value={fmtPct(item.trade_readiness_score ?? 0, 0)} />
+        <MiniMetric label="신선" value={fmtPct(item.freshness_score ?? 0, 0)} />
+      </div>
+      <p className="mt-3 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{item.next_trigger || item.action_plan_summary || item.reason_summary}</p>
+    </button>
+  )
+}
+
+function MovementBadge({ movement }: { movement: CandidateMovement }) {
+  const config = {
+    new: ['신규', 'border-emerald-400/25 bg-emerald-400/10 text-emerald-200'],
+    steady: ['유지', 'border-sky-400/25 bg-sky-400/10 text-sky-200'],
+    weakening: ['약화', 'border-amber-400/25 bg-amber-400/10 text-amber-200'],
+  } satisfies Record<CandidateMovement, [string, string]>
+
+  const [label, className] = config[movement]
+  return <span className={cn('shrink-0 rounded-md border px-1.5 py-0.5 text-[11px] font-medium', className)}>{label}</span>
+}
+
+function MiniMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-border bg-card/60 px-2 py-1">
+      <div className="text-muted-foreground">{label}</div>
+      <div className="mt-0.5 font-semibold text-foreground">{value}</div>
+    </div>
+  )
+}
+
+function MovementStat({ label, value, className }: { label: string; value: number; className: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-background/60 p-3 text-center">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className={cn('mt-1 text-lg font-bold', className)}>{value}</div>
+    </div>
+  )
+}
+
 function filterDashboard(
   data: DashboardResponse | undefined,
   intradayMode: boolean,
@@ -560,6 +756,112 @@ function dedupeDashboardItems(sections: Array<DashboardResponse | undefined>) {
   }
 
   return items
+}
+
+function buildFocusDeck(items: DashboardItem[], snapshot: Record<string, CandidateSnapshot>, isWatched: (code: string) => boolean) {
+  const candidates = items.map(item => {
+    const previous = snapshot[dashboardSnapshotKey(item)]
+    const movement = candidateMovement(item, previous)
+    const watched = isWatched(item.symbol.code)
+
+    return {
+      item,
+      movement,
+      watched,
+      score: dashboardPriorityScore(item, movement, watched),
+    }
+  })
+
+  const sortByScore = (left: FocusCandidate, right: FocusCandidate) => right.score - left.score
+  const priority = candidates
+    .filter(candidate => !candidate.item.no_signal_flag && candidate.item.action_plan === 'ready_now')
+    .sort(sortByScore)
+    .slice(0, 3)
+  const usedKeys = new Set(priority.map(candidate => dashboardSnapshotKey(candidate.item)))
+  const recheck = candidates
+    .filter(candidate => !usedKeys.has(dashboardSnapshotKey(candidate.item)) && !candidate.item.no_signal_flag && candidate.item.action_plan !== 'ready_now')
+    .sort(sortByScore)
+    .slice(0, 3)
+
+  for (const candidate of recheck) usedKeys.add(dashboardSnapshotKey(candidate.item))
+
+  const hold = candidates
+    .filter(candidate => !usedKeys.has(dashboardSnapshotKey(candidate.item)) && (candidate.item.no_signal_flag || candidate.item.action_plan === 'recheck' || candidate.movement === 'weakening'))
+    .sort(sortByScore)
+    .slice(0, 3)
+
+  return {
+    priority,
+    recheck,
+    hold,
+    movementCounts: {
+      new: candidates.filter(candidate => candidate.movement === 'new').length,
+      steady: candidates.filter(candidate => candidate.movement === 'steady').length,
+      weakening: candidates.filter(candidate => candidate.movement === 'weakening').length,
+    },
+  }
+}
+
+function dashboardPriorityScore(item: DashboardItem, movement: CandidateMovement, watched: boolean) {
+  const base =
+    (item.action_priority_score ?? 0) * 0.28 +
+    (item.trade_readiness_score ?? 0) * 0.24 +
+    (item.entry_window_score ?? 0) * 0.18 +
+    (item.freshness_score ?? 0) * 0.12 +
+    (item.historical_edge_score ?? 0) * 0.08 +
+    (item.data_quality ?? 0) * 0.06 +
+    (item.confluence_score ?? 0) * 0.04
+
+  const movementBonus = movement === 'new' ? 0.12 : movement === 'weakening' ? -0.12 : 0
+  const watchBonus = watched ? 0.08 : 0
+  const penalty = item.no_signal_flag ? 0.18 : item.action_plan === 'recheck' ? 0.08 : 0
+
+  return base + movementBonus + watchBonus - penalty
+}
+
+function candidateMovement(item: DashboardItem, previous: CandidateSnapshot | undefined): CandidateMovement {
+  if (!previous) return 'new'
+
+  const currentScore = item.action_priority_score ?? item.trade_readiness_score ?? 0
+  if (item.no_signal_flag || item.action_plan === 'recheck') return 'weakening'
+  if (currentScore < previous.score - 0.08) return 'weakening'
+  return 'steady'
+}
+
+function readDashboardSnapshot(timeframe: Timeframe): Record<string, CandidateSnapshot> {
+  if (typeof window === 'undefined') return {}
+
+  try {
+    const raw = window.localStorage.getItem(`${DASHBOARD_SNAPSHOT_PREFIX}:${timeframe}`)
+    if (!raw) return {}
+    return JSON.parse(raw) as Record<string, CandidateSnapshot>
+  } catch {
+    return {}
+  }
+}
+
+function writeDashboardSnapshot(timeframe: Timeframe, items: DashboardItem[], updatedAt?: string) {
+  if (typeof window === 'undefined') return
+
+  const snapshot = items.reduce<Record<string, CandidateSnapshot>>((acc, item) => {
+    acc[dashboardSnapshotKey(item)] = {
+      score: item.action_priority_score ?? item.trade_readiness_score ?? 0,
+      actionPlan: item.action_plan,
+      noSignal: item.no_signal_flag,
+      updatedAt: updatedAt ?? new Date().toISOString(),
+    }
+    return acc
+  }, {})
+
+  try {
+    window.localStorage.setItem(`${DASHBOARD_SNAPSHOT_PREFIX}:${timeframe}`, JSON.stringify(snapshot))
+  } catch {
+    // Local storage is a convenience only; the dashboard should still render without it.
+  }
+}
+
+function dashboardSnapshotKey(item: DashboardItem) {
+  return `${item.timeframe}:${item.symbol.code}`
 }
 
 function average(values: number[]) {

@@ -502,6 +502,7 @@ class AiRecommendationItem(BaseModel):
     confidence: float
     source_category: str
     summary: str
+    action_line: str = ""
     reasons: list[str]
     risk_flags: list[str]
     next_actions: list[str]

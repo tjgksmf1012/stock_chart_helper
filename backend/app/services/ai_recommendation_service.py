@@ -100,6 +100,7 @@ def _make_recommendation(row: dict, timeframe: str) -> AiRecommendationItem:
         confidence=round(confidence, 3),
         source_category=_source_category(row),
         summary=_summary(row, stance, score),
+        action_line=_action_line(row, stance),
         reasons=reasons,
         risk_flags=_risk_flags(row),
         next_actions=next_actions,
@@ -191,6 +192,30 @@ def _reasons(row: dict, score: float) -> list[str]:
     elif row.get("confluence_summary"):
         reasons.append(str(row["confluence_summary"]))
     return reasons[:4]
+
+
+def _action_line(row: dict, stance: str) -> str:
+    trigger = str(row.get("next_trigger") or "").strip()
+    risk_flags = [str(flag) for flag in (row.get("risk_flags") or []) if flag]
+    no_signal_reason = str(row.get("no_signal_reason") or "").strip()
+
+    if trigger:
+        follow_up = (
+            "그 이후 종가 기준 유지 여부를 다시 확인"
+            if "종가" in trigger or "확인" in trigger
+            else "그 이후 거래량과 지지 지속 여부를 재평가"
+        )
+        return f"지금 할 일: {trigger} -> {follow_up}"
+
+    if stance == "priority_watch":
+        return "지금 할 일: 핵심 트리거 전까지 시나리오 유지 -> 그 이후 목표가와 무효화 기준 재확인"
+    if stance == "avoid_chase":
+        return "지금 할 일: 추격 대신 눌림 구간 대기 -> 그 이후 지지 확인 시 재평가"
+    if no_signal_reason:
+        return f"지금 할 일: 관망 유지 -> 그 이후 {no_signal_reason}"
+    if risk_flags:
+        return f"지금 할 일: 리스크 요인 먼저 해소 확인 -> 그 이후 재진입 가능성 재평가"
+    return "지금 할 일: 현재 구조 유지 여부 관찰 -> 그 이후 다음 트리거가 생기면 재평가"
 
 
 def _risk_flags(row: dict) -> list[str]:

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQueries, useQuery } from '@tanstack/react-query'
 import {
@@ -21,7 +21,7 @@ import { CandleChart } from '@/components/chart/CandleChart'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { QueryError } from '@/components/ui/QueryError'
-import { outcomesApi, symbolsApi } from '@/lib/api'
+import { outcomesApi, patternsApi, symbolsApi } from '@/lib/api'
 import {
   getChartLookbackDays,
   getContextTimeframes,
@@ -29,9 +29,9 @@ import {
   normalizeDisplayTimeframe,
   timeframeLabel,
 } from '@/lib/timeframes'
-import { cn, fmtDateTime, fmtNumber, fmtPct, fmtPrice } from '@/lib/utils'
+import { cn, fmtDateTime, fmtNumber, fmtPct, fmtPrice, PATTERN_NAMES } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
-import type { AnalysisResult, Timeframe } from '@/types/api'
+import type { AnalysisResult, PatternInfo, PatternStatsEntry, Timeframe } from '@/types/api'
 
 export default function ChartPage() {
   const { symbol } = useParams<{ symbol: string }>()
@@ -109,6 +109,17 @@ export default function ChartPage() {
   }, [symbol])
 
   const analysis = analysisQ.data
+  const primaryPattern = useMemo(() => getPrimaryPattern(analysis), [analysis])
+  const patternStatsQ = useQuery({
+    queryKey: ['patterns', 'stats', 'chart-summary'],
+    queryFn: patternsApi.stats,
+    enabled: Boolean(primaryPattern),
+    staleTime: 300_000,
+  })
+  const activePatternStats = useMemo(
+    () => getPatternStats(patternStatsQ.data?.items ?? [], primaryPattern, timeframe),
+    [patternStatsQ.data?.items, primaryPattern, timeframe],
+  )
   const referenceCases = buildReferenceCases(analysis, symbol, timeframe)
   const contextAnalyses = contextQueries.flatMap(query => (query.data ? [query.data] : []))
   const contextSummary = summarizeContext(analysis, contextAnalyses)
@@ -311,6 +322,8 @@ export default function ChartPage() {
               <HeroMetric label="거래 준비도" value={fmtPct(analysis.trade_readiness_score ?? 0, 0)} />
               <HeroMetric label="진입 구간" value={fmtPct(analysis.entry_window_score ?? 0, 0)} />
             </div>
+
+            <PriceActionBar analysis={analysis} currentPrice={priceQ.data?.close ?? null} pattern={primaryPattern} stats={activePatternStats} />
 
             {analysis.fetch_message && (
               <div className="rounded-lg border border-border bg-background/55 px-3 py-2 text-xs text-muted-foreground">
@@ -584,6 +597,72 @@ function HeroMetric({ label, value, tone }: { label: string; value: string; tone
   )
 }
 
+function PriceActionBar({
+  analysis,
+  currentPrice,
+  pattern,
+  stats,
+}: {
+  analysis: AnalysisResult
+  currentPrice: number | null
+  pattern: PatternInfo | null
+  stats: PatternStatsEntry | null
+}) {
+  const trigger = pattern?.neckline ?? null
+  const invalidation = pattern?.invalidation_level ?? null
+  const target = pattern?.target_level ?? null
+  const patternName = pattern?.pattern_type ? PATTERN_NAMES[pattern.pattern_type] ?? pattern.pattern_type : '패턴 없음'
+
+  return (
+    <div className="rounded-lg border border-primary/20 bg-background/60 p-3">
+      <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+        <div className="text-sm font-semibold">핵심 가격 바</div>
+        <div className="text-xs text-muted-foreground">{patternName} 기준으로 먼저 볼 가격대입니다.</div>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+        <PriceLevel label="현재가" value={currentPrice} hint={pricePositionHint(currentPrice, trigger, invalidation)} tone="primary" />
+        <PriceLevel label="트리거" value={trigger} hint={analysis.next_trigger || analysis.entry_window_summary} tone="sky" />
+        <PriceLevel label="무효화" value={invalidation} hint={invalidation ? '이 가격 하회 시 시나리오 재검토' : analysis.risk_flags?.[0]} tone="amber" />
+        <PriceLevel label="목표가" value={target} hint={target ? '도달 시 분할 대응 기준' : analysis.projection_label} tone="emerald" />
+        <div className="rounded-lg border border-border bg-card/65 p-3">
+          <div className="text-xs text-muted-foreground">과거 성과</div>
+          <div className="mt-1 text-sm font-semibold text-foreground">{stats ? fmtPct(stats.win_rate, 0) : fmtPct(analysis.empirical_win_rate ?? 0, 0)}</div>
+          <div className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">
+            {stats ? `표본 ${stats.sample_size}건, 평균 ${stats.avg_bars_to_outcome.toFixed(1)}봉` : `표본 ${analysis.sample_size}건 기준`}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PriceLevel({
+  label,
+  value,
+  hint,
+  tone,
+}: {
+  label: string
+  value: number | null
+  hint?: string | null
+  tone: 'primary' | 'sky' | 'amber' | 'emerald'
+}) {
+  const toneClass = {
+    primary: 'text-primary',
+    sky: 'text-sky-200',
+    amber: 'text-amber-200',
+    emerald: 'text-emerald-200',
+  }[tone]
+
+  return (
+    <div className="rounded-lg border border-border bg-card/65 p-3">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className={cn('mt-1 font-mono text-sm font-semibold', toneClass)}>{value && value > 0 ? fmtPrice(value) : '-'}</div>
+      <div className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">{hint || '조건이 준비되면 자동 표시됩니다.'}</div>
+    </div>
+  )
+}
+
 function ContextCard({
   analysis,
   isPrimary = false,
@@ -654,6 +733,28 @@ function buildDataReadinessSummary(analysis: AnalysisResult, timeframe: Timefram
     return '유사 패턴 표본 신뢰도가 낮아 숫자보다 구조와 리스크 관리 비중을 더 높게 두는 편이 좋습니다.'
   }
   return '현재 타임프레임 기준으로 데이터 품질과 표본 신뢰도는 무난한 편입니다. 숫자와 패턴 해석을 함께 봐도 됩니다.'
+}
+
+function getPrimaryPattern(analysis: AnalysisResult | undefined): PatternInfo | null {
+  if (!analysis?.patterns?.length) return null
+  return analysis.patterns.find(pattern => ['armed', 'confirmed', 'forming'].includes(pattern.state)) ?? analysis.patterns[0] ?? null
+}
+
+function getPatternStats(items: PatternStatsEntry[], pattern: PatternInfo | null, timeframe: Timeframe): PatternStatsEntry | null {
+  if (!pattern) return null
+  const samePattern = items.filter(item => item.pattern_type === pattern.pattern_type)
+  return samePattern.find(item => item.timeframe === timeframe) ?? samePattern[0] ?? null
+}
+
+function pricePositionHint(currentPrice: number | null, trigger: number | null, invalidation: number | null) {
+  if (!currentPrice || currentPrice <= 0) return '현재가를 불러오면 위치를 계산합니다.'
+  if (trigger && currentPrice >= trigger) return '트리거 위에서 유지 중입니다.'
+  if (trigger && currentPrice < trigger) {
+    const gap = (trigger - currentPrice) / currentPrice
+    return `트리거까지 ${fmtPct(gap, 1)} 남았습니다.`
+  }
+  if (invalidation && currentPrice <= invalidation) return '무효화 구간 근처라 보수적으로 봅니다.'
+  return '핵심 가격대 안에서 위치를 확인 중입니다.'
 }
 
 function minimumBarsForTimeframe(timeframe: Timeframe): number {

@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, BarChart2, Loader2, RefreshCw, ShieldCheck, Sparkles, Target } from 'lucide-react'
+import { AlertTriangle, BarChart2, Loader2, RefreshCw, ShieldCheck, Sparkles, Star, Target } from 'lucide-react'
 
 import { Card } from '@/components/ui/Card'
 import { aiApi } from '@/lib/api'
@@ -19,7 +19,7 @@ const STANCE_STYLES: Record<AiRecommendationItem['stance'], string> = {
 
 export default function AiRecommendationsPage() {
   const nav = useNavigate()
-  const { selectedTimeframe, setTimeframe } = useAppStore()
+  const { selectedTimeframe, setTimeframe, isWatched } = useAppStore()
   const timeframe = normalizeDisplayTimeframe(selectedTimeframe)
 
   const recommendationsQ = useQuery({
@@ -30,7 +30,10 @@ export default function AiRecommendationsPage() {
   })
 
   const data = recommendationsQ.data
-  const topItems = useMemo(() => data?.items.slice(0, 4) ?? [], [data?.items])
+  const topItems = useMemo(() => sortAiItems(data?.items ?? [], isWatched).slice(0, 4), [data?.items, isWatched])
+  const priorityItems = useMemo(() => sortAiItems(data?.priority_items ?? [], isWatched), [data?.priority_items, isWatched])
+  const watchItems = useMemo(() => sortAiItems(data?.watch_items ?? [], isWatched), [data?.watch_items, isWatched])
+  const riskItems = useMemo(() => sortAiItems(data?.risk_items ?? [], isWatched), [data?.risk_items, isWatched])
   const llmBadge = useMemo(() => buildLlmBadge(data), [data])
 
   return (
@@ -127,7 +130,15 @@ export default function AiRecommendationsPage() {
                   className="flex w-full items-center justify-between gap-3 rounded-lg border border-border bg-background/60 p-3 text-left transition-colors hover:border-primary/40"
                 >
                   <div>
-                    <div className="text-sm font-semibold">{item.symbol.name}</div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-sm font-semibold">{item.symbol.name}</span>
+                      {isWatched(item.symbol.code) && (
+                        <span className="inline-flex items-center gap-1 rounded bg-amber-400/10 px-1.5 py-0.5 text-[11px] text-amber-200">
+                          <Star size={10} className="fill-amber-200" />
+                          관심
+                        </span>
+                      )}
+                    </div>
                     <div className="text-xs text-muted-foreground">{item.symbol.code}</div>
                   </div>
                   <div className="text-right">
@@ -144,7 +155,7 @@ export default function AiRecommendationsPage() {
       <RecommendationBand
         title="우선 검토"
         icon={<Sparkles size={16} className="text-emerald-300" />}
-        items={data?.priority_items ?? []}
+        items={priorityItems}
         loading={recommendationsQ.isLoading}
         empty="지금은 강한 우선 후보가 없습니다."
       />
@@ -152,7 +163,7 @@ export default function AiRecommendationsPage() {
       <RecommendationBand
         title="트리거 대기"
         icon={<BarChart2 size={16} className="text-sky-300" />}
-        items={data?.watch_items ?? []}
+        items={watchItems}
         loading={recommendationsQ.isLoading}
         empty="트리거를 기다릴 후보가 없습니다."
       />
@@ -160,7 +171,7 @@ export default function AiRecommendationsPage() {
       <RecommendationBand
         title="리스크 / 관망"
         icon={<AlertTriangle size={16} className="text-amber-300" />}
-        items={data?.risk_items ?? []}
+        items={riskItems}
         loading={recommendationsQ.isLoading}
         empty="리스크 점검 후보가 없습니다."
       />
@@ -172,6 +183,14 @@ export default function AiRecommendationsPage() {
       )}
     </div>
   )
+}
+
+function sortAiItems(items: AiRecommendationItem[], isWatched: (code: string) => boolean) {
+  return [...items].sort((left, right) => {
+    const watchDelta = Number(isWatched(right.symbol.code)) - Number(isWatched(left.symbol.code))
+    if (watchDelta !== 0) return watchDelta
+    return right.score - left.score
+  })
 }
 
 function buildLlmBadge(data: { llm_enabled?: boolean; llm_status?: string; llm_cached_at?: string | null; llm_error?: string | null } | undefined) {
@@ -254,6 +273,8 @@ function RecommendationBand({
 
 function RecommendationCard({ item }: { item: AiRecommendationItem }) {
   const nav = useNavigate()
+  const { isWatched } = useAppStore()
+  const watched = isWatched(item.symbol.code)
   const patternName = item.pattern_type ? PATTERN_NAMES[item.pattern_type] ?? item.pattern_type : '패턴 없음'
 
   return (
@@ -264,6 +285,12 @@ function RecommendationCard({ item }: { item: AiRecommendationItem }) {
             <span className="text-xs text-muted-foreground">#{item.rank}</span>
             <h2 className="text-lg font-bold">{item.symbol.name}</h2>
             <span className="text-xs text-muted-foreground">{item.symbol.code}</span>
+            {watched && (
+              <span className="inline-flex items-center gap-1 rounded bg-amber-400/10 px-1.5 py-0.5 text-[11px] text-amber-200">
+                <Star size={10} className="fill-amber-200" />
+                관심종목
+              </span>
+            )}
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
             {patternName} · {item.timeframe_label} · {item.state ?? 'scan'}
@@ -281,6 +308,10 @@ function RecommendationCard({ item }: { item: AiRecommendationItem }) {
       </div>
 
       <p className="text-sm leading-relaxed text-foreground">{item.summary}</p>
+
+      <div className="rounded-lg border border-primary/20 bg-primary/10 p-3 text-sm font-semibold leading-relaxed text-primary">
+        {item.action_line || item.next_actions[0] || '지금 할 일: 핵심 조건 확인 후 재평가'}
+      </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Metric label="상승확률" value={fmtPct(item.p_up)} />

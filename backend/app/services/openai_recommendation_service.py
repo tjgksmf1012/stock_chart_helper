@@ -126,6 +126,7 @@ async def _request_overlay(payload: dict[str, Any]) -> dict[str, Any]:
                                 "properties": {
                                     "symbol_code": {"type": "string"},
                                     "summary": {"type": "string"},
+                                    "action_line": {"type": "string"},
                                     "position_hint": {"type": "string"},
                                     "next_actions": {
                                         "type": "array",
@@ -133,7 +134,7 @@ async def _request_overlay(payload: dict[str, Any]) -> dict[str, Any]:
                                         "maxItems": 4,
                                     },
                                 },
-                                "required": ["symbol_code", "summary", "position_hint", "next_actions"],
+                                "required": ["symbol_code", "summary", "action_line", "position_hint", "next_actions"],
                             },
                             "maxItems": settings.openai_overlay_item_limit,
                         },
@@ -185,6 +186,7 @@ def _make_prompt_payload(response: AiRecommendationResponse) -> dict[str, Any]:
                 "data_quality": round(item.data_quality, 3),
                 "risk_flags": item.risk_flags[:3],
                 "rule_summary": item.summary,
+                "rule_action_line": item.action_line,
                 "next_trigger": item.next_trigger,
             }
         )
@@ -207,6 +209,7 @@ def _apply_overlay(response: AiRecommendationResponse, overlay: dict[str, Any]) 
         return item.model_copy(
             update={
                 "summary": str(update.get("summary") or item.summary),
+                "action_line": str(update.get("action_line") or item.action_line),
                 "position_hint": str(update.get("position_hint") or item.position_hint),
                 "next_actions": [str(action) for action in update.get("next_actions", item.next_actions)][:5],
             }

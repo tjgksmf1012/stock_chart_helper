@@ -75,6 +75,7 @@ export function DashboardCard({ item }: DashboardCardProps) {
             <span className="font-mono text-xs text-muted-foreground">#{item.rank}</span>
             <h3 className="text-base font-semibold">{item.symbol.name}</h3>
             <span className="font-mono text-xs text-muted-foreground">{item.symbol.code}</span>
+            {watched && <Badge variant="warning">관심종목</Badge>}
             <Badge variant="muted">{item.timeframe_label}</Badge>
             <Badge variant={actionPlanVariant(item.action_plan)}>{item.action_plan_label}</Badge>
           </div>

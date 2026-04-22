@@ -176,6 +176,7 @@ function makeFallbackRecommendation(item: DashboardItem): AiRecommendationItem {
           : stance === 'wait_for_trigger'
             ? `${item.symbol.name}은 구조는 살아 있지만 확인 트리거를 기다리는 편이 좋습니다.`
             : `${item.symbol.name}은 현재 리스크와 데이터 품질을 먼저 점검해야 합니다.`,
+    action_line: buildFallbackActionLine(item, stance),
     reasons: [
       `상승확률 ${(item.p_up * 100).toFixed(1)}%, 하락확률 ${(item.p_down * 100).toFixed(1)}%`,
       `거래준비도 ${(item.trade_readiness_score * 100).toFixed(0)}%, 진입구간 ${(item.entry_window_score * 100).toFixed(0)}%`,
@@ -241,6 +242,22 @@ function rerankAiItems(items: AiRecommendationItem[]) {
 
 function clamp01(value: number) {
   return Math.max(0, Math.min(1, value))
+}
+
+function buildFallbackActionLine(item: DashboardItem, stance: AiRecommendationItem['stance']) {
+  if (item.next_trigger) {
+    return `지금 할 일: ${item.next_trigger} -> 그 이후 종가와 지지 유지 여부 재확인`
+  }
+  if (stance === 'priority_watch') {
+    return '지금 할 일: 핵심 트리거 전까지 시나리오 유지 -> 그 이후 목표가와 무효화 기준 재확인'
+  }
+  if (stance === 'avoid_chase') {
+    return '지금 할 일: 추격 대신 눌림 구간 대기 -> 그 이후 지지 확인 시 재평가'
+  }
+  if (item.risk_flags?.length) {
+    return `지금 할 일: ${item.risk_flags[0]} 점검 -> 그 이후 재평가`
+  }
+  return '지금 할 일: 현재 구조 유지 여부 관찰 -> 그 이후 다음 트리거가 생기면 재평가'
 }
 
 export const patternsApi = {
