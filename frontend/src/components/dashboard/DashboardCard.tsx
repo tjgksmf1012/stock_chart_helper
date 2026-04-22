@@ -1,7 +1,7 @@
-﻿import { useState, type MouseEvent } from 'react'
+import { useState, type MouseEvent, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
-import { AlertTriangle, Bookmark, Layers3, Star } from 'lucide-react'
+import { Bookmark, ChevronDown, Star } from 'lucide-react'
 
 import type { DashboardItem } from '@/types/api'
 import { outcomesApi } from '@/lib/api'
@@ -14,12 +14,10 @@ import {
   fmtTurnoverBillion,
   getPatternBias,
   INTRADAY_COLLECTION_MODE_LABELS,
-  INTRADAY_SESSION_LABELS,
   PATTERN_NAMES,
   SETUP_STAGE_LABELS,
   STATE_COLORS,
   STATE_LABELS,
-  WYCKOFF_LABELS,
 } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
 
@@ -28,12 +26,13 @@ interface DashboardCardProps {
   intradayPreset?: string
 }
 
-export function DashboardCard({ item, intradayPreset }: DashboardCardProps) {
+export function DashboardCard({ item }: DashboardCardProps) {
   const nav = useNavigate()
   const { addToWatchlist, removeFromWatchlist, isWatched, setTimeframe } = useAppStore()
   const watched = isWatched(item.symbol.code)
-  const isIntraday = ['1m', '15m', '30m', '60m'].includes(item.timeframe)
+  const [detailsOpen, setDetailsOpen] = useState(false)
   const [savedId, setSavedId] = useState<number | null>(null)
+
   const saveMutation = useMutation({
     mutationFn: () =>
       outcomesApi.record({
@@ -63,201 +62,194 @@ export function DashboardCard({ item, intradayPreset }: DashboardCardProps) {
     }
   }
 
-  return (
-    <Card
-      className="cursor-pointer space-y-3"
-      onClick={() => {
-        setTimeframe(item.timeframe)
-        nav(`/chart/${item.symbol.code}`)
-      }}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="font-mono text-xs text-muted-foreground">#{item.rank}</span>
-            <span className="truncate text-sm font-semibold">{item.symbol.name}</span>
-            <span className="font-mono text-xs text-muted-foreground">{item.symbol.code}</span>
-            <span className="text-xs text-muted-foreground">{item.symbol.market}</span>
-          </div>
+  const openChart = () => {
+    setTimeframe(item.timeframe)
+    nav(`/chart/${item.symbol.code}`)
+  }
 
-          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+  return (
+    <Card className="space-y-4 cursor-pointer" onClick={openChart}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-xs text-muted-foreground">#{item.rank}</span>
+            <h3 className="text-base font-semibold">{item.symbol.name}</h3>
+            <span className="font-mono text-xs text-muted-foreground">{item.symbol.code}</span>
             <Badge variant="muted">{item.timeframe_label}</Badge>
             <Badge variant={actionPlanVariant(item.action_plan)}>{item.action_plan_label}</Badge>
-            <Badge variant={scoreVariant(item.trade_readiness_score ?? 0)}>준비 {fmtPct(item.trade_readiness_score ?? 0, 0)}</Badge>
-            <Badge variant={scoreVariant(item.entry_window_score ?? 0)}>진입 {fmtPct(item.entry_window_score ?? 0, 0)}</Badge>
-            <Badge variant={scoreVariant(item.freshness_score ?? 0)}>신선 {fmtPct(item.freshness_score ?? 0, 0)}</Badge>
-            <Badge variant={scoreVariant(item.reentry_score ?? 0)}>재진입 {fmtPct(item.reentry_score ?? 0, 0)}</Badge>
-            <Badge variant={scoreVariant(item.active_setup_score ?? 0)}>활성 {fmtPct(item.active_setup_score ?? 0, 0)}</Badge>
-            <Badge variant={item.data_quality >= 0.8 ? 'bullish' : item.data_quality >= 0.6 ? 'neutral' : 'warning'}>
-              품질 {fmtPct(item.data_quality, 0)}
-            </Badge>
-            {item.fetch_status === 'placeholder_pending' && <Badge variant="warning">임시 후보</Badge>}
-            {item.live_intraday_candidate && <Badge variant="bullish">live {fmtPct(item.live_intraday_priority_score, 0)}</Badge>}
-            {isIntraday && !item.live_intraday_candidate && (
-              <Badge variant="muted">{INTRADAY_COLLECTION_MODE_LABELS[item.intraday_collection_mode] ?? item.intraday_collection_mode}</Badge>
-            )}
           </div>
 
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            {item.pattern_type ? <Badge variant={getPatternBias(item.pattern_type)}>{PATTERN_NAMES[item.pattern_type] ?? item.pattern_type}</Badge> : <Badge variant="muted">No Signal</Badge>}
-            {item.state && <span className={cn('rounded px-1 py-0.5 text-xs', STATE_COLORS[item.state] ?? 'text-slate-300 bg-slate-500/10')}>{STATE_LABELS[item.state] ?? item.state}</span>}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {item.pattern_type ? (
+              <Badge variant={getPatternBias(item.pattern_type)}>{PATTERN_NAMES[item.pattern_type] ?? item.pattern_type}</Badge>
+            ) : (
+              <Badge variant="muted">No Signal</Badge>
+            )}
+            {item.state && (
+              <span className={cn('rounded px-1.5 py-0.5 text-xs', STATE_COLORS[item.state] ?? 'bg-white/5 text-slate-300')}>
+                {STATE_LABELS[item.state] ?? item.state}
+              </span>
+            )}
             <Badge variant="muted">{SETUP_STAGE_LABELS[item.setup_stage] ?? item.setup_stage}</Badge>
+            {item.fetch_status === 'placeholder_pending' && <Badge variant="warning">임시 후보</Badge>}
+            {item.live_intraday_candidate && <Badge variant="bullish">Live 우선</Badge>}
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <div className="text-right">
-            <div className="text-xs text-muted-foreground">완성도</div>
-            <div className="font-mono text-sm font-semibold text-primary">{fmtPct(item.completion_proximity, 0)}</div>
-          </div>
-          <button
+        <div className="flex items-center gap-1">
+          <IconButton
             onClick={toggleWatch}
-            className={cn(
-              'rounded p-1.5 transition-colors',
-              watched ? 'text-yellow-400 hover:text-yellow-300' : 'text-muted-foreground hover:text-yellow-400',
-            )}
             title={watched ? '관심종목 해제' : '관심종목 추가'}
+            active={watched}
+            activeTone="text-yellow-400"
           >
             <Star size={14} className={watched ? 'fill-yellow-400' : ''} />
-          </button>
-          <button
+          </IconButton>
+          <IconButton
             onClick={event => {
               event.stopPropagation()
               if (savedId != null || saveMutation.isPending) return
               saveMutation.mutate()
             }}
-            disabled={savedId != null || saveMutation.isPending}
-            className={cn(
-              'rounded p-1.5 transition-colors',
-              savedId != null ? 'text-primary' : 'text-muted-foreground hover:text-primary disabled:opacity-40',
-            )}
             title={savedId != null ? '저장됨' : '신호 저장'}
+            active={savedId != null}
+            activeTone="text-primary"
           >
-            <Bookmark size={14} className={savedId != null ? 'fill-primary' : ''} />
-          </button>
+            <Bookmark size={14} className={savedId != null ? 'fill-current' : ''} />
+          </IconButton>
         </div>
       </div>
 
       <ProbBar p_up={item.p_up} p_down={item.p_down} />
 
-      {item.action_plan_summary && <SummaryBlock tone="primary" title="실전 판단" score={item.action_priority_score}>{item.action_plan_summary}</SummaryBlock>}
-      {item.trade_readiness_summary && <SummaryBlock tone="emerald" title={item.trade_readiness_label} score={item.trade_readiness_score}>{item.trade_readiness_summary}</SummaryBlock>}
-      {item.entry_window_summary && <SummaryBlock tone="sky" title={item.entry_window_label} score={item.entry_window_score}>{item.entry_window_summary}</SummaryBlock>}
-      {item.freshness_summary && <SummaryBlock tone="violet" title={item.freshness_label} score={item.freshness_score}>{item.freshness_summary}</SummaryBlock>}
-      {item.reentry_summary && (
-        <SummaryBlock tone="amber" title={item.reentry_case_label || item.reentry_label} score={item.reentry_score}>
-          <div className="space-y-1">
-            <div>{item.reentry_summary}</div>
-            {item.reentry_profile_label && item.reentry_profile_key !== 'none' && (
-              <div className="text-[11px] text-amber-100/90">
-                해석 기준: {item.reentry_profile_label}
-                {item.reentry_profile_summary ? ` · ${item.reentry_profile_summary}` : ''}
-              </div>
-            )}
-            {item.reentry_trigger && <div className="text-[11px] text-amber-100/90">확인 포인트: {item.reentry_trigger}</div>}
-            {item.reentry_factors?.length > 0 && (
-              <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-amber-100/90">
-                {item.reentry_factors.slice(0, 4).map(factor => (
-                  <span key={factor.label}>
-                    {factor.label} {fmtPct(factor.score ?? 0, 0)} · {Math.round((factor.weight ?? 0) * 100)}%
-                  </span>
-                ))}
-              </div>
-            )}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <KeyMetric label="준비도" value={fmtPct(item.trade_readiness_score ?? 0, 0)} tone={scoreTone(item.trade_readiness_score ?? 0)} />
+        <KeyMetric label="진입 구간" value={fmtPct(item.entry_window_score ?? 0, 0)} tone={scoreTone(item.entry_window_score ?? 0)} />
+        <KeyMetric label="신선도" value={fmtPct(item.freshness_score ?? 0, 0)} tone={scoreTone(item.freshness_score ?? 0)} />
+        <KeyMetric label="데이터 품질" value={fmtPct(item.data_quality, 0)} tone={scoreTone(item.data_quality)} />
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_200px]">
+        <SummaryPane title="실전 판단" accent="primary" text={item.action_plan_summary || item.reason_summary} />
+        <div className="rounded-lg border border-border bg-background/55 p-3">
+          <div className="text-xs text-muted-foreground">다음 확인</div>
+          <div className="mt-2 text-sm font-medium leading-relaxed">{item.next_trigger || '트리거 대기'}</div>
+          <div className="mt-3 text-xs text-muted-foreground">
+            신뢰도 {fmtPct(item.confidence, 0)} · 손익비 {item.reward_risk_ratio.toFixed(2)}
           </div>
-        </SummaryBlock>
-      )}
-      {item.active_setup_summary && <SummaryBlock tone="cyan" title={item.active_setup_label}>{item.active_setup_summary}</SummaryBlock>}
+        </div>
+      </div>
 
-      {(item.next_trigger || item.risk_flags?.length > 0) && (
-        <div className="rounded-lg border border-orange-400/15 bg-orange-400/5 p-2.5 text-xs leading-relaxed text-muted-foreground">
-          {item.next_trigger && (
-            <div>
-              <span className="font-medium text-orange-200">다음 트리거:</span> {item.next_trigger}
-            </div>
-          )}
-          {item.risk_flags?.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1">
-              {item.risk_flags.slice(0, 3).map((flag, index) => (
-                <Badge key={`${flag}-${index}`} variant="warning">
-                  {flag}
-                </Badge>
-              ))}
-            </div>
-          )}
+      {(item.risk_flags?.length > 0 || item.fetch_message) && (
+        <div className="rounded-lg border border-orange-400/15 bg-orange-400/5 p-3 text-xs leading-relaxed text-orange-100">
+          <span className="font-medium text-orange-200">주의:</span>{' '}
+          {item.risk_flags?.[0] || item.fetch_message || '데이터 메모를 확인해 주세요.'}
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-        <span>신뢰도 {fmtPct(item.confidence)}</span>
-        <span className="text-right">교과서 {fmtPct(item.textbook_similarity)}</span>
-        <span>표본 신뢰도 {fmtPct(item.sample_reliability)}</span>
-        <span className="text-right">edge {fmtPct(item.historical_edge_score)}</span>
-        <span>손익비 {item.reward_risk_ratio.toFixed(2)}</span>
-        <span className="text-right">거래대금 {fmtTurnoverBillion(item.avg_turnover_billion)}</span>
-      </div>
+      <button
+        type="button"
+        onClick={event => {
+          event.stopPropagation()
+          setDetailsOpen(prev => !prev)
+        }}
+        className="inline-flex items-center gap-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+      >
+        상세 정보 {detailsOpen ? '접기' : '보기'}
+        <ChevronDown size={14} className={cn('transition-transform', detailsOpen && 'rotate-180')} />
+      </button>
 
-      <div className="rounded-lg border border-border bg-background/60 p-2.5">
-        <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
-          <Layers3 size={12} />
-          멀티 타임프레임 컨텍스트
-        </div>
-        <p className="mt-1 text-xs text-muted-foreground">{item.confluence_summary}</p>
-        <p className="mt-1 text-xs leading-relaxed text-foreground/90">{item.scenario_text}</p>
-      </div>
-
-      <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-        <span>{WYCKOFF_LABELS[item.wyckoff_phase] ?? item.wyckoff_phase}</span>
-        <span className="text-right">{INTRADAY_SESSION_LABELS[item.intraday_session_phase] ?? item.intraday_session_phase}</span>
-      </div>
-
-      {item.wyckoff_note && <div className="rounded-lg border border-sky-500/20 bg-sky-500/5 p-2.5 text-xs text-sky-100">{item.wyckoff_note}</div>}
-      {item.intraday_session_note && <div className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-2.5 text-xs text-violet-100">{item.intraday_session_note}</div>}
-      {item.live_intraday_candidate && item.live_intraday_reason && <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-2.5 text-xs text-emerald-100">{item.live_intraday_reason}</div>}
-      {isIntraday && !item.live_intraday_candidate && item.non_live_intraday_reason && <div className="rounded-lg border border-slate-500/20 bg-slate-500/5 p-2.5 text-xs text-slate-200">{item.non_live_intraday_reason}</div>}
-      {(item.fetch_message || item.no_signal_flag) && (
-        <div className="rounded-lg border border-border bg-background/60 p-2.5">
-          <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
-            <AlertTriangle size={12} />
-            데이터 메모
+      {detailsOpen && (
+        <div className="space-y-3 rounded-lg border border-border bg-background/45 p-4" onClick={event => event.stopPropagation()}>
+          <div className="grid grid-cols-2 gap-3 text-xs text-muted-foreground sm:grid-cols-3">
+            <DetailRow label="교과서 유사도" value={fmtPct(item.textbook_similarity, 0)} />
+            <DetailRow label="표본 신뢰도" value={fmtPct(item.sample_reliability, 0)} />
+            <DetailRow label="Edge" value={fmtPct(item.historical_edge_score, 0)} />
+            <DetailRow label="거래대금" value={fmtTurnoverBillion(item.avg_turnover_billion)} />
+            <DetailRow label="수집 모드" value={INTRADAY_COLLECTION_MODE_LABELS[item.intraday_collection_mode] ?? item.intraday_collection_mode} />
+            <DetailRow label="평균 MFE/MAE" value={`${fmtPct(item.avg_mfe_pct, 0)} / ${fmtPct(item.avg_mae_pct, 0)}`} />
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">{item.fetch_message || item.source_note}</p>
+
+          {item.trade_readiness_summary && <SummaryPane title={item.trade_readiness_label} accent="emerald" text={item.trade_readiness_summary} />}
+          {item.entry_window_summary && <SummaryPane title={item.entry_window_label} accent="sky" text={item.entry_window_summary} />}
+          {item.freshness_summary && <SummaryPane title={item.freshness_label} accent="violet" text={item.freshness_summary} />}
+
+          <div className="rounded-lg border border-border bg-background/55 p-3">
+            <div className="text-xs font-medium text-foreground">멀티 타임프레임 맥락</div>
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{item.confluence_summary}</p>
+            <p className="mt-2 text-xs leading-relaxed text-foreground/90">{item.scenario_text}</p>
+          </div>
         </div>
       )}
-      {item.trend_warning && <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-2.5 text-xs text-amber-200">{item.trend_warning}</div>}
-      {intradayPreset && <p className="text-xs text-muted-foreground">프리셋: {presetLabel(intradayPreset)}</p>}
-      <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">{item.reason_summary}</p>
     </Card>
   )
 }
 
-function SummaryBlock({
-  tone,
-  title,
-  score,
+function IconButton({
   children,
+  onClick,
+  title,
+  active,
+  activeTone,
 }: {
-  tone: 'primary' | 'emerald' | 'sky' | 'violet' | 'amber' | 'cyan'
+  children: ReactNode
+  onClick: (event: MouseEvent<HTMLButtonElement>) => void
   title: string
-  score?: number
-  children: React.ReactNode
+  active: boolean
+  activeTone: string
 }) {
-  const tones = {
-    primary: 'border-primary/20 bg-primary/5 text-primary',
-    emerald: 'border-emerald-400/20 bg-emerald-400/5 text-emerald-300',
-    sky: 'border-sky-400/20 bg-sky-400/5 text-sky-200',
-    violet: 'border-violet-400/20 bg-violet-400/5 text-violet-200',
-    amber: 'border-amber-400/20 bg-amber-400/5 text-amber-200',
-    cyan: 'border-cyan-400/20 bg-cyan-400/5 text-cyan-200',
-  }[tone]
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className={cn(
+        'rounded-lg p-2 text-muted-foreground transition-colors hover:bg-background/70',
+        active && `bg-background/70 ${activeTone}`,
+      )}
+    >
+      {children}
+    </button>
+  )
+}
+
+function KeyMetric({ label, value, tone }: { label: string; value: string; tone: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-background/55 p-3">
+      <div className="text-[11px] text-muted-foreground">{label}</div>
+      <div className={cn('mt-1 text-sm font-semibold', tone)}>{value}</div>
+    </div>
+  )
+}
+
+function SummaryPane({
+  title,
+  text,
+  accent,
+}: {
+  title: string
+  text: string
+  accent: 'primary' | 'emerald' | 'sky' | 'violet'
+}) {
+  const accentClass = {
+    primary: 'border-primary/20 bg-primary/6',
+    emerald: 'border-emerald-400/20 bg-emerald-400/6',
+    sky: 'border-sky-400/20 bg-sky-400/6',
+    violet: 'border-violet-400/20 bg-violet-400/6',
+  }[accent]
 
   return (
-    <div className={`rounded-lg border p-2.5 text-xs leading-relaxed text-muted-foreground ${tones}`}>
-      <div className="mb-1 flex items-center justify-between gap-2">
-        <span className="font-medium">{title}</span>
-        {typeof score === 'number' ? <span>{fmtPct(score, 0)}</span> : null}
-      </div>
-      {children}
+    <div className={cn('rounded-lg border p-3', accentClass)}>
+      <div className="text-xs font-medium text-foreground">{title}</div>
+      <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{text}</p>
+    </div>
+  )
+}
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-[11px] text-muted-foreground">{label}</div>
+      <div className="mt-1 text-sm font-medium text-foreground">{value}</div>
     </div>
   )
 }
@@ -269,26 +261,9 @@ function actionPlanVariant(plan: string): 'bullish' | 'warning' | 'muted' | 'neu
   return 'muted'
 }
 
-function scoreVariant(score: number): 'bullish' | 'warning' | 'muted' | 'neutral' {
-  if (score >= 0.72) return 'bullish'
-  if (score >= 0.56) return 'neutral'
-  if (score >= 0.4) return 'warning'
-  return 'muted'
-}
-
-function presetLabel(value: string): string {
-  switch (value) {
-    case 'all':
-      return '전체'
-    case 'ready-now':
-      return '지금 볼 종목'
-    case 'watch':
-      return '지켜볼 후보'
-    case 'recheck':
-      return '재확인 필요'
-    case 'cooling':
-      return '관망 / 정리'
-    default:
-      return value
-  }
+function scoreTone(score: number) {
+  if (score >= 0.72) return 'text-emerald-300'
+  if (score >= 0.56) return 'text-sky-200'
+  if (score >= 0.4) return 'text-amber-200'
+  return 'text-muted-foreground'
 }

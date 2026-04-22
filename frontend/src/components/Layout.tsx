@@ -25,11 +25,16 @@ export function Layout() {
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur">
-        <div className="mx-auto flex h-12 max-w-screen-2xl items-center justify-between gap-4 px-4">
-          <div className="flex items-center gap-2">
-            <BarChart2 size={18} className="text-primary" />
-            <span className="text-sm font-bold tracking-tight">Stock Chart Helper</span>
+      <header className="sticky top-0 z-40 border-b border-border/80 bg-background/92 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-screen-2xl flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 text-primary">
+              <BarChart2 size={18} />
+            </div>
+            <div>
+              <div className="text-sm font-bold tracking-tight">Stock Chart Helper</div>
+              <div className="text-[11px] text-muted-foreground">KRX pattern desk for fast review and disciplined entries</div>
+            </div>
           </div>
 
           <nav className="flex items-center gap-1 overflow-x-auto pb-1 md:pb-0">
@@ -40,10 +45,10 @@ export function Layout() {
                 end={item.end}
                 className={({ isActive }) =>
                   cn(
-                    'relative flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-xs transition-colors',
+                    'relative flex min-h-9 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-xs transition-colors',
                     isActive
-                      ? 'bg-primary/15 text-primary'
-                      : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
+                      ? 'border border-primary/20 bg-primary/12 text-primary shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]'
+                      : 'border border-transparent text-muted-foreground hover:border-border hover:bg-muted/40 hover:text-foreground',
                   )
                 }
               >
@@ -60,12 +65,12 @@ export function Layout() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-screen-2xl flex-1 px-4 py-6">
+      <main className="mx-auto w-full max-w-screen-2xl flex-1 px-4 py-6 lg:py-8">
         <Outlet />
       </main>
 
-      <footer className="border-t border-border px-4 py-3 text-center text-xs text-muted-foreground">
-        Stock Chart Helper는 차트 분석 보조 도구이며, 투자 권유 서비스가 아닙니다.
+      <footer className="border-t border-border/80 px-4 py-4 text-center text-xs text-muted-foreground">
+        Stock Chart Helper는 기술적 분석 보조 도구이며 투자 권유 서비스가 아닙니다.
       </footer>
     </div>
   )

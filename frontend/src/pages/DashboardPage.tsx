@@ -1,12 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Activity, AlertTriangle, Layers3, Loader2, RefreshCw } from 'lucide-react'
+import { Activity, Layers3, Loader2, RefreshCw, Sparkles } from 'lucide-react'
 
 import { DashboardSection } from '@/components/dashboard/DashboardSection'
 import { Card } from '@/components/ui/Card'
+import { QueryError } from '@/components/ui/QueryError'
 import { dashboardApi } from '@/lib/api'
 import { DEFAULT_TIMEFRAME, TIMEFRAME_OPTIONS, timeframeLabel } from '@/lib/timeframes'
-import { fmtDateTime } from '@/lib/utils'
+import { cn, fmtDateTime, fmtPct, INTRADAY_COLLECTION_MODE_LABELS, SETUP_STAGE_LABELS } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
 import type { DashboardItem, DashboardResponse, ScanStatusResponse, Timeframe } from '@/types/api'
 
@@ -15,7 +16,7 @@ type IntradayPreset = 'all' | 'ready-now' | 'watch' | 'recheck' | 'cooling'
 
 const INTRADAY_VIEW_OPTIONS: Array<[IntradayView, string]> = [
   ['all', '전체'],
-  ['live', 'live'],
+  ['live', 'Live'],
   ['stored', '저장'],
   ['public', '공개'],
   ['mixed', '혼합'],
@@ -23,18 +24,17 @@ const INTRADAY_VIEW_OPTIONS: Array<[IntradayView, string]> = [
 ]
 
 const INTRADAY_PRESET_OPTIONS: Array<[IntradayPreset, string]> = [
-  ['all', '프리셋 전체'],
-  ['ready-now', '지금 볼 종목'],
+  ['all', '전체'],
+  ['ready-now', '지금 볼 후보'],
   ['watch', '지켜볼 후보'],
   ['recheck', '재확인 필요'],
-  ['cooling', '관망 / 정리'],
+  ['cooling', '관망'],
 ]
 
 export default function DashboardPage() {
   const { selectedTimeframe, setTimeframe } = useAppStore()
   const timeframe = selectedTimeframe ?? DEFAULT_TIMEFRAME
   const intradayMode = ['60m', '30m', '15m', '1m'].includes(timeframe)
-  const opts = { staleTime: 30_000, refetchInterval: 60_000 }
   const [isTriggeringScan, setIsTriggeringScan] = useState(false)
   const [intradayView, setIntradayView] = useState<IntradayView>('all')
   const [intradayPreset, setIntradayPreset] = useState<IntradayPreset>('all')
@@ -44,50 +44,10 @@ export default function DashboardPage() {
   const overviewQ = useQuery({
     queryKey: ['dashboard', timeframe, 'overview'],
     queryFn: () => dashboardApi.overview(timeframe),
-    ...opts,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
   })
-  const longQ = useQuery({
-    queryKey: ['dashboard', timeframe, 'long-high-probability'],
-    queryFn: () => dashboardApi.longHigh(timeframe),
-    ...opts,
-    enabled: false,
-  })
-  const armedQ = useQuery({
-    queryKey: ['dashboard', timeframe, 'pattern-armed'],
-    queryFn: () => dashboardApi.armed(timeframe),
-    ...opts,
-    enabled: false,
-  })
-  const liveQ = useQuery({
-    queryKey: ['dashboard', timeframe, 'live-intraday-candidates'],
-    queryFn: () => dashboardApi.liveIntraday(timeframe),
-    ...opts,
-    enabled: false,
-  })
-  const formingQ = useQuery({
-    queryKey: ['dashboard', timeframe, 'forming-candidates'],
-    queryFn: () => dashboardApi.forming(timeframe),
-    ...opts,
-    enabled: false,
-  })
-  const simQ = useQuery({
-    queryKey: ['dashboard', timeframe, 'high-textbook-similarity'],
-    queryFn: () => dashboardApi.highSimilarity(timeframe),
-    ...opts,
-    enabled: false,
-  })
-  const shortQ = useQuery({
-    queryKey: ['dashboard', timeframe, 'short-high-probability'],
-    queryFn: () => dashboardApi.shortHigh(timeframe),
-    ...opts,
-    enabled: false,
-  })
-  const noSigQ = useQuery({
-    queryKey: ['dashboard', timeframe, 'watchlist-no-signal'],
-    queryFn: () => dashboardApi.noSignal(timeframe),
-    ...opts,
-    enabled: false,
-  })
+
   const statusQ = useQuery({
     queryKey: ['dashboard', timeframe, 'scan-status'],
     queryFn: () => dashboardApi.scanStatus(timeframe),
@@ -98,27 +58,6 @@ export default function DashboardPage() {
     },
   })
 
-  const sectionQueries = [overviewQ] as const
-  const isRefreshing = sectionQueries.some(query => query.isFetching)
-
-  const isScanActive = isTriggeringScan || statusQ.data?.is_running
-
-  const refreshBoards = () => {
-    sectionQueries.forEach(query => query.refetch())
-    statusQ.refetch()
-  }
-
-  const triggerScan = async () => {
-    setIsTriggeringScan(true)
-    try {
-      await dashboardApi.refreshScan(timeframe)
-      statusQ.refetch()
-      sectionQueries.forEach(query => query.refetch())
-    } finally {
-      setIsTriggeringScan(false)
-    }
-  }
-
   useEffect(() => {
     const lastFinishedAt = statusQ.data?.last_finished_at
     const status = statusQ.data?.status ?? null
@@ -126,14 +65,14 @@ export default function DashboardPage() {
     const previousStatus = lastStatusRef.current
 
     if (status === 'ready' && lastFinishedAt && (previousFinishedAt !== lastFinishedAt || previousStatus !== 'ready')) {
-      sectionQueries.forEach(query => query.refetch())
+      overviewQ.refetch()
     }
 
     if (lastFinishedAt) {
       lastFinishedAtRef.current = lastFinishedAt
     }
     lastStatusRef.current = status
-  }, [statusQ.data?.last_finished_at, statusQ.data?.status])
+  }, [overviewQ, statusQ.data?.last_finished_at, statusQ.data?.status])
 
   useEffect(() => {
     setIntradayView('all')
@@ -142,337 +81,262 @@ export default function DashboardPage() {
     lastStatusRef.current = null
   }, [timeframe])
 
-  const filterDashboard = (data: DashboardResponse | undefined): DashboardResponse | undefined => {
-    if (!intradayMode || !data) return data
-    return {
-      ...data,
-      items: data.items.filter(item => {
-        const matchesView =
-          intradayView === 'all'
-            ? true
-            : intradayView === 'live'
-              ? item.live_intraday_candidate
-              : !item.live_intraday_candidate && item.intraday_collection_mode === intradayView
-
-        const matchesPreset =
-          intradayPreset === 'all'
-            ? true
-            : intradayPreset === 'ready-now'
-              ? item.live_intraday_candidate && !item.no_signal_flag && ['confirmed', 'trigger_ready', 'breakout_watch'].includes(item.setup_stage)
-              : intradayPreset === 'watch'
-                ? !item.no_signal_flag && ['late_base', 'early_trigger_watch', 'base_building'].includes(item.setup_stage) && item.formation_quality >= 0.5
-                : intradayPreset === 'recheck'
-                  ? ['stored', 'public', 'mixed', 'budget'].includes(item.intraday_collection_mode) && item.data_quality >= 0.45
-                  : item.intraday_collection_mode === 'cooldown' || item.no_signal_flag
-
-        return matchesView && matchesPreset
-      }),
+  const triggerScan = async () => {
+    setIsTriggeringScan(true)
+    try {
+      await dashboardApi.refreshScan(timeframe)
+      await Promise.all([statusQ.refetch(), overviewQ.refetch()])
+    } finally {
+      setIsTriggeringScan(false)
     }
   }
 
+  const refreshBoards = () => {
+    overviewQ.refetch()
+    statusQ.refetch()
+  }
+
   const overview = overviewQ.data
-  const longData = filterDashboard(overview?.long_high_probability)
-  const armedData = filterDashboard(overview?.pattern_armed)
-  const liveData = filterDashboard(overview?.live_intraday_candidates)
-  const formingData = filterDashboard(overview?.forming_candidates)
-  const simData = filterDashboard(overview?.high_textbook_similarity)
-  const shortData = filterDashboard(overview?.short_high_probability)
-  const noSigData = filterDashboard(overview?.watchlist_no_signal)
+  const sections = useMemo(() => {
+    const filter = (data: DashboardResponse | undefined) => filterDashboard(data, intradayMode, intradayView, intradayPreset)
 
-  const filteredSections: Array<DashboardResponse | undefined> = [
-    longData,
-    armedData,
-    liveData,
-    formingData,
-    simData,
-    shortData,
-    noSigData,
-  ]
+    return {
+      longData: filter(overview?.long_high_probability),
+      armedData: filter(overview?.pattern_armed),
+      liveData: filter(overview?.live_intraday_candidates),
+      formingData: filter(overview?.forming_candidates),
+      simData: filter(overview?.high_textbook_similarity),
+      shortData: filter(overview?.short_high_probability),
+      noSigData: filter(overview?.watchlist_no_signal),
+    }
+  }, [intradayMode, intradayPreset, intradayView, overview])
 
-  const intradaySummary = intradayMode ? buildIntradaySummary(filteredSections) : null
-  const intradayEmptyMessage =
-    intradayMode && statusQ.data?.status === 'warming' && (statusQ.data?.cached_result_count ?? 0) === 0
-      ? `${timeframeLabel(timeframe)} 후보를 지금 백그라운드에서 다시 계산 중입니다. 아직 실제 결과가 준비되지 않아 카드가 잠시 비어 보일 수 있고, 준비되는 순서대로 자동으로 채워집니다.`
-      : undefined
-  const intradayFallbackMessage =
-    intradayMode && ['fallback_seed', 'placeholder_seed'].includes(statusQ.data?.candidate_source ?? '')
-      ? statusQ.data?.candidate_source === 'placeholder_seed'
-        ? `지금은 ${timeframeLabel(timeframe)}의 임시 후보를 먼저 보여주고 있습니다. 이 목록은 첫 화면을 빠르게 열기 위한 것이고, 백그라운드 스캔이 끝나면 실제 분석 결과로 자동 교체됩니다.`
-        : `지금은 ${timeframeLabel(timeframe)}의 fallback 후보를 먼저 보여주고 있습니다. 본 스캔 정리가 끝나면 카드가 더 정확한 결과로 자동 업데이트됩니다.`
-      : null
-  const liveEmptyMessage = getLiveSectionEmptyMessage(statusQ.data, timeframe) ?? intradayEmptyMessage
-  const sectionEmptyMessage = getDefaultSectionEmptyMessage(statusQ.data, timeframe) ?? intradayEmptyMessage
+  const summary = useMemo(
+    () =>
+      buildDashboardSummary([
+        sections.longData,
+        sections.armedData,
+        sections.liveData,
+        sections.formingData,
+        sections.simData,
+        sections.shortData,
+        sections.noSigData,
+      ]),
+    [sections],
+  )
+
+  const status = statusQ.data
+  const isScanActive = isTriggeringScan || status?.is_running
+  const intradaySummary = intradayMode ? buildIntradaySummary(Object.values(sections)) : null
+  const liveEmptyMessage = getLiveSectionEmptyMessage(status, timeframe)
+  const sectionEmptyMessage = getDefaultSectionEmptyMessage(status, timeframe)
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <h1 className="text-xl font-bold">대시보드</h1>
-          <p className="mt-0.5 max-w-3xl text-xs text-muted-foreground">
-            KRX 기준으로 타임프레임별 패턴, 거래 준비도, 데이터 품질을 한 번에 보고 지금 바로 볼 후보와 조금 더 지켜볼 후보를 나눠 읽는 메인 화면입니다.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap gap-1">
-          {TIMEFRAME_OPTIONS.map(option => (
-            <button
-              key={option.value}
-              onClick={() => setTimeframe(option.value)}
-              className={`rounded-md px-2.5 py-1.5 text-xs transition-colors ${
-                timeframe === option.value
-                  ? 'bg-primary text-primary-foreground'
-                  : 'border border-border bg-card text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <Card className="flex items-start gap-3 border-primary/20 bg-primary/5 p-4">
-        <Layers3 size={16} className="mt-0.5 text-primary" />
-        <div className="space-y-1">
-          <div className="text-sm font-semibold">지금 볼 후보와 지켜볼 후보를 분리해서 봅니다</div>
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            카드 정렬은 단순 상승 확률만이 아니라 거래 준비도, 상위 타임프레임 정렬, 데이터 품질까지 함께 반영합니다. 이미 끝난 패턴과 아직 베이스를 만드는 후보를
-            같은 강도로 보지 않도록 설계했습니다.
-          </p>
-        </div>
-      </Card>
-
-      {intradayMode && (
-        <Card className="flex items-start gap-3 border-yellow-500/30 bg-yellow-500/5 p-4">
-          <AlertTriangle size={16} className="mt-0.5 text-yellow-400" />
-          <div className="space-y-1">
-            <div className="text-sm font-semibold text-yellow-300">분봉 후보 해석은 더 보수적으로 읽습니다</div>
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              {timeframeLabel(timeframe)} 대시보드는 먼저 빠른 후보를 수집하고 그 위에 분봉 해석을 붙입니다. 분봉은 KIS, 저장 캐시, 공개 소스의 품질 차이가 있기 때문에
-              데이터 상태가 약하면 자동으로 관망 또는 No Signal 쪽으로 더 보수적으로 밀립니다.
-            </p>
-          </div>
-        </Card>
-      )}
-
-      {intradayMode && (
-        <Card className="flex items-start gap-3 border-sky-500/20 bg-sky-500/5 p-4">
-          <Activity size={16} className="mt-0.5 text-sky-300" />
-          <div className="space-y-1">
-            <div className="text-sm font-semibold text-sky-200">Live KIS 후보는 정말 급한 경우만 우선합니다</div>
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              장 시작 직후나 마감 직전처럼 실시간성이 중요한 구간에서만 live 후보 비중을 높이고, 점심시간이나 장외 시간에는 저장 분봉과 공개 소스를 우선 씁니다. 후보 중에서도
-              진입 적합성과 패턴 완성 임박, 최신성이 높은 종목만 live 분봉으로 더 깊게 확인합니다.
-            </p>
-          </div>
-        </Card>
-      )}
-
-      {intradayMode && intradayFallbackMessage && (
-        <Card className="flex items-start gap-3 border-cyan-500/20 bg-cyan-500/5 p-4">
-          <Loader2 size={16} className={statusQ.data?.is_running ? 'mt-0.5 animate-spin text-cyan-300' : 'mt-0.5 text-cyan-300'} />
-          <div className="space-y-1">
-            <div className="text-sm font-semibold text-cyan-100">지금은 빠른 후보를 먼저 보여주는 단계입니다</div>
-            <p className="text-xs leading-relaxed text-muted-foreground">{intradayFallbackMessage}</p>
-          </div>
-        </Card>
-      )}
-
-      {intradayMode && (
-        <div className="flex flex-wrap gap-2">
-          {INTRADAY_VIEW_OPTIONS.map(([value, label]) => (
-            <button
-              key={value}
-              onClick={() => setIntradayView(value)}
-              className={`rounded-md px-2.5 py-1.5 text-xs transition-colors ${
-                intradayView === value
-                  ? 'bg-primary text-primary-foreground'
-                  : 'border border-border bg-card text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {intradayMode && (
-        <div className="flex flex-wrap gap-2">
-          {INTRADAY_PRESET_OPTIONS.map(([value, label]) => (
-            <button
-              key={value}
-              onClick={() => setIntradayPreset(value)}
-              className={`rounded-md px-2.5 py-1.5 text-xs transition-colors ${
-                intradayPreset === value
-                  ? 'bg-emerald-600 text-white'
-                  : 'border border-border bg-card text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {intradayMode && intradaySummary && (
-        <Card className="space-y-4">
-          <div>
-            <div className="text-sm font-semibold">프리셋 요약</div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              현재 필터로 좁힌 후보를 빠르게 읽을 수 있도록 핵심 숫자만 모아 둔 영역입니다.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3 xl:grid-cols-6">
-            <StatusCell label="후보 수" value={`${intradaySummary.totalCount}개`} />
-            <StatusCell label="실제 분석" value={`${intradaySummary.realCount}개`} />
-            <StatusCell label="임시 후보" value={`${intradaySummary.placeholderCount}개`} />
-            <StatusCell label="live 추적" value={`${intradaySummary.liveCount}개`} />
-            <StatusCell label="confirmed" value={`${intradaySummary.confirmedCount}개`} />
-            <StatusCell label="관망 / No Signal" value={`${intradaySummary.noSignalCount}개`} />
-            <StatusCell label="평균 품질" value={intradaySummary.isProvisionalOnly ? '임시값' : `${Math.round(intradaySummary.avgQuality * 100)}%`} />
-            <StatusCell label="평균 진입 적합도" value={intradaySummary.isProvisionalOnly ? '임시값' : `${Math.round(intradaySummary.avgEntry * 100)}%`} />
-          </div>
-        </Card>
-      )}
-
-      {intradayMode && intradaySummary && (
-        <Card className="space-y-4">
-          <div>
-            <div className="text-sm font-semibold">프리셋 컨텍스트</div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              현재 프리셋 기준으로 데이터 품질과 셋업 분포를 같이 읽을 수 있게 만든 보조 요약입니다.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-            <StatusCell label="평균 edge" value={intradaySummary.isProvisionalOnly ? '임시값' : `${Math.round(intradaySummary.avgEdge * 100)}%`} />
-            <StatusCell label="평균 손익비" value={intradaySummary.isProvisionalOnly ? '임시값' : intradaySummary.avgRewardRisk.toFixed(2)} />
-            <StatusCell label="우세한 수집 모드" value={intradaySummary.dominantMode} />
-            <StatusCell label="우세한 셋업 단계" value={intradaySummary.dominantStage} />
-          </div>
-
-          <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 p-3 text-xs text-cyan-100">{intradaySummary.guidance}</div>
-
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => {
-                setIntradayView('all')
-                setIntradayPreset('all')
-              }}
-              className="rounded-md border border-border bg-card px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
-            >
-              전체 보기
-            </button>
-            <button
-              onClick={() => setIntradayView('live')}
-              className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-xs text-emerald-100 transition-colors hover:bg-emerald-500/15"
-            >
-              live만 보기
-            </button>
-            <button
-              onClick={() => setIntradayPreset('ready-now')}
-              className="rounded-md border border-sky-500/30 bg-sky-500/10 px-2.5 py-1.5 text-xs text-sky-100 transition-colors hover:bg-sky-500/15"
-            >
-              confirmed / 즉시 확인
-            </button>
-            <button
-              onClick={() => setIntradayPreset('watch')}
-              className="rounded-md border border-violet-500/30 bg-violet-500/10 px-2.5 py-1.5 text-xs text-violet-100 transition-colors hover:bg-violet-500/15"
-            >
-              forming / watch
-            </button>
-            <button
-              onClick={() => setIntradayPreset('cooling')}
-              className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-100 transition-colors hover:bg-amber-500/15"
-            >
-              관망 / 정리
-            </button>
-          </div>
-        </Card>
-      )}
-
-      <Card className="space-y-4">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 text-sm font-semibold">
-              <Activity size={15} className={statusQ.data?.is_running ? 'text-primary' : 'text-muted-foreground'} />
-              {timeframeLabel(timeframe)} 스캔 상태
+    <div className="space-y-6">
+      <section className="grid gap-4 xl:grid-cols-[minmax(0,1.3fr)_360px]">
+        <Card className="space-y-5 border-primary/15 bg-[linear-gradient(180deg,rgba(37,99,235,0.12),rgba(15,23,42,0.18))]">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="space-y-3">
+              <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-medium text-primary">
+                <Sparkles size={12} />
+                핵심 후보를 먼저 보여주는 대시보드
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold tracking-tight">대시보드</h1>
+                <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+                  지금 바로 볼 종목과 조금 더 기다릴 종목을 분리해서 보여줍니다. 점수는 많지만 화면에서는 우선순위와
+                  다음 액션이 먼저 보이도록 정리했습니다.
+                </p>
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground">
-              최근 스캔 결과와 후보 생성 방식을 확인하고, 필요하면 현재 타임프레임 기준으로 바로 다시 스캔할 수 있습니다.
-            </p>
+
+            <div className="flex flex-wrap gap-1.5">
+              {TIMEFRAME_OPTIONS.map(option => (
+                <button
+                  key={option.value}
+                  onClick={() => setTimeframe(option.value)}
+                  className={cn(
+                    'rounded-lg border px-3 py-2 text-xs font-medium transition-colors',
+                    timeframe === option.value
+                      ? 'border-primary/30 bg-primary text-primary-foreground'
+                      : 'border-border bg-background/60 text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <HeroMetric
+              label="전체 후보"
+              value={`${summary.totalCount}개`}
+              hint={`${summary.readyCount}개 즉시 검토, ${summary.watchCount}개 관찰`}
+            />
+            <HeroMetric
+              label="평균 상승 확률"
+              value={summary.totalCount > 0 ? fmtPct(summary.avgUp, 0) : '-'}
+              hint={summary.bestAction}
+            />
+            <HeroMetric
+              label="평균 준비도"
+              value={summary.totalCount > 0 ? fmtPct(summary.avgReadiness, 0) : '-'}
+              hint={`데이터 품질 ${summary.totalCount > 0 ? fmtPct(summary.avgQuality, 0) : '-'}`}
+            />
+            <HeroMetric
+              label="지금 흐름"
+              value={statusHeadline(status)}
+              hint={statusSubline(status, timeframe)}
+            />
+          </div>
+
+          {intradayMode && (
+            <div className="space-y-3 rounded-lg border border-sky-500/20 bg-sky-500/5 p-4">
+              <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <div className="text-sm font-semibold text-sky-100">분봉 후보 필터</div>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    장중에는 live 후보를 더 우선하고, 장외에는 저장 데이터 기준으로 보수적으로 정리합니다.
+                  </p>
+                </div>
+                {intradaySummary && (
+                  <div className="rounded-lg border border-sky-400/20 bg-background/50 px-3 py-2 text-xs text-sky-100">
+                    {intradaySummary.guidance}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {INTRADAY_VIEW_OPTIONS.map(([value, label]) => (
+                  <button
+                    key={value}
+                    onClick={() => setIntradayView(value)}
+                    className={cn(
+                      'rounded-lg border px-3 py-1.5 text-xs transition-colors',
+                      intradayView === value
+                        ? 'border-sky-400/30 bg-sky-500/20 text-sky-100'
+                        : 'border-border bg-background/50 text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {INTRADAY_PRESET_OPTIONS.map(([value, label]) => (
+                  <button
+                    key={value}
+                    onClick={() => setIntradayPreset(value)}
+                    className={cn(
+                      'rounded-lg border px-3 py-1.5 text-xs transition-colors',
+                      intradayPreset === value
+                        ? 'border-emerald-500/30 bg-emerald-500/20 text-emerald-100'
+                        : 'border-border bg-background/50 text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </Card>
+
+        <Card className="space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2 text-sm font-semibold">
+                <Activity size={15} className={status?.is_running ? 'text-primary' : 'text-muted-foreground'} />
+                스캔 상태
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">최근 스캔과 데이터 준비 상황을 빠르게 확인합니다.</p>
+            </div>
+
             <button
               onClick={refreshBoards}
-              className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
             >
-              <RefreshCw size={13} className={isRefreshing ? 'animate-spin' : ''} />
+              <RefreshCw size={13} className={overviewQ.isFetching ? 'animate-spin' : ''} />
               새로고침
             </button>
-            <button
-              onClick={triggerScan}
-              disabled={Boolean(isScanActive)}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isScanActive ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-              {isScanActive ? '스캔 진행 중' : '현재 타임프레임 다시 스캔'}
-            </button>
           </div>
-        </div>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <StatusCell label="상태" value={statusLabel(statusQ.data?.status)} />
-          <StatusCell label="마지막 완료" value={fmtDateTime(statusQ.data?.last_finished_at)} />
-          <StatusCell label="캐시 결과 수" value={`${statusQ.data?.cached_result_count ?? 0}개`} />
-          <StatusCell label="유니버스" value={statusQ.data?.universe_size ? `${statusQ.data.universe_size}개` : '-'} />
-        </div>
-
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <StatusCell label="후보 생성 방식" value={candidateSourceLabel(statusQ.data?.candidate_source)} />
-          <StatusCell label="후보 개수" value={statusQ.data?.candidate_count ? `${statusQ.data.candidate_count}개` : '-'} />
-          <StatusCell label="실행 주체" value={sourceLabel(statusQ.data?.source)} />
-          <StatusCell label="소요 시간" value={statusQ.data?.duration_ms ? `${(statusQ.data.duration_ms / 1000).toFixed(1)}초` : '-'} />
-        </div>
-
-        {intradayMode && (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <StatusCell label="Live 단계" value={livePhaseLabel(statusQ.data?.intraday_live_phase)} />
-            <StatusCell label="Live 사용 수" value={statusQ.data?.intraday_live_candidate_count != null ? `${statusQ.data.intraday_live_candidate_count}개` : '-'} />
-            <StatusCell label="Live 시도 상한" value={statusQ.data?.intraday_live_candidate_limit != null ? `${statusQ.data.intraday_live_candidate_limit}개` : '-'} />
-            <StatusCell label="운영 메모" value={livePhaseNote(statusQ.data?.intraday_live_phase)} />
+          <div className="grid grid-cols-2 gap-3">
+            <StatusCell label="상태" value={statusLabel(status?.status)} />
+            <StatusCell label="마지막 완료" value={fmtDateTime(status?.last_finished_at)} />
+            <StatusCell label="캐시 결과" value={`${status?.cached_result_count ?? 0}개`} />
+            <StatusCell label="후보 생성 방식" value={candidateSourceLabel(status?.candidate_source)} />
           </div>
-        )}
 
-        {statusQ.data?.last_error && (
-          <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-xs text-red-200">
-            최근 오류: {statusQ.data.last_error}
-          </div>
-        )}
+          <button
+            onClick={triggerScan}
+            disabled={Boolean(isScanActive)}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isScanActive ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+            {isScanActive ? `${timeframeLabel(timeframe)} 스캔 진행 중` : `${timeframeLabel(timeframe)} 다시 스캔`}
+          </button>
 
-        {statusQ.isError && !statusQ.isLoading && (
-          <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-100">
-            스캔 상태를 불러오지 못했습니다. 카드 자체는 마지막 캐시를 보여주고 있지만, 현재 예열이나 스캔이 진행 중인지 다시 확인할 필요가 있습니다.
+          <div className="rounded-lg border border-border bg-background/60 p-3 text-xs leading-relaxed text-muted-foreground">
+            {statusSubline(status, timeframe)}
           </div>
-        )}
-      </Card>
+
+          {statusQ.isError && !statusQ.isLoading && (
+            <QueryError compact message="스캔 상태를 불러오지 못했습니다." onRetry={() => statusQ.refetch()} />
+          )}
+        </Card>
+      </section>
+
+      <section className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
+        <Card className="space-y-4">
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <Layers3 size={15} className="text-primary" />
+            한눈에 보는 흐름
+          </div>
+          <div className="grid gap-3 md:grid-cols-3">
+            <QuickBoard
+              title="바로 볼 후보"
+              value={`${summary.readyCount}개`}
+              description="준비도와 진입 구간이 살아 있는 종목입니다."
+            />
+            <QuickBoard
+              title="조금 더 지켜볼 후보"
+              value={`${summary.watchCount}개`}
+              description="패턴은 괜찮지만 트리거나 품질 확인이 더 필요한 종목입니다."
+            />
+            <QuickBoard
+              title="관망 / 리스크"
+              value={`${summary.riskCount}개`}
+              description="신호가 약하거나 보수적으로 봐야 하는 종목입니다."
+            />
+          </div>
+        </Card>
+
+        <Card className="space-y-4">
+          <div className="text-sm font-semibold">읽는 순서</div>
+          <div className="space-y-3 text-sm text-muted-foreground">
+            <FlowStep
+              title="1. 지금 볼 후보 먼저"
+              body="상단 두 섹션은 바로 체크할 종목 위주로 정리했습니다."
+            />
+            <FlowStep
+              title="2. 형성 중 후보 확인"
+              body="진입 직전이 아니라도 구조가 살아 있는 종목은 별도로 모아둡니다."
+            />
+            <FlowStep
+              title="3. 나머지는 필요할 때만"
+              body="유사도, 숏 후보, 관망 구간은 아래 보조 섹션에서 천천히 보면 됩니다."
+            />
+          </div>
+        </Card>
+      </section>
 
       <DashboardSection
-        title="상승 확률 상위"
-        subtitle="상승 확률, 거래 준비도, 상위 타임프레임 정렬까지 함께 좋은 종목입니다."
-        data={longData}
-        isLoading={overviewQ.isLoading}
-        isError={overviewQ.isError}
-        onRetry={() => overviewQ.refetch()}
-        intradayPreset={intradayMode ? intradayPreset : undefined}
-        emptyMessage={sectionEmptyMessage}
-      />
-
-      <DashboardSection
-        title="패턴 완성 임박"
-        subtitle="거의 다 만들어졌고 돌파 감시 단계에 가까운 후보입니다."
-        data={armedData}
+        title="지금 볼 후보"
+        subtitle="상승 확률, 준비도, 진입 구간이 함께 괜찮은 종목부터 보여줍니다."
+        data={sections.longData}
         isLoading={overviewQ.isLoading}
         isError={overviewQ.isError}
         onRetry={() => overviewQ.refetch()}
@@ -482,9 +346,9 @@ export default function DashboardPage() {
 
       {intradayMode && (
         <DashboardSection
-          title="Live 분봉 후보"
-          subtitle="실제 live KIS 분봉까지 연결해 확인 중인 후보입니다. 저장 분봉이나 공개 소스 기반 후보보다 우선 관찰할 묶음입니다."
-          data={liveData}
+          title="Live 분봉 우선 후보"
+          subtitle="실제 live 분봉까지 연결된 후보를 우선으로 정리했습니다."
+          data={sections.liveData}
           isLoading={overviewQ.isLoading}
           isError={overviewQ.isError}
           onRetry={() => overviewQ.refetch()}
@@ -495,8 +359,8 @@ export default function DashboardPage() {
 
       <DashboardSection
         title="형성 중 후보"
-        subtitle="아직 forming 상태지만 구조가 살아 있어 관찰 가치가 있는 후보입니다. 완성 신호가 아니라 관찰용 후보군으로 보세요."
-        data={formingData}
+        subtitle="완성 직전은 아니지만 구조가 살아 있어 관찰 가치가 있는 후보입니다."
+        data={sections.formingData}
         isLoading={overviewQ.isLoading}
         isError={overviewQ.isError}
         onRetry={() => overviewQ.refetch()}
@@ -504,38 +368,80 @@ export default function DashboardPage() {
         emptyMessage={sectionEmptyMessage}
       />
 
-      <DashboardSection
-        title="교과서 유사형"
-        subtitle="교과서 구조와 유사도가 높은 후보입니다. 다만 최근성, 데이터 품질, 행동 가이드까지 같이 봐야 합니다."
-        data={simData}
-        isLoading={overviewQ.isLoading}
-        isError={overviewQ.isError}
-        onRetry={() => overviewQ.refetch()}
-        intradayPreset={intradayMode ? intradayPreset : undefined}
-        emptyMessage={sectionEmptyMessage}
-      />
+      <section className="grid gap-4 xl:grid-cols-2">
+        <DashboardSection
+          title="패턴 완성 임박"
+          subtitle="거의 다 만들어졌고 트리거 근처까지 온 후보입니다."
+          data={sections.armedData}
+          isLoading={overviewQ.isLoading}
+          isError={overviewQ.isError}
+          onRetry={() => overviewQ.refetch()}
+          intradayPreset={intradayMode ? intradayPreset : undefined}
+          emptyMessage={sectionEmptyMessage}
+        />
 
-      <DashboardSection
-        title="하락 확률 상위"
-        subtitle="약세 패턴과 하락 방향 정렬까지 함께 들어온 종목입니다."
-        data={shortData}
-        isLoading={overviewQ.isLoading}
-        isError={overviewQ.isError}
-        onRetry={() => overviewQ.refetch()}
-        intradayPreset={intradayMode ? intradayPreset : undefined}
-        emptyMessage={sectionEmptyMessage}
-      />
+        <DashboardSection
+          title="교과서 유사도 상위"
+          subtitle="모양은 좋지만 현재 시장 맥락까지 함께 봐야 하는 후보입니다."
+          data={sections.simData}
+          isLoading={overviewQ.isLoading}
+          isError={overviewQ.isError}
+          onRetry={() => overviewQ.refetch()}
+          intradayPreset={intradayMode ? intradayPreset : undefined}
+          emptyMessage={sectionEmptyMessage}
+        />
 
-      <DashboardSection
-        title="No Signal / 관망"
-        subtitle="데이터 품질, 구조, 손익비, 활성 과정 중 하나 이상이 부족해 보수적으로 관망 처리한 종목입니다."
-        data={noSigData}
-        isLoading={overviewQ.isLoading}
-        isError={overviewQ.isError}
-        onRetry={() => overviewQ.refetch()}
-        intradayPreset={intradayMode ? intradayPreset : undefined}
-        emptyMessage={sectionEmptyMessage}
-      />
+        <DashboardSection
+          title="하락 시나리오 후보"
+          subtitle="숏 방향 또는 약세 구조가 강한 종목입니다."
+          data={sections.shortData}
+          isLoading={overviewQ.isLoading}
+          isError={overviewQ.isError}
+          onRetry={() => overviewQ.refetch()}
+          intradayPreset={intradayMode ? intradayPreset : undefined}
+          emptyMessage={sectionEmptyMessage}
+        />
+
+        <DashboardSection
+          title="관망 / No Signal"
+          subtitle="억지로 해석하지 않는 편이 좋은 종목입니다."
+          data={sections.noSigData}
+          isLoading={overviewQ.isLoading}
+          isError={overviewQ.isError}
+          onRetry={() => overviewQ.refetch()}
+          intradayPreset={intradayMode ? intradayPreset : undefined}
+          emptyMessage={sectionEmptyMessage}
+        />
+      </section>
+    </div>
+  )
+}
+
+function HeroMetric({ label, value, hint }: { label: string; value: string; hint: string }) {
+  return (
+    <div className="rounded-lg border border-border/80 bg-background/55 p-4">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="mt-2 text-xl font-semibold">{value}</div>
+      <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{hint}</p>
+    </div>
+  )
+}
+
+function QuickBoard({ title, value, description }: { title: string; value: string; description: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-background/60 p-4">
+      <div className="text-xs text-muted-foreground">{title}</div>
+      <div className="mt-1 text-xl font-semibold">{value}</div>
+      <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{description}</p>
+    </div>
+  )
+}
+
+function FlowStep({ title, body }: { title: string; body: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-background/55 p-3">
+      <div className="text-sm font-medium text-foreground">{title}</div>
+      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{body}</p>
     </div>
   )
 }
@@ -549,7 +455,98 @@ function StatusCell({ label, value }: { label: string; value: string }) {
   )
 }
 
+function filterDashboard(
+  data: DashboardResponse | undefined,
+  intradayMode: boolean,
+  intradayView: IntradayView,
+  intradayPreset: IntradayPreset,
+): DashboardResponse | undefined {
+  if (!intradayMode || !data) return data
+
+  return {
+    ...data,
+    items: data.items.filter(item => {
+      const matchesView =
+        intradayView === 'all'
+          ? true
+          : intradayView === 'live'
+            ? item.live_intraday_candidate
+            : !item.live_intraday_candidate && item.intraday_collection_mode === intradayView
+
+      const matchesPreset =
+        intradayPreset === 'all'
+          ? true
+          : intradayPreset === 'ready-now'
+            ? item.live_intraday_candidate && !item.no_signal_flag && ['confirmed', 'trigger_ready', 'breakout_watch'].includes(item.setup_stage)
+            : intradayPreset === 'watch'
+              ? !item.no_signal_flag && ['late_base', 'early_trigger_watch', 'base_building'].includes(item.setup_stage) && item.formation_quality >= 0.5
+              : intradayPreset === 'recheck'
+                ? ['stored', 'public', 'mixed', 'budget'].includes(item.intraday_collection_mode) && item.data_quality >= 0.45
+                : item.intraday_collection_mode === 'cooldown' || item.no_signal_flag
+
+      return matchesView && matchesPreset
+    }),
+  }
+}
+
+function buildDashboardSummary(sections: Array<DashboardResponse | undefined>) {
+  const items = dedupeDashboardItems(sections)
+  if (items.length === 0) {
+    return {
+      totalCount: 0,
+      readyCount: 0,
+      watchCount: 0,
+      riskCount: 0,
+      avgUp: 0,
+      avgReadiness: 0,
+      avgQuality: 0,
+      bestAction: '후보가 준비되면 이 영역이 채워집니다.',
+    }
+  }
+
+  const readyCount = items.filter(item => item.action_plan === 'ready_now').length
+  const watchCount = items.filter(item => item.action_plan === 'watch').length
+  const riskCount = items.filter(item => item.no_signal_flag || item.action_plan === 'recheck').length
+
+  return {
+    totalCount: items.length,
+    readyCount,
+    watchCount,
+    riskCount,
+    avgUp: average(items.map(item => item.p_up)),
+    avgReadiness: average(items.map(item => item.trade_readiness_score ?? 0)),
+    avgQuality: average(items.map(item => item.data_quality)),
+    bestAction:
+      readyCount > 0
+        ? `즉시 검토 후보 ${readyCount}개가 먼저 보입니다.`
+        : watchCount > 0
+          ? `트리거 확인이 필요한 후보 ${watchCount}개가 중심입니다.`
+          : '관망 또는 데이터 보강이 필요한 종목 비중이 높습니다.',
+  }
+}
+
 function buildIntradaySummary(sections: Array<DashboardResponse | undefined>) {
+  const items = dedupeDashboardItems(sections)
+  if (items.length === 0) {
+    return null
+  }
+
+  const liveCount = items.filter(item => item.live_intraday_candidate).length
+  const placeholderCount = items.filter(item => item.fetch_status === 'placeholder_pending').length
+  const dominantMode = dominantLabel(items.map(item => item.intraday_collection_mode), value => INTRADAY_COLLECTION_MODE_LABELS[value] ?? value)
+  const dominantStage = dominantLabel(items.map(item => item.setup_stage), value => SETUP_STAGE_LABELS[value] ?? value)
+
+  return {
+    guidance:
+      liveCount > 0
+        ? `현재 ${liveCount}개는 live 우선 후보입니다.`
+        : placeholderCount === items.length
+          ? '지금은 임시 후보가 먼저 표시되고 있습니다.'
+          : `${dominantMode} 중심으로 정리되고, 셋업은 ${dominantStage} 비중이 큽니다.`,
+  }
+}
+
+function dedupeDashboardItems(sections: Array<DashboardResponse | undefined>) {
   const seen = new Set<string>()
   const items: DashboardItem[] = []
 
@@ -562,113 +559,51 @@ function buildIntradaySummary(sections: Array<DashboardResponse | undefined>) {
     }
   }
 
-  if (items.length === 0) {
-    return {
-      totalCount: 0,
-      realCount: 0,
-      placeholderCount: 0,
-      isProvisionalOnly: false,
-      liveCount: 0,
-      confirmedCount: 0,
-      noSignalCount: 0,
-      avgQuality: 0,
-      avgEntry: 0,
-      avgEdge: 0,
-      avgRewardRisk: 0,
-      dominantMode: '-',
-      dominantStage: '-',
-      guidance: '현재 프리셋에 맞는 후보가 많지 않습니다. 조건을 조금 완화하거나 다른 타임프레임도 함께 보는 편이 좋습니다.',
-    }
-  }
-
-  const realItems = items.filter(item => !isPlaceholderItem(item))
-  const placeholderCount = items.length - realItems.length
-  const metricItems = realItems.length > 0 ? realItems : items
-
-  const totals = items.reduce(
-    (acc, item) => {
-      acc.liveCount += item.live_intraday_candidate ? 1 : 0
-      acc.confirmedCount += item.state === 'confirmed' ? 1 : 0
-      acc.noSignalCount += item.no_signal_flag ? 1 : 0
-      acc.modeCounts[item.intraday_collection_mode] = (acc.modeCounts[item.intraday_collection_mode] ?? 0) + 1
-      acc.stageCounts[item.setup_stage] = (acc.stageCounts[item.setup_stage] ?? 0) + 1
-      return acc
-    },
-    {
-      liveCount: 0,
-      confirmedCount: 0,
-      noSignalCount: 0,
-      modeCounts: {} as Record<string, number>,
-      stageCounts: {} as Record<string, number>,
-    },
-  )
-
-  const metricTotals = metricItems.reduce(
-    (acc, item) => {
-      acc.qualitySum += item.data_quality
-      acc.entrySum += item.entry_score
-      acc.edgeSum += item.historical_edge_score
-      acc.rewardRiskSum += item.reward_risk_ratio
-      return acc
-    },
-    {
-      qualitySum: 0,
-      entrySum: 0,
-      edgeSum: 0,
-      rewardRiskSum: 0,
-    },
-  )
-
-  return {
-    totalCount: items.length,
-    realCount: realItems.length,
-    placeholderCount,
-    isProvisionalOnly: realItems.length === 0 && placeholderCount > 0,
-    liveCount: totals.liveCount,
-    confirmedCount: totals.confirmedCount,
-    noSignalCount: totals.noSignalCount,
-    avgQuality: metricTotals.qualitySum / metricItems.length,
-    avgEntry: metricTotals.entrySum / metricItems.length,
-    avgEdge: metricTotals.edgeSum / metricItems.length,
-    avgRewardRisk: metricTotals.rewardRiskSum / metricItems.length,
-    dominantMode: dominantLabel(totals.modeCounts, modeLabel),
-    dominantStage: dominantLabel(totals.stageCounts, setupStageLabel),
-    guidance: buildSummaryGuidance(items),
-  }
+  return items
 }
 
-function dominantLabel(counts: Record<string, number>, formatter?: (value: string) => string): string {
-  const entries = Object.entries(counts)
-  if (entries.length === 0) return '-'
-  const winner = entries.sort((a, b) => b[1] - a[1])[0][0]
+function average(values: number[]) {
+  if (values.length === 0) return 0
+  return values.reduce((sum, value) => sum + value, 0) / values.length
+}
+
+function dominantLabel(values: string[], formatter?: (value: string) => string) {
+  if (values.length === 0) return '-'
+
+  const counts = values.reduce<Record<string, number>>((acc, value) => {
+    acc[value] = (acc[value] ?? 0) + 1
+    return acc
+  }, {})
+
+  const winner = Object.entries(counts).sort((left, right) => right[1] - left[1])[0]?.[0]
+  if (!winner) return '-'
   return formatter ? formatter(winner) : winner
 }
 
-function buildSummaryGuidance(items: DashboardItem[]): string {
-  const realItems = items.filter(item => !isPlaceholderItem(item))
-  if (realItems.length === 0 && items.length > 0) {
-    return '지금은 빠른 예열 후보만 먼저 보여주고 있습니다. 평균 점수보다 후보 대강과 액션 분포만 가볍게 보고, 실제 분봉 스캔 완료 뒤 다시 판단하는 편이 좋습니다.'
-  }
-
-  const metricItems = realItems.length > 0 ? realItems : items
-  const liveCount = items.filter(item => item.live_intraday_candidate).length
-  const confirmedCount = metricItems.filter(item => item.state === 'confirmed').length
-  const avgEdge = metricItems.reduce((sum, item) => sum + item.historical_edge_score, 0) / metricItems.length
-  const avgRewardRisk = metricItems.reduce((sum, item) => sum + item.reward_risk_ratio, 0) / metricItems.length
-
-  if (liveCount >= Math.max(2, Math.round(metricItems.length * 0.4)) && confirmedCount >= Math.max(1, Math.round(metricItems.length * 0.25))) {
-    return 'live 추적 비중과 confirmed 비중이 모두 괜찮습니다. 무조건 많이 보기보다 상위 몇 개를 깊게 확인하는 편이 좋습니다.'
-  }
-
-  if (avgEdge >= 0.58 && avgRewardRisk >= 1.4) {
-    return '평균 edge와 손익비는 무난한 편입니다. 많이 보기보다 상위 후보 몇 개에 집중하는 방식이 효율적입니다.'
-  }
-
-  return '확인 신호보다 후보가 더 많은 상태입니다. 진입보다 트리거 확인과 데이터 보강 여부를 먼저 보는 편이 좋습니다.'
+function statusHeadline(status: ScanStatusResponse | undefined) {
+  if (!status) return '불러오는 중'
+  if (status.is_running) return '스캔 진행 중'
+  if (status.status === 'warming') return '백그라운드 준비 중'
+  if (status.status === 'ready') return '준비 완료'
+  if (status.status === 'error') return '확인 필요'
+  return '대기 중'
 }
 
-function isPlaceholderItem(item: DashboardItem): boolean {
-  return item.fetch_status === 'placeholder_pending'
+function statusSubline(status: ScanStatusResponse | undefined, timeframe: Timeframe) {
+  if (!status) return `${timeframeLabel(timeframe)} 상태를 불러오는 중입니다.`
+  if (status.status === 'warming' && (status.cached_result_count ?? 0) === 0) {
+    return `${timeframeLabel(timeframe)} 결과를 백그라운드에서 준비 중입니다. 임시 후보가 먼저 보일 수 있습니다.`
+  }
+  if (status.candidate_source === 'placeholder_seed') {
+    return `지금은 ${timeframeLabel(timeframe)} 임시 후보를 먼저 보여주고 있으며, 실제 분석 결과가 준비되면 자동으로 교체됩니다.`
+  }
+  if (status.intraday_live_phase === 'off_hours') {
+    return '장외 시간에는 live 분봉 후보를 일부러 비우고 저장 데이터 기준으로 보수적으로 보여줍니다.'
+  }
+  if (status.last_error) {
+    return `최근 오류가 있었지만 마지막 캐시 결과는 유지되고 있습니다. 오류: ${status.last_error}`
+  }
+  return `${timeframeLabel(timeframe)} 기준 최근 스캔 결과를 표시하고 있습니다.`
 }
 
 function statusLabel(status: string | undefined): string {
@@ -678,9 +613,9 @@ function statusLabel(status: string | undefined): string {
     case 'queued':
       return '대기 중'
     case 'warming':
-      return '백그라운드 준비 중'
+      return '준비 중'
     case 'ready':
-      return '준비됨'
+      return '준비 완료'
     case 'error':
       return '오류'
     default:
@@ -688,71 +623,20 @@ function statusLabel(status: string | undefined): string {
   }
 }
 
-function sourceLabel(source: string | null | undefined): string {
-  switch (source) {
-    case 'manual':
-      return '수동 실행'
-    case 'background':
-      return '백그라운드'
-    case 'cache':
-      return '캐시 응답'
-    case 'scheduled':
-      return '예약 실행'
-    case 'fallback':
-      return '초기 예열'
-    default:
-      return '-'
-  }
-}
-
-function livePhaseLabel(phase: string | null | undefined): string {
-  switch (phase) {
-    case 'open_drive':
-      return '장 시작 직후'
-    case 'regular_session':
-      return '정규장'
-    case 'midday':
-      return '점심시간 축소'
-    case 'closing_drive':
-      return '마감 전 집중'
-    case 'off_hours':
-      return '장외 절약 모드'
-    default:
-      return '-'
-  }
-}
-
-function livePhaseNote(phase: string | null | undefined): string {
-  switch (phase) {
-    case 'open_drive':
-      return '초기 추세 확인 구간이라 live 후보 비중을 더 높입니다.'
-    case 'regular_session':
-      return '강한 후보만 live로 확인하고 나머지는 절약 모드로 운용합니다.'
-    case 'midday':
-      return '노이즈가 많은 시간대라 live 사용 시도를 줄입니다.'
-    case 'closing_drive':
-      return '마감 전 돌파 확인을 위해 live 후보를 다시 늘립니다.'
-    case 'off_hours':
-      return '장외에는 저장 분봉과 공개 소스를 우선 씁니다.'
-    default:
-      return '-'
-  }
-}
-
 function candidateSourceLabel(source: string | null | undefined): string {
   switch (source) {
     case 'daily_seed':
-      return '일봉 상위 후보'
+      return '일봉 우선 후보'
     case 'fallback_seed':
-      return '즉시 fallback 후보'
+      return 'fallback 후보'
     case 'placeholder_seed':
-      return '빠른 예열 후보'
+      return '임시 후보'
     case 'background_pending':
-      return '백그라운드 예열 대기'
+      return '백그라운드 대기'
     case 'cache_ready':
-      return '캐시 예열 결과'
+      return '캐시 완료'
     case 'krx_universe':
-      return 'KRX 유니버스'
+      return 'KRX 전체 유니버스'
     case 'krx_universe_fallback':
       return 'KRX 대체 유니버스'
     case 'fallback':
@@ -765,13 +649,13 @@ function candidateSourceLabel(source: string | null | undefined): string {
 function getDefaultSectionEmptyMessage(status: ScanStatusResponse | undefined, timeframe: Timeframe): string | undefined {
   if (!status) return undefined
   if (status.status === 'warming' && (status.cached_result_count ?? 0) === 0) {
-    return `${timeframeLabel(timeframe)} 후보를 지금 백그라운드에서 다시 계산 중입니다. 첫 결과가 아직 준비되지 않아 카드가 비어 보일 수 있지만, 준비되는 순서대로 자동으로 채워집니다.`
+    return `${timeframeLabel(timeframe)} 결과를 백그라운드에서 준비 중입니다. 지금은 카드가 비어 보여도 정상입니다.`
   }
   if (status.candidate_source === 'placeholder_seed') {
-    return `지금은 ${timeframeLabel(timeframe)} 임시 후보를 먼저 보여주는 단계입니다. 이 구간에서는 빠른 미리보기만 보이고, 실제 분석 카드가 준비되면 자동으로 교체됩니다.`
+    return `${timeframeLabel(timeframe)} 임시 후보를 먼저 보여주는 단계입니다. 실제 분석이 끝나면 카드가 자동으로 채워집니다.`
   }
   if (status.candidate_source === 'fallback_seed') {
-    return `지금은 ${timeframeLabel(timeframe)} fallback 후보를 먼저 보여주는 단계라 섹션별 후보 수가 평소보다 적을 수 있습니다.`
+    return `${timeframeLabel(timeframe)} fallback 후보 기준이라 지금은 결과가 적게 보일 수 있습니다.`
   }
   return undefined
 }
@@ -779,59 +663,16 @@ function getDefaultSectionEmptyMessage(status: ScanStatusResponse | undefined, t
 function getLiveSectionEmptyMessage(status: ScanStatusResponse | undefined, timeframe: Timeframe): string | undefined {
   if (!status) return undefined
   if (status.status === 'warming' && (status.cached_result_count ?? 0) === 0) {
-    return `${timeframeLabel(timeframe)} live 후보를 아직 수집 중입니다. 실시간 분봉 검토가 끝나기 전까지는 이 영역이 잠시 비어 있을 수 있습니다.`
-  }
-  if (status.candidate_source === 'placeholder_seed') {
-    return `지금은 ${timeframeLabel(timeframe)} 임시 후보만 먼저 보여주고 있어 live 분봉 후보가 잠시 비어 있을 수 있습니다. 실제 live 검토가 끝나면 자동으로 채워집니다.`
+    return `${timeframeLabel(timeframe)} live 후보를 수집 중입니다. 준비가 끝나면 자동으로 채워집니다.`
   }
   if (status.intraday_live_phase === 'off_hours') {
-    return '지금은 장외 절약 모드라 live 분봉 후보를 의도적으로 비워 두고 있습니다. 이 시간대에는 forming / watch 후보를 먼저 보는 쪽이 정상입니다.'
+    return '장외 시간에는 live 분봉 후보를 비워두는 것이 정상입니다. 대신 형성 중 후보를 먼저 확인해 보세요.'
+  }
+  if (status.candidate_source === 'placeholder_seed') {
+    return `${timeframeLabel(timeframe)} 임시 후보가 먼저 표시되는 단계라 live 후보 영역이 잠시 비어 있을 수 있습니다.`
   }
   if ((status.intraday_live_candidate_limit ?? 0) === 0) {
-    return '현재 시간대 기준으로는 live 분봉까지 확인할 만큼 우선순위가 높은 후보가 아직 없습니다.'
+    return '지금 시간대 기준으로는 live 분봉까지 우선 확인할 후보가 아직 없습니다.'
   }
-  if (status.candidate_source === 'fallback_seed') {
-    return `지금은 ${timeframeLabel(timeframe)} fallback 후보를 먼저 보여주고 있어 live 후보가 잠시 비어 있을 수 있습니다.`
-  }
-  return '현재 조건에서 바로 live 분봉까지 볼 만한 후보가 없습니다.'
-}
-
-function modeLabel(mode: string): string {
-  switch (mode) {
-    case 'live':
-      return 'live'
-    case 'stored':
-      return '저장 캐시'
-    case 'public':
-      return '공개 소스'
-    case 'mixed':
-      return '혼합'
-    case 'cooldown':
-      return '쿨다운'
-    case 'budget':
-      return '절약 모드'
-    default:
-      return mode || '-'
-  }
-}
-
-function setupStageLabel(stage: string): string {
-  switch (stage) {
-    case 'confirmed':
-      return '확인 완료'
-    case 'trigger_ready':
-      return '트리거 대기'
-    case 'breakout_watch':
-      return '돌파 감시'
-    case 'late_base':
-      return '후반 베이스'
-    case 'early_trigger_watch':
-      return '초기 트리거 감시'
-    case 'base_building':
-      return '베이스 형성'
-    case 'no_signal':
-      return '관망'
-    default:
-      return stage || '-'
-  }
+  return '현재 조건에서 live 분봉으로 바로 볼 만한 후보가 없습니다.'
 }

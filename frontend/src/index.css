@@ -20,9 +20,16 @@
 
 @layer base {
   * { @apply border-border; }
+  html {
+    color-scheme: dark;
+  }
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
+    background-image:
+      radial-gradient(circle at top, rgba(37, 99, 235, 0.14), transparent 34%),
+      linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(2, 6, 23, 1));
+    background-attachment: fixed;
   }
 }
 
