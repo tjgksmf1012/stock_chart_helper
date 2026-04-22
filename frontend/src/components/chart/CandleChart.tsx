@@ -522,6 +522,11 @@ function inferStepMs(bars: OHLCVBar[]) {
 }
 
 function shiftChartTime(value: string, diffMs: number): Time {
+  if (!value.includes('T') && !value.includes(' ')) {
+    // Daily mode: shift by business days so lead span lands on a trading day
+    const days = Math.round(diffMs / (24 * 60 * 60 * 1000))
+    return addBusinessDays(value, days) as Time
+  }
   return Math.floor((toTimestamp(value) + diffMs) / 1000) as Time
 }
 
@@ -570,7 +575,26 @@ function scenarioColor(scenario: ProjectionScenario): string {
   return OVERLAY_COLORS.projectionNeutral
 }
 
+// Add N business days (Mon–Fri) to a YYYY-MM-DD date string
+function addBusinessDays(dateStr: string, days: number): string {
+  const date = new Date(dateStr + 'T00:00:00Z')
+  let remaining = Math.abs(days)
+  const step = days >= 0 ? 1 : -1
+  while (remaining > 0) {
+    date.setUTCDate(date.getUTCDate() + step)
+    const dow = date.getUTCDay() // 0 = Sun, 6 = Sat
+    if (dow !== 0 && dow !== 6) remaining--
+  }
+  return date.toISOString().slice(0, 10)
+}
+
 function toChartTime(value: string): Time {
+  // Daily bars: return YYYY-MM-DD string so lightweight-charts uses BusinessDay
+  // mode and automatically skips weekend gaps on the time axis.
+  if (!value.includes('T') && !value.includes(' ')) {
+    return value as Time
+  }
+  // Intraday: use Unix timestamp in seconds (calendar time is fine here)
   return Math.floor(toTimestamp(value) / 1000) as Time
 }
 
