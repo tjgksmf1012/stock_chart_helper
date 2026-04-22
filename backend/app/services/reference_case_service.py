@@ -15,7 +15,7 @@ from .pattern_engine import PatternEngine, PatternResult
 from .timeframe_service import timeframe_label
 
 REFERENCE_CASES_TTL = 60 * 60 * 6
-REFERENCE_UNIVERSE_LIMIT = 10
+REFERENCE_UNIVERSE_LIMIT = 5
 
 
 @dataclass
@@ -467,7 +467,7 @@ async def build_reference_cases(
 
     lookback_days = int(get_backtest_config(timeframe)["lookback_days"])
     if timeframe == "1d":
-        lookback_days = min(max(lookback_days, 540), 540)
+        lookback_days = min(max(lookback_days, 420), 420)
     elif timeframe == "1wk":
         lookback_days = min(max(lookback_days, 1460), 1460)
     elif timeframe == "1mo":
