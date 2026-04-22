@@ -1,17 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQueries, useQuery } from '@tanstack/react-query'
 import { Activity, Layers3, Loader2, RefreshCw, Sparkles } from 'lucide-react'
 
 import { DashboardSection } from '@/components/dashboard/DashboardSection'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { QueryError } from '@/components/ui/QueryError'
-import { dashboardApi } from '@/lib/api'
+import { dashboardApi, symbolsApi, systemApi } from '@/lib/api'
 import { TIMEFRAME_OPTIONS, normalizeDisplayTimeframe, timeframeLabel } from '@/lib/timeframes'
-import { cn, fmtDateTime, fmtPct, INTRADAY_COLLECTION_MODE_LABELS, PATTERN_NAMES, SETUP_STAGE_LABELS } from '@/lib/utils'
+import { cn, fmtDateTime, fmtPct, fmtPrice, INTRADAY_COLLECTION_MODE_LABELS, PATTERN_NAMES, SETUP_STAGE_LABELS } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
-import type { DashboardItem, DashboardResponse, ScanStatusResponse, Timeframe } from '@/types/api'
+import type { DashboardItem, DashboardResponse, PriceInfo, ScanStatusResponse, Timeframe } from '@/types/api'
 
 type IntradayView = 'all' | 'live' | 'stored' | 'public' | 'mixed' | 'cooldown'
 type IntradayPreset = 'all' | 'ready-now' | 'watch' | 'recheck' | 'cooling'
@@ -29,6 +29,12 @@ interface FocusCandidate {
   movement: CandidateMovement
   watched: boolean
   score: number
+}
+
+interface RoutineDeck {
+  premarket: DashboardItem[]
+  intraday: DashboardItem[]
+  afterMarket: DashboardItem[]
 }
 
 const DASHBOARD_SNAPSHOT_PREFIX = 'stock-chart-helper:dashboard-snapshot:v1'
@@ -170,6 +176,32 @@ export default function DashboardPage() {
   }, [allDashboardItems, overview?.generated_at, timeframe])
 
   const focusDeck = useMemo(() => buildFocusDeck(allDashboardItems, snapshotBaseline, isWatched), [allDashboardItems, snapshotBaseline, isWatched])
+  const routineDeck = useMemo(() => buildRoutineDeck(focusDeck, allDashboardItems, isWatched), [allDashboardItems, focusDeck, isWatched])
+  const routineSymbols = useMemo(() => uniqueRoutineSymbols(routineDeck), [routineDeck])
+  const routinePriceQueries = useQueries({
+    queries: routineSymbols.map(code => ({
+      queryKey: ['price', 'routine', code],
+      queryFn: () => symbolsApi.getPrice(code),
+      enabled: routineSymbols.length > 0,
+      staleTime: 45_000,
+      refetchInterval: 90_000,
+    })),
+  })
+  const routinePrices = useMemo(
+    () =>
+      routineSymbols.reduce<Record<string, PriceInfo | undefined>>((acc, code, index) => {
+        acc[code] = routinePriceQueries[index]?.data
+        return acc
+      }, {}),
+    [routinePriceQueries, routineSymbols],
+  )
+  const kisPrime = useMutation({
+    mutationFn: () => systemApi.primeKis({ symbol: routineSymbols[0], timeframe: '1m' }),
+    onSuccess: () => {
+      statusQ.refetch()
+      routinePriceQueries.forEach(query => query.refetch())
+    },
+  })
 
   const openCandidate = (item: DashboardItem) => {
     setTimeframe(item.timeframe)
@@ -330,8 +362,17 @@ export default function DashboardPage() {
             {isScanActive ? `${timeframeLabel(timeframe)} 스캔 진행 중` : `${timeframeLabel(timeframe)} 다시 스캔`}
           </button>
 
+          <button
+            onClick={() => kisPrime.mutate()}
+            disabled={kisPrime.isPending || routineSymbols.length === 0}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-400/25 bg-emerald-400/10 px-4 py-2.5 text-sm font-medium text-emerald-100 transition-colors hover:bg-emerald-400/15 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {kisPrime.isPending ? <Loader2 size={14} className="animate-spin" /> : <Activity size={14} />}
+            KIS 토큰 + 현재가 프라임
+          </button>
+
           <div className="rounded-lg border border-border bg-background/60 p-3 text-xs leading-relaxed text-muted-foreground">
-            {statusSubline(status, timeframe)}
+            {kisPrime.data?.message || statusSubline(status, timeframe)}
           </div>
 
           {statusQ.isError && !statusQ.isLoading && (
@@ -394,6 +435,8 @@ export default function DashboardPage() {
           </div>
         </Card>
       </section>
+
+      <RoutineDesk deck={routineDeck} prices={routinePrices} isFetchingPrices={routinePriceQueries.some(query => query.isFetching)} onOpen={openCandidate} />
 
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
         <Card className="space-y-4">
@@ -651,6 +694,164 @@ function MovementStat({ label, value, className }: { label: string; value: numbe
   )
 }
 
+function RoutineDesk({
+  deck,
+  prices,
+  isFetchingPrices,
+  onOpen,
+}: {
+  deck: RoutineDeck
+  prices: Record<string, PriceInfo | undefined>
+  isFetchingPrices: boolean
+  onOpen: (item: DashboardItem) => void
+}) {
+  return (
+    <section className="space-y-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <div className="text-sm font-semibold">오늘 운용 루틴</div>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            장전에는 후보를 압축하고, 장중에는 현재가와 트리거를 확인하고, 장후에는 무효화와 기록 대상을 정리합니다.
+          </p>
+        </div>
+        <div className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+          <RefreshCw size={12} className={isFetchingPrices ? 'animate-spin' : ''} />
+          상위 후보 현재가 자동 갱신
+        </div>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-3">
+        <RoutineColumn
+          title="장전 5선"
+          subtitle="오늘 먼저 볼 후보만 압축"
+          tone="primary"
+          items={deck.premarket}
+          prices={prices}
+          mode="premarket"
+          empty="장전 후보가 아직 없습니다."
+          onOpen={onOpen}
+        />
+        <RoutineColumn
+          title="장중 모니터"
+          subtitle="현재가와 조건 충족 여부 확인"
+          tone="sky"
+          items={deck.intraday}
+          prices={prices}
+          mode="intraday"
+          empty="장중 모니터 대상이 아직 없습니다."
+          onOpen={onOpen}
+        />
+        <RoutineColumn
+          title="장후 정리"
+          subtitle="보류·무효화·기록 대상 정리"
+          tone="amber"
+          items={deck.afterMarket}
+          prices={prices}
+          mode="afterMarket"
+          empty="장후 정리할 후보가 아직 없습니다."
+          onOpen={onOpen}
+        />
+      </div>
+    </section>
+  )
+}
+
+function RoutineColumn({
+  title,
+  subtitle,
+  tone,
+  items,
+  prices,
+  mode,
+  empty,
+  onOpen,
+}: {
+  title: string
+  subtitle: string
+  tone: 'primary' | 'sky' | 'amber'
+  items: DashboardItem[]
+  prices: Record<string, PriceInfo | undefined>
+  mode: 'premarket' | 'intraday' | 'afterMarket'
+  empty: string
+  onOpen: (item: DashboardItem) => void
+}) {
+  const toneClass = {
+    primary: 'border-primary/20 bg-primary/10',
+    sky: 'border-sky-400/20 bg-sky-400/10',
+    amber: 'border-amber-400/20 bg-amber-400/10',
+  }[tone]
+
+  return (
+    <Card className={cn('space-y-3', toneClass)}>
+      <div>
+        <div className="text-sm font-semibold">{title}</div>
+        <div className="mt-1 text-xs text-muted-foreground">{subtitle}</div>
+      </div>
+
+      {items.length === 0 ? (
+        <div className="rounded-lg border border-border bg-background/55 p-3 text-xs text-muted-foreground">{empty}</div>
+      ) : (
+        <div className="space-y-2">
+          {items.map(item => (
+            <RoutineRow key={`${mode}-${item.timeframe}-${item.symbol.code}`} item={item} price={prices[item.symbol.code]} mode={mode} onOpen={onOpen} />
+          ))}
+        </div>
+      )}
+    </Card>
+  )
+}
+
+function RoutineRow({
+  item,
+  price,
+  mode,
+  onOpen,
+}: {
+  item: DashboardItem
+  price: PriceInfo | undefined
+  mode: 'premarket' | 'intraday' | 'afterMarket'
+  onOpen: (item: DashboardItem) => void
+}) {
+  const patternName = item.pattern_type ? PATTERN_NAMES[item.pattern_type] ?? item.pattern_type : 'No Signal'
+
+  return (
+    <button
+      onClick={() => onOpen(item)}
+      className="w-full rounded-lg border border-border bg-background/60 p-3 text-left transition-colors hover:border-primary/35 hover:bg-background/75"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="truncate text-sm font-semibold text-foreground">{item.symbol.name}</span>
+            <span className="font-mono text-[11px] text-muted-foreground">{item.symbol.code}</span>
+          </div>
+          <div className="mt-1 truncate text-xs text-muted-foreground">{patternName}</div>
+        </div>
+        <span className="shrink-0 rounded-md border border-border bg-card/70 px-1.5 py-0.5 text-[11px] text-muted-foreground">
+          {item.action_plan_label}
+        </span>
+      </div>
+
+      <div className="mt-3 grid grid-cols-3 gap-2 text-[11px]">
+        <MiniMetric label="상승" value={fmtPct(item.p_up, 0)} />
+        <MiniMetric label="준비" value={fmtPct(item.trade_readiness_score ?? 0, 0)} />
+        <MiniMetric label="손익" value={item.reward_risk_ratio.toFixed(2)} />
+      </div>
+
+      {mode === 'intraday' && (
+        <div className="mt-3 grid grid-cols-[1fr_auto] gap-2 rounded-md border border-border bg-card/60 px-2 py-2 text-xs">
+          <span className="text-muted-foreground">현재가</span>
+          <span className="font-mono font-semibold text-foreground">{price ? fmtPrice(price.close) : '-'}</span>
+          <span className="text-muted-foreground">출처</span>
+          <span className={cn('text-right', price?.source === 'kis' ? 'text-emerald-300' : 'text-muted-foreground')}>{price?.source ?? '-'}</span>
+        </div>
+      )}
+
+      <p className="mt-3 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{routineActionText(item, mode)}</p>
+    </button>
+  )
+}
+
 function filterDashboard(
   data: DashboardResponse | undefined,
   intradayMode: boolean,
@@ -800,6 +1001,68 @@ function buildFocusDeck(items: DashboardItem[], snapshot: Record<string, Candida
       weakening: candidates.filter(candidate => candidate.movement === 'weakening').length,
     },
   }
+}
+
+function buildRoutineDeck(focusDeck: ReturnType<typeof buildFocusDeck>, items: DashboardItem[], isWatched: (code: string) => boolean): RoutineDeck {
+  const byScore = [...items].sort((left, right) => dashboardPriorityScore(right, 'steady', isWatched(right.symbol.code)) - dashboardPriorityScore(left, 'steady', isWatched(left.symbol.code)))
+  const premarket = uniqueItems([...focusDeck.priority.map(candidate => candidate.item), ...focusDeck.recheck.map(candidate => candidate.item), ...byScore]).slice(0, 5)
+  const intraday = uniqueItems([
+    ...items.filter(item => item.live_intraday_candidate),
+    ...focusDeck.priority.map(candidate => candidate.item),
+    ...items.filter(item => !item.no_signal_flag && ['ready_now', 'watch'].includes(item.action_plan)),
+    ...byScore,
+  ]).slice(0, 5)
+  const afterMarket = uniqueItems([
+    ...focusDeck.hold.map(candidate => candidate.item),
+    ...items.filter(item => item.no_signal_flag || item.action_plan === 'recheck' || item.risk_flags.length > 0),
+    ...items.filter(item => item.freshness_score < 0.35),
+  ])
+    .sort((left, right) => afterMarketPriority(right) - afterMarketPriority(left))
+    .slice(0, 5)
+
+  return { premarket, intraday, afterMarket }
+}
+
+function uniqueItems(items: DashboardItem[]) {
+  const seen = new Set<string>()
+  const unique: DashboardItem[] = []
+
+  for (const item of items) {
+    const key = dashboardSnapshotKey(item)
+    if (seen.has(key)) continue
+    seen.add(key)
+    unique.push(item)
+  }
+
+  return unique
+}
+
+function uniqueRoutineSymbols(deck: RoutineDeck) {
+  return Array.from(new Set([...deck.premarket, ...deck.intraday, ...deck.afterMarket].map(item => item.symbol.code))).slice(0, 8)
+}
+
+function afterMarketPriority(item: DashboardItem) {
+  return (
+    (item.no_signal_flag ? 0.35 : 0) +
+    (item.action_plan === 'recheck' ? 0.25 : 0) +
+    Math.min(item.risk_flags.length * 0.08, 0.24) +
+    (item.freshness_score < 0.35 ? 0.16 : 0) +
+    (1 - (item.data_quality ?? 0)) * 0.08
+  )
+}
+
+function routineActionText(item: DashboardItem, mode: 'premarket' | 'intraday' | 'afterMarket') {
+  if (mode === 'premarket') {
+    return item.next_trigger || item.action_plan_summary || '장전에는 가격대와 무효화 기준을 먼저 확인합니다.'
+  }
+  if (mode === 'intraday') {
+    if (item.live_intraday_candidate) return item.live_intraday_reason || item.next_trigger || '현재가가 핵심 가격대에 붙는지 확인합니다.'
+    return item.next_trigger || '현재가가 트리거 근처에 오는지 관찰합니다.'
+  }
+  if (item.no_signal_flag) return item.reason_summary || '신호가 약하므로 내일 후보에서 제외할지 확인합니다.'
+  if (item.risk_flags.length > 0) return item.risk_flags[0]
+  if (item.action_plan === 'recheck') return '무효화 또는 재확인 기준에 닿았는지 장후에 정리합니다.'
+  return '오늘 판단을 기록하고 다음 스캔에서 유지 여부를 확인합니다.'
 }
 
 function dashboardPriorityScore(item: DashboardItem, movement: CandidateMovement, watched: boolean) {
