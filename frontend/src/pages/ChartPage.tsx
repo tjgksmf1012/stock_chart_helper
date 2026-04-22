@@ -279,6 +279,58 @@ export default function ChartPage() {
         </Card>
       )}
 
+      {symbol && (analysis || hasBars || isChartLoading || isChartError) && (
+        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <Card className="space-y-3 overflow-hidden">
+            <div className="flex items-start justify-between gap-3 border-b border-border/70 px-4 py-3">
+              <div>
+                <div className="text-sm font-semibold">차트</div>
+                <p className="mt-1 text-xs text-muted-foreground">첫 화면에서는 차트와 일목 구름대를 먼저 보고, 자세한 해석은 오른쪽 탭에서 확인합니다.</p>
+              </div>
+              <button
+                onClick={() => openReferenceWindow()}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background/60 px-3 py-2 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <ExternalLink size={13} />
+                레퍼런스 창
+              </button>
+            </div>
+            <div className="p-4 pt-0">
+              {hasBars && barsQ.data ? (
+                <CandleChart bars={barsQ.data} analysis={analysis} height={560} />
+              ) : isChartLoading ? (
+                <div className="flex h-[560px] flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 size={18} className="animate-spin" />
+                  <p>차트를 불러오는 중입니다.</p>
+                  <p className="max-w-sm text-center text-xs text-muted-foreground/80">
+                    분봉은 예열 상황에 따라 조금 더 걸릴 수 있습니다.
+                  </p>
+                </div>
+              ) : isChartError ? (
+                <div className="flex h-[560px] items-center justify-center p-4">
+                  <QueryError message="차트 데이터를 불러오지 못했습니다." onRetry={() => barsQ.refetch()} />
+                </div>
+              ) : (
+                <EmptyChartState
+                  analysis={analysis ?? null}
+                  timeframe={timeframe}
+                  onRetry={() => barsQ.refetch()}
+                  onFallbackDaily={() => setTimeframe('1d')}
+                />
+              )}
+            </div>
+          </Card>
+
+          {analysis ? (
+            <AnalysisPanel analysis={analysis} symbol={symbol} timeframe={timeframe} />
+          ) : (
+            <Card className="flex items-center justify-center text-sm text-muted-foreground">
+              분석 결과가 준비되면 오른쪽에 해석이 표시됩니다.
+            </Card>
+          )}
+        </section>
+      )}
+
       {analysis && (
         <section className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_360px]">
           <Card className="space-y-4 border-primary/15 bg-[linear-gradient(180deg,rgba(37,99,235,0.1),rgba(15,23,42,0.14))]">
@@ -585,57 +637,6 @@ export default function ChartPage() {
         </Card>
       )}
 
-      {symbol && (analysis || hasBars || isChartLoading || isChartError) && (
-        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <Card className="space-y-3 overflow-hidden">
-            <div className="flex items-start justify-between gap-3 border-b border-border/70 px-4 py-3">
-              <div>
-                <div className="text-sm font-semibold">차트</div>
-                <p className="mt-1 text-xs text-muted-foreground">첫 화면에서는 차트와 일목 구름대를 먼저 보고, 자세한 해석은 오른쪽 탭에서 확인합니다.</p>
-              </div>
-              <button
-                onClick={() => openReferenceWindow()}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background/60 px-3 py-2 text-xs text-muted-foreground transition-colors hover:text-foreground"
-              >
-                <ExternalLink size={13} />
-                레퍼런스 창
-              </button>
-            </div>
-            <div className="p-4 pt-0">
-              {hasBars && barsQ.data ? (
-                <CandleChart bars={barsQ.data} analysis={analysis} height={560} />
-              ) : isChartLoading ? (
-                <div className="flex h-[560px] flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 size={18} className="animate-spin" />
-                  <p>차트를 불러오는 중입니다.</p>
-                  <p className="max-w-sm text-center text-xs text-muted-foreground/80">
-                    분봉은 예열 상황에 따라 조금 더 걸릴 수 있습니다.
-                  </p>
-                </div>
-              ) : isChartError ? (
-                <div className="flex h-[560px] items-center justify-center p-4">
-                  <QueryError message="차트 데이터를 불러오지 못했습니다." onRetry={() => barsQ.refetch()} />
-                </div>
-              ) : (
-                <EmptyChartState
-                  analysis={analysis ?? null}
-                  timeframe={timeframe}
-                  onRetry={() => barsQ.refetch()}
-                  onFallbackDaily={() => setTimeframe('1d')}
-                />
-              )}
-            </div>
-          </Card>
-
-          {analysis ? (
-            <AnalysisPanel analysis={analysis} symbol={symbol} timeframe={timeframe} />
-          ) : (
-            <Card className="flex items-center justify-center text-sm text-muted-foreground">
-              분석 결과가 준비되면 오른쪽에 해석이 표시됩니다.
-            </Card>
-          )}
-        </section>
-      )}
     </div>
   )
 }

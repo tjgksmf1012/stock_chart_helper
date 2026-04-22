@@ -309,8 +309,8 @@ export default function DashboardPage() {
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <HeroMetric
               label="전체 후보"
-              value={`${summary.totalCount}개`}
-              hint={`${summary.readyCount}개 즉시 검토, ${summary.watchCount}개 관찰`}
+              value={overviewQ.isLoading ? '-' : `${summary.totalCount}개`}
+              hint={overviewQ.isLoading ? '스캔 결과 불러오는 중...' : `${summary.readyCount}개 즉시 검토, ${summary.watchCount}개 관찰`}
             />
             <HeroMetric
               label="평균 상승 확률"

@@ -16,7 +16,7 @@ import {
 import { Card } from '@/components/ui/Card'
 import { aiApi } from '@/lib/api'
 import { TIMEFRAME_OPTIONS, normalizeDisplayTimeframe } from '@/lib/timeframes'
-import { cn, fmtDateTime, fmtPct, PATTERN_NAMES } from '@/lib/utils'
+import { cn, fmtDateTime, fmtPct, PATTERN_NAMES, STATE_LABELS } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
 import type { AiRecommendationItem, PersonalStyleProfile } from '@/types/api'
 
@@ -114,9 +114,10 @@ export default function AiRecommendationsPage() {
           </div>
 
           {recommendationsQ.isLoading ? (
-            <div className="flex min-h-36 items-center justify-center text-sm text-muted-foreground">
-              <Loader2 size={16} className="mr-2 animate-spin" />
-              추천 후보 계산 중
+            <div className="flex min-h-36 flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
+              <Loader2 size={20} className="animate-spin" />
+              <p>AI 브리핑 생성 중입니다...</p>
+              <p className="text-xs text-muted-foreground/70">OpenAI 코멘트 설정 시 최대 20~30초 소요될 수 있습니다.</p>
             </div>
           ) : recommendationsQ.isError ? (
             <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-4 text-sm text-red-100">
@@ -125,8 +126,9 @@ export default function AiRecommendationsPage() {
           ) : (
             <>
               {llmBadge && (
-                <div className={cn('rounded-lg border px-3 py-2 text-xs leading-relaxed', llmBadge.className)}>
-                  {llmBadge.text}
+                <div className={cn('flex items-start gap-2 rounded-lg border px-3 py-2 text-xs leading-relaxed', llmBadge.className)}>
+                  {llmBadge.spinning && <Loader2 size={13} className="mt-0.5 shrink-0 animate-spin" />}
+                  <span>{llmBadge.text}</span>
                 </div>
               )}
               <p className="text-sm leading-relaxed text-foreground">{data?.market_brief}</p>
@@ -220,6 +222,7 @@ function buildLlmBadge(data: { llm_enabled?: boolean; llm_status?: string; llm_c
     return {
       className: 'border-cyan-500/20 bg-cyan-500/5 text-cyan-100',
       text: `최근 OpenAI 코멘트를 먼저 보여주고 있습니다. 백그라운드에서 새 코멘트를 다시 생성 중입니다.${data.llm_cached_at ? ` 마지막 갱신 ${fmtDateTime(data.llm_cached_at)}.` : ''}`,
+      spinning: true,
     }
   }
 
@@ -227,13 +230,15 @@ function buildLlmBadge(data: { llm_enabled?: boolean; llm_status?: string; llm_c
     return {
       className: 'border-emerald-500/20 bg-emerald-500/5 text-emerald-100',
       text: `OpenAI 코멘트가 적용된 상태입니다.${data.llm_cached_at ? ` 마지막 AI 갱신 ${fmtDateTime(data.llm_cached_at)}.` : ''}`,
+      spinning: false,
     }
   }
 
   if (data.llm_status === 'refreshing') {
     return {
       className: 'border-sky-500/20 bg-sky-500/5 text-sky-100',
-      text: '지금은 규칙 기반 코멘트를 먼저 보여주고 있습니다. OpenAI 코멘트는 백그라운드에서 생성 중이며 다음 새로고침 때 반영됩니다.',
+      text: 'OpenAI 브리핑을 백그라운드에서 생성 중입니다. 완료되면 새로고침 시 반영됩니다.',
+      spinning: true,
     }
   }
 
@@ -241,12 +246,14 @@ function buildLlmBadge(data: { llm_enabled?: boolean; llm_status?: string; llm_c
     return {
       className: 'border-amber-500/20 bg-amber-500/5 text-amber-100',
       text: `OpenAI 코멘트를 붙이지 못해 규칙 기반 코멘트로 표시 중입니다. 최근 상태: ${data.llm_error}.`,
+      spinning: false,
     }
   }
 
   return {
     className: 'border-border bg-background/60 text-muted-foreground',
     text: '현재는 규칙 기반 코멘트를 표시 중입니다.',
+    spinning: false,
   }
 }
 
@@ -419,7 +426,7 @@ function RecommendationCard({ item }: { item: AiRecommendationItem }) {
             )}
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
-            {patternName} / {item.timeframe_label} / {item.state ?? 'scan'}
+            {patternName} / {item.timeframe_label} / {STATE_LABELS[item.state ?? ''] ?? item.state ?? '스캔'}
           </div>
         </div>
 
