@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -14,6 +15,7 @@ from .pattern_engine import PatternEngine, PatternResult
 from .timeframe_service import timeframe_label
 
 REFERENCE_CASES_TTL = 60 * 60 * 6
+REFERENCE_UNIVERSE_LIMIT = 10
 
 
 @dataclass
@@ -463,15 +465,21 @@ async def build_reference_cases(
         else {}
     )
 
-    lookback_days = max(int(get_backtest_config(timeframe)["lookback_days"]), 730)
+    lookback_days = int(get_backtest_config(timeframe)["lookback_days"])
+    if timeframe == "1d":
+        lookback_days = min(max(lookback_days, 540), 540)
+    elif timeframe == "1wk":
+        lookback_days = min(max(lookback_days, 1460), 1460)
+    elif timeframe == "1mo":
+        lookback_days = min(max(lookback_days, 3650), 3650)
+    else:
+        lookback_days = min(max(lookback_days, 180), 360)
     current_close = _safe_float(current_df["close"].iloc[-1], 0.0)
     current_ichimoku = analysis.ichimoku.model_dump()
 
-    universe = [code for code in get_backtest_universe() if code != symbol_code][:24]
-    snapshots: list[_ReferenceSnapshot] = []
-    for code in universe:
-        snapshots.extend(
-            await _collect_symbol_cases(
+    universe = [code for code in get_backtest_universe() if code != symbol_code][:REFERENCE_UNIVERSE_LIMIT]
+    tasks = [
+        _collect_symbol_cases(
                 code=code,
                 name=str(universe_name_map.get(code) or code),
                 timeframe=timeframe,
@@ -482,7 +490,14 @@ async def build_reference_cases(
                 current_close=current_close,
                 current_ichimoku=current_ichimoku,
             )
-        )
+        for code in universe
+    ]
+    task_results = await asyncio.gather(*tasks, return_exceptions=True)
+    snapshots: list[_ReferenceSnapshot] = []
+    for result in task_results:
+        if isinstance(result, Exception):
+            continue
+        snapshots.extend(result)
 
     unique_items: list[ReferenceCaseItem] = []
     seen_keys: set[str] = set()
