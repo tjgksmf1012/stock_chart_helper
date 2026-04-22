@@ -467,6 +467,8 @@ class ScanQualitySummary(BaseModel):
     positive_close_rate: float = 0.0
     hit_3pct_rate: float = 0.0
     hit_5pct_rate: float = 0.0
+    target_touch_rate: float = 0.0
+    stop_touch_rate: float = 0.0
 
 
 class ScanQualityBucket(BaseModel):
@@ -478,6 +480,8 @@ class ScanQualityBucket(BaseModel):
     positive_close_rate: float = 0.0
     hit_3pct_rate: float = 0.0
     hit_5pct_rate: float = 0.0
+    target_touch_rate: float = 0.0
+    stop_touch_rate: float = 0.0
 
 
 class ScanQualityActionPlan(BaseModel):
@@ -489,6 +493,36 @@ class ScanQualityActionPlan(BaseModel):
     positive_close_rate: float = 0.0
     hit_3pct_rate: float = 0.0
     hit_5pct_rate: float = 0.0
+    target_touch_rate: float = 0.0
+    stop_touch_rate: float = 0.0
+
+
+class ScanQualityGroup(BaseModel):
+    group: str
+    sample_count: int = 0
+    avg_close_return_pct: float = 0.0
+    avg_max_runup_pct: float = 0.0
+    avg_max_drawdown_pct: float = 0.0
+    positive_close_rate: float = 0.0
+    hit_3pct_rate: float = 0.0
+    hit_5pct_rate: float = 0.0
+    target_touch_rate: float = 0.0
+    stop_touch_rate: float = 0.0
+
+
+class ScanQualityFalsePositive(BaseModel):
+    symbol_code: str
+    symbol_name: str
+    signal_date: str
+    pattern_type: str | None = None
+    state: str | None = None
+    timeframe: str
+    composite_score: float = 0.0
+    p_up: float = 0.0
+    close_return_pct: float = 0.0
+    max_runup_pct: float = 0.0
+    max_drawdown_pct: float = 0.0
+    reason: str
 
 
 class ScanQualityReportResponse(BaseModel):
@@ -502,6 +536,10 @@ class ScanQualityReportResponse(BaseModel):
     summary: ScanQualitySummary = Field(default_factory=ScanQualitySummary)
     score_buckets: list[ScanQualityBucket] = Field(default_factory=list)
     action_plans: list[ScanQualityActionPlan] = Field(default_factory=list)
+    pattern_groups: list[ScanQualityGroup] = Field(default_factory=list)
+    state_groups: list[ScanQualityGroup] = Field(default_factory=list)
+    timeframe_groups: list[ScanQualityGroup] = Field(default_factory=list)
+    false_positive_signals: list[ScanQualityFalsePositive] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
 
 

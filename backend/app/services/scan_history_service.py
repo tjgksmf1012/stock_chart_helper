@@ -14,7 +14,7 @@ from ..models.scan_history import ScanCandidateSnapshot, ScanRun
 from .data_fetcher import get_data_fetcher
 from .timeframe_service import resolve_daily_reference_date
 
-SCAN_QUALITY_CACHE_PREFIX = "scan-quality-report:v1"
+SCAN_QUALITY_CACHE_PREFIX = "scan-quality-report:v2"
 SCAN_HISTORY_RECENT_LIMIT = 10
 QUALITY_FORWARD_BARS = 20
 QUALITY_LOOKBACK_DAYS = 180
@@ -29,6 +29,8 @@ class CandidateForwardStats:
     positive_close: bool
     hit_3pct: bool
     hit_5pct: bool
+    target_touched: bool
+    stop_touched: bool
 
 
 async def ensure_scan_history_schema() -> None:
@@ -75,7 +77,51 @@ def _safe_mean(values: list[float]) -> float:
     return round(float(mean(values)), 4)
 
 
-def _evaluate_forward_window(frame: pd.DataFrame, signal_day: date, signal_price: float, forward_bars: int) -> CandidateForwardStats | None:
+def _empty_quality_payload(
+    *,
+    timeframe: str,
+    lookback_days: int,
+    forward_bars: int,
+    run_count: int,
+    latest_reference_date: str | None,
+    notes: list[str],
+) -> dict[str, Any]:
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "timeframe": timeframe,
+        "lookback_days": lookback_days,
+        "forward_bars": forward_bars,
+        "run_count": run_count,
+        "evaluated_count": 0,
+        "latest_reference_date": latest_reference_date,
+        "summary": {
+            "avg_close_return_pct": 0.0,
+            "avg_max_runup_pct": 0.0,
+            "avg_max_drawdown_pct": 0.0,
+            "positive_close_rate": 0.0,
+            "hit_3pct_rate": 0.0,
+            "hit_5pct_rate": 0.0,
+            "target_touch_rate": 0.0,
+            "stop_touch_rate": 0.0,
+        },
+        "score_buckets": [],
+        "action_plans": [],
+        "pattern_groups": [],
+        "state_groups": [],
+        "timeframe_groups": [],
+        "false_positive_signals": [],
+        "notes": notes,
+    }
+
+
+def _evaluate_forward_window(
+    frame: pd.DataFrame,
+    signal_day: date,
+    signal_price: float,
+    forward_bars: int,
+    target_level: float | None = None,
+    invalidation_level: float | None = None,
+) -> CandidateForwardStats | None:
     if frame.empty or signal_price <= 0:
         return None
 
@@ -99,6 +145,8 @@ def _evaluate_forward_window(frame: pd.DataFrame, signal_day: date, signal_price
         positive_close=close_return_pct > 0,
         hit_3pct=max_runup_pct >= 0.03,
         hit_5pct=max_runup_pct >= 0.05,
+        target_touched=target_level is not None and max_high >= target_level,
+        stop_touched=invalidation_level is not None and min_low <= invalidation_level,
     )
 
 
@@ -273,29 +321,17 @@ async def build_scan_quality_report(
         candidates = (await session.execute(candidate_stmt)).scalars().all()
 
     if not candidates:
-        payload = {
-            "generated_at": datetime.utcnow().isoformat(),
-            "timeframe": timeframe,
-            "lookback_days": lookback_days,
-            "forward_bars": forward_bars,
-            "run_count": run_count,
-            "evaluated_count": 0,
-            "latest_reference_date": None,
-            "summary": {
-                "avg_close_return_pct": 0.0,
-                "avg_max_runup_pct": 0.0,
-                "avg_max_drawdown_pct": 0.0,
-                "positive_close_rate": 0.0,
-                "hit_3pct_rate": 0.0,
-                "hit_5pct_rate": 0.0,
-            },
-            "score_buckets": [],
-            "action_plans": [],
-            "notes": [
+        payload = _empty_quality_payload(
+            timeframe=timeframe,
+            lookback_days=lookback_days,
+            forward_bars=forward_bars,
+            run_count=run_count,
+            latest_reference_date=None,
+            notes=[
                 "아직 저장된 스캔 이력이 충분하지 않아 품질 검증 리포트를 계산하지 못했습니다.",
                 "scan history가 며칠 쌓이면 점수 구간별 실제 후속 수익률과 변동폭을 확인할 수 있습니다.",
             ],
-        }
+        )
         await cache_set(cache_key, payload, ttl=3600)
         return payload
 
@@ -318,34 +354,29 @@ async def build_scan_quality_report(
         signal_price = float(candidate.signal_price or 0.0)
         if signal_day is None or signal_price <= 0:
             continue
-        stats = _evaluate_forward_window(symbol_frames.get(candidate.symbol_code, pd.DataFrame()), signal_day, signal_price, forward_bars)
+        stats = _evaluate_forward_window(
+            symbol_frames.get(candidate.symbol_code, pd.DataFrame()),
+            signal_day,
+            signal_price,
+            forward_bars,
+            candidate.target_level,
+            candidate.invalidation_level,
+        )
         if stats is None:
             continue
         evaluated.append((candidate, stats))
 
     if not evaluated:
-        payload = {
-            "generated_at": datetime.utcnow().isoformat(),
-            "timeframe": timeframe,
-            "lookback_days": lookback_days,
-            "forward_bars": forward_bars,
-            "run_count": run_count,
-            "evaluated_count": 0,
-            "latest_reference_date": max((candidate.signal_date for candidate in candidates), default=None),
-            "summary": {
-                "avg_close_return_pct": 0.0,
-                "avg_max_runup_pct": 0.0,
-                "avg_max_drawdown_pct": 0.0,
-                "positive_close_rate": 0.0,
-                "hit_3pct_rate": 0.0,
-                "hit_5pct_rate": 0.0,
-            },
-            "score_buckets": [],
-            "action_plans": [],
-            "notes": [
+        payload = _empty_quality_payload(
+            timeframe=timeframe,
+            lookback_days=lookback_days,
+            forward_bars=forward_bars,
+            run_count=run_count,
+            latest_reference_date=max((candidate.signal_date for candidate in candidates), default=None),
+            notes=[
                 "저장된 이력은 있지만 아직 평가 가능한 20봉 이후 데이터가 충분하지 않습니다.",
             ],
-        }
+        )
         await cache_set(cache_key, payload, ttl=3600)
         return payload
 
@@ -355,9 +386,15 @@ async def build_scan_quality_report(
 
     bucket_rows: dict[str, list[CandidateForwardStats]] = defaultdict(list)
     action_rows: dict[str, list[CandidateForwardStats]] = defaultdict(list)
+    pattern_rows: dict[str, list[CandidateForwardStats]] = defaultdict(list)
+    state_rows: dict[str, list[CandidateForwardStats]] = defaultdict(list)
+    timeframe_rows: dict[str, list[CandidateForwardStats]] = defaultdict(list)
     for candidate, stats in evaluated:
         bucket_rows[_score_bucket(float(candidate.composite_score or 0.0))].append(stats)
         action_rows[str(candidate.action_plan or "unknown")].append(stats)
+        pattern_rows[str(candidate.pattern_type or "unknown")].append(stats)
+        state_rows[str(candidate.state or "unknown")].append(stats)
+        timeframe_rows[str(candidate.timeframe or timeframe)].append(stats)
 
     def _serialize_group(items: list[CandidateForwardStats]) -> dict[str, Any]:
         total = len(items)
@@ -369,6 +406,8 @@ async def build_scan_quality_report(
             "positive_close_rate": _rate(sum(1 for item in items if item.positive_close), total),
             "hit_3pct_rate": _rate(sum(1 for item in items if item.hit_3pct), total),
             "hit_5pct_rate": _rate(sum(1 for item in items if item.hit_5pct), total),
+            "target_touch_rate": _rate(sum(1 for item in items if item.target_touched), total),
+            "stop_touch_rate": _rate(sum(1 for item in items if item.stop_touched), total),
         }
 
     bucket_order = ["0.75+", "0.60-0.74", "0.45-0.59", "<0.45"]
@@ -381,6 +420,45 @@ async def build_scan_quality_report(
         {"action_plan": action_plan, **_serialize_group(items)}
         for action_plan, items in sorted(action_rows.items(), key=lambda pair: len(pair[1]), reverse=True)
     ]
+    pattern_groups = [
+        {"group": group, **_serialize_group(items)}
+        for group, items in sorted(pattern_rows.items(), key=lambda pair: len(pair[1]), reverse=True)
+    ]
+    state_groups = [
+        {"group": group, **_serialize_group(items)}
+        for group, items in sorted(state_rows.items(), key=lambda pair: len(pair[1]), reverse=True)
+    ]
+    timeframe_groups = [
+        {"group": group, **_serialize_group(items)}
+        for group, items in sorted(timeframe_rows.items(), key=lambda pair: len(pair[1]), reverse=True)
+    ]
+
+    false_positive_signals = []
+    for candidate, stats in evaluated:
+        looked_strong = (
+            float(candidate.composite_score or 0.0) >= 0.75
+            or float(candidate.p_up or 0.0) >= 0.55
+            or float(candidate.trade_readiness_score or 0.0) >= 0.5
+        )
+        failed_to_lift = stats.close_return_pct <= 0 and stats.max_runup_pct < 0.03
+        if looked_strong and failed_to_lift:
+            false_positive_signals.append(
+                {
+                    "symbol_code": candidate.symbol_code,
+                    "symbol_name": candidate.symbol_name,
+                    "signal_date": candidate.signal_date,
+                    "pattern_type": candidate.pattern_type,
+                    "state": candidate.state,
+                    "timeframe": candidate.timeframe,
+                    "composite_score": round(float(candidate.composite_score or 0.0), 4),
+                    "p_up": round(float(candidate.p_up or 0.0), 4),
+                    "close_return_pct": stats.close_return_pct,
+                    "max_runup_pct": stats.max_runup_pct,
+                    "max_drawdown_pct": stats.max_drawdown_pct,
+                    "reason": "점수나 상승확률은 높았지만 20봉 내 종가 수익이 음수이고 +3% 반등도 없었습니다.",
+                }
+            )
+    false_positive_signals.sort(key=lambda item: (item["composite_score"], item["p_up"]), reverse=True)
 
     summary = {
         "avg_close_return_pct": _safe_mean(close_returns),
@@ -389,6 +467,8 @@ async def build_scan_quality_report(
         "positive_close_rate": _rate(sum(1 for _, item in evaluated if item.positive_close), len(evaluated)),
         "hit_3pct_rate": _rate(sum(1 for _, item in evaluated if item.hit_3pct), len(evaluated)),
         "hit_5pct_rate": _rate(sum(1 for _, item in evaluated if item.hit_5pct), len(evaluated)),
+        "target_touch_rate": _rate(sum(1 for _, item in evaluated if item.target_touched), len(evaluated)),
+        "stop_touch_rate": _rate(sum(1 for _, item in evaluated if item.stop_touched), len(evaluated)),
     }
 
     notes: list[str] = []
@@ -413,6 +493,10 @@ async def build_scan_quality_report(
         "summary": summary,
         "score_buckets": score_buckets,
         "action_plans": action_plans,
+        "pattern_groups": pattern_groups,
+        "state_groups": state_groups,
+        "timeframe_groups": timeframe_groups,
+        "false_positive_signals": false_positive_signals[:8],
         "notes": notes,
     }
     await cache_set(cache_key, payload, ttl=21600)

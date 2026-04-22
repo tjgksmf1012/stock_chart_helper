@@ -28,6 +28,8 @@ import type {
   ScanHistoryRunSummary,
   ScanQualityActionPlan,
   ScanQualityBucket,
+  ScanQualityFalsePositive,
+  ScanQualityGroup,
   ScanQualityReportResponse,
   Timeframe,
 } from '@/types/api'
@@ -560,11 +562,13 @@ function ScanHistoryCard({ run }: { run: ScanHistoryRunSummary }) {
 function ScanQualitySection({ report }: { report: ScanQualityReportResponse }) {
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <QualityMetric label="평가 신호 수" value={`${report.evaluated_count}건`} />
         <QualityMetric label="스캔 런 수" value={`${report.run_count}회`} />
         <QualityMetric label="평균 종가 수익" value={fmtPct(report.summary.avg_close_return_pct, 1)} />
         <QualityMetric label="양봉 마감 비율" value={fmtPct(report.summary.positive_close_rate, 0)} />
+        <QualityMetric label="목표가 터치율" value={fmtPct(report.summary.target_touch_rate, 0)} />
+        <QualityMetric label="손절가 터치율" value={fmtPct(report.summary.stop_touch_rate, 0)} />
         <QualityMetric label="최대 상승 평균" value={fmtPct(report.summary.avg_max_runup_pct, 1)} />
         <QualityMetric label="최대 낙폭 평균" value={fmtPct(report.summary.avg_max_drawdown_pct, 1)} />
       </div>
@@ -587,6 +591,23 @@ function ScanQualitySection({ report }: { report: ScanQualityReportResponse }) {
         </div>
       </div>
 
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
+        <QualityGroupPanel title="패턴별 성과" rows={report.pattern_groups ?? []} />
+        <QualityGroupPanel title="상태별 성과" rows={report.state_groups ?? []} />
+        <QualityGroupPanel title="타임프레임별 성과" rows={report.timeframe_groups ?? []} />
+      </div>
+
+      {(report.false_positive_signals ?? []).length > 0 && (
+        <div className="rounded-lg border border-orange-400/30 bg-orange-400/5 p-3">
+          <div className="mb-2 text-xs font-semibold text-foreground">좋아 보였지만 실제로 안 오른 신호</div>
+          <div className="space-y-2">
+            {report.false_positive_signals.map(item => (
+              <FalsePositiveRow key={`${item.symbol_code}-${item.signal_date}-${item.pattern_type ?? 'unknown'}`} item={item} />
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="rounded-lg border border-border bg-background/60 p-3 text-xs text-muted-foreground">
         <div className="mb-2 text-xs font-semibold text-foreground">해석 메모</div>
         <div className="space-y-1.5">
@@ -606,7 +627,8 @@ function BucketRow({ bucket }: { bucket: ScanQualityBucket }) {
       <div className="grid grid-cols-2 gap-2 text-muted-foreground md:grid-cols-4">
         <span>표본 {bucket.sample_count}건</span>
         <span>양봉 마감 {fmtPct(bucket.positive_close_rate, 0)}</span>
-        <span>+3% 도달 {fmtPct(bucket.hit_3pct_rate, 0)}</span>
+        <span>목표 터치 {fmtPct(bucket.target_touch_rate, 0)}</span>
+        <span>손절 터치 {fmtPct(bucket.stop_touch_rate, 0)}</span>
         <span>평균 종가 {fmtPct(bucket.avg_close_return_pct, 1)}</span>
       </div>
     </div>
@@ -621,8 +643,60 @@ function ActionPlanRow({ plan }: { plan: ScanQualityActionPlan }) {
         <span>표본 {plan.sample_count}건</span>
         <span>양봉 마감 {fmtPct(plan.positive_close_rate, 0)}</span>
         <span>+5% 도달 {fmtPct(plan.hit_5pct_rate, 0)}</span>
+        <span>목표 터치 {fmtPct(plan.target_touch_rate, 0)}</span>
         <span>평균 최대상승 {fmtPct(plan.avg_max_runup_pct, 1)}</span>
       </div>
+    </div>
+  )
+}
+
+function QualityGroupPanel({ title, rows }: { title: string; rows: ScanQualityGroup[] }) {
+  const visibleRows = rows.slice(0, 6)
+
+  return (
+    <div className="rounded-lg border border-border bg-background/60 p-3">
+      <div className="mb-2 text-xs font-semibold">{title}</div>
+      {visibleRows.length === 0 ? (
+        <p className="text-xs text-muted-foreground">아직 비교할 표본이 부족합니다.</p>
+      ) : (
+        <div className="space-y-2">
+          {visibleRows.map(row => (
+            <div key={row.group} className="rounded-md border border-border bg-card/60 p-2 text-xs">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium text-foreground">{row.group}</span>
+                <span className="text-muted-foreground">{row.sample_count}건</span>
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-1.5 text-muted-foreground">
+                <span>종가+ {fmtPct(row.positive_close_rate, 0)}</span>
+                <span>목표 {fmtPct(row.target_touch_rate, 0)}</span>
+                <span>손절 {fmtPct(row.stop_touch_rate, 0)}</span>
+                <span>평균 {fmtPct(row.avg_close_return_pct, 1)}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function FalsePositiveRow({ item }: { item: ScanQualityFalsePositive }) {
+  return (
+    <div className="rounded-md border border-orange-400/30 bg-card/60 p-2 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="font-medium text-foreground">
+          {item.symbol_name} <span className="text-muted-foreground">{item.symbol_code}</span>
+        </div>
+        <Badge variant="warning">{item.signal_date}</Badge>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-1.5 text-muted-foreground md:grid-cols-5">
+        <span>{item.pattern_type ?? 'unknown'}</span>
+        <span>{item.state ?? 'unknown'}</span>
+        <span>점수 {Math.round(item.composite_score * 100)}</span>
+        <span>상승확률 {fmtPct(item.p_up, 0)}</span>
+        <span>종가 {fmtPct(item.close_return_pct, 1)}</span>
+      </div>
+      <p className="mt-2 text-muted-foreground">{item.reason}</p>
     </div>
   )
 }

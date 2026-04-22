@@ -552,6 +552,8 @@ export interface ScanQualitySummary {
   positive_close_rate: number
   hit_3pct_rate: number
   hit_5pct_rate: number
+  target_touch_rate: number
+  stop_touch_rate: number
 }
 
 export interface ScanQualityBucket extends ScanQualitySummary {
@@ -562,6 +564,26 @@ export interface ScanQualityBucket extends ScanQualitySummary {
 export interface ScanQualityActionPlan extends ScanQualitySummary {
   action_plan: string
   sample_count: number
+}
+
+export interface ScanQualityGroup extends ScanQualitySummary {
+  group: string
+  sample_count: number
+}
+
+export interface ScanQualityFalsePositive {
+  symbol_code: string
+  symbol_name: string
+  signal_date: string
+  pattern_type: string | null
+  state: string | null
+  timeframe: Timeframe | string
+  composite_score: number
+  p_up: number
+  close_return_pct: number
+  max_runup_pct: number
+  max_drawdown_pct: number
+  reason: string
 }
 
 export interface ScanQualityReportResponse {
@@ -575,6 +597,10 @@ export interface ScanQualityReportResponse {
   summary: ScanQualitySummary
   score_buckets: ScanQualityBucket[]
   action_plans: ScanQualityActionPlan[]
+  pattern_groups: ScanQualityGroup[]
+  state_groups: ScanQualityGroup[]
+  timeframe_groups: ScanQualityGroup[]
+  false_positive_signals: ScanQualityFalsePositive[]
   notes: string[]
 }
 
