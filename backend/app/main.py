@@ -39,7 +39,7 @@ app.include_router(watchlist.router, prefix="/api/v1")
 app.include_router(outcomes.router, prefix="/api/v1")
 
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 async def health() -> dict:
     return {"status": "ok", "version": "0.3.0"}
 
@@ -58,6 +58,7 @@ def _start_scheduler() -> None:
         from .api.routes.outcomes import run_scheduled_outcome_evaluation
         from .api.routes.system import run_scheduled_intraday_warmup
         from .services.backtest_engine import run_backtest
+        from .services.scan_history_service import prune_scan_history
         from .services.scanner import run_scan
 
         scheduler = AsyncIOScheduler(timezone="Asia/Seoul")
@@ -93,6 +94,12 @@ def _start_scheduler() -> None:
             run_backtest,
             CronTrigger(day_of_week="sun", hour=2, minute=0, timezone="Asia/Seoul"),
             id="weekly_backtest",
+            replace_existing=True,
+        )
+        scheduler.add_job(
+            prune_scan_history,
+            CronTrigger(day_of_week="sun", hour=3, minute=30, timezone="Asia/Seoul"),
+            id="weekly_scan_history_prune",
             replace_existing=True,
         )
         scheduler.add_job(
@@ -142,6 +149,7 @@ def _start_scheduler() -> None:
             "close_scan",
             "close_outcome_evaluation",
             "weekly_backtest",
+            "weekly_scan_history_prune",
             "open_intraday_warmup",
             "midday_intraday_warmup",
             "closing_intraday_warmup",
