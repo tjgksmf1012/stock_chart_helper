@@ -621,6 +621,9 @@ export interface OutcomeRecord {
   composite_score_at_signal?: number | null
   textbook_similarity_at_signal?: number | null
   trade_readiness_at_signal?: number | null
+  evaluation_basis?: string | null
+  observed_high?: number | null
+  observed_low?: number | null
   recorded_at?: string
   updated_at?: string
 }
@@ -630,9 +633,11 @@ export interface OutcomesSummary {
   completed: number
   wins: number
   win_rate: number
+  avg_hold_days?: number
   pending: number
   cancelled: number
   by_pattern: Record<string, { wins: number; total: number; win_rate: number }>
+  by_intent?: Record<string, { wins: number; total: number; win_rate: number }>
 }
 
 export interface OutcomeEvaluationItem {

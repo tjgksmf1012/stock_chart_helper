@@ -127,6 +127,9 @@ def _serialize(record: SignalOutcome) -> dict:
         "composite_score_at_signal": record.composite_score_at_signal,
         "textbook_similarity_at_signal": record.textbook_similarity_at_signal,
         "trade_readiness_at_signal": record.trade_readiness_at_signal,
+        "evaluation_basis": record.evaluation_basis,
+        "observed_high": record.observed_high,
+        "observed_low": record.observed_low,
         "recorded_at": record.recorded_at.isoformat() if record.recorded_at else None,
         "updated_at": record.updated_at.isoformat() if record.updated_at else None,
     }
@@ -137,6 +140,15 @@ def _parse_signal_date(value: str) -> date | None:
         return None
     try:
         return date.fromisoformat(value[:10])
+    except ValueError:
+        return None
+
+
+def _days_between(start: str | None, end: str | None) -> int | None:
+    if not start or not end:
+        return None
+    try:
+        return max((date.fromisoformat(end[:10]) - date.fromisoformat(start[:10])).days, 0)
     except ValueError:
         return None
 
@@ -234,6 +246,45 @@ async def _load_price_path(symbol: str, signal_day: date, timeframe: str) -> Pri
     basis = "intraday_high_low" if intraday_events else "daily_high_low"
     return PricePathSnapshot(
         events=events,
+        latest_close=latest_close,
+        highest_high=highest_high,
+        lowest_low=lowest_low,
+        basis=basis,
+    )
+
+
+def _normalize_cutoff(recorded_at: datetime | None) -> datetime | None:
+    if recorded_at is None:
+        return None
+    if recorded_at.tzinfo is not None:
+        return recorded_at.astimezone().replace(tzinfo=None)
+    return recorded_at
+
+
+async def _load_price_path_since_signal(
+    symbol: str,
+    signal_day: date,
+    timeframe: str,
+    recorded_at: datetime | None,
+) -> PricePathSnapshot:
+    snapshot = await _load_price_path(symbol, signal_day, timeframe)
+    cutoff = _normalize_cutoff(recorded_at)
+    if cutoff is None:
+        return snapshot
+
+    filtered_events = [
+        event
+        for event in snapshot.events
+        if (
+            (event.basis == "intraday_high_low" and event.when > cutoff)
+            or (event.basis != "intraday_high_low" and event.when.date() > cutoff.date())
+        )
+    ]
+    latest_close = _latest_close_from_events(filtered_events)
+    highest_high, lowest_low = _price_extremes(filtered_events)
+    basis = filtered_events[-1].basis if filtered_events else snapshot.basis
+    return PricePathSnapshot(
+        events=filtered_events,
         latest_close=latest_close,
         highest_high=highest_high,
         lowest_low=lowest_low,
@@ -365,7 +416,7 @@ async def evaluate_pending_outcomes() -> OutcomeEvaluationResponse:
                 continue
 
             checked += 1
-            snapshot = await _load_price_path(symbol, signal_day, record.timeframe)
+            snapshot = await _load_price_path_since_signal(symbol, signal_day, record.timeframe, record.recorded_at)
             decision = _decide_outcome_from_events(
                 events=snapshot.events,
                 target_price=record.target_price,
@@ -388,6 +439,9 @@ async def evaluate_pending_outcomes() -> OutcomeEvaluationResponse:
             record.exit_price = decision.exit_price
             record.exit_date = decision.exit_date
             record.notes = f"auto_evaluated:{decision.evaluation_basis}"
+            record.evaluation_basis = decision.evaluation_basis
+            record.observed_high = decision.observed_high
+            record.observed_low = decision.observed_low
             record.updated_at = datetime.now()
             items.append(
                 OutcomeEvaluationItem(
@@ -439,24 +493,35 @@ async def outcomes_summary() -> dict:
 
     completed = [record for record in records if record.outcome not in ("pending", "cancelled")]
     wins = [record for record in completed if record.outcome == "win"]
+    hold_days = [days for record in completed if (days := _days_between(record.signal_date, record.exit_date)) is not None]
 
     by_pattern: dict[str, dict[str, int]] = {}
+    by_intent: dict[str, dict[str, int]] = {}
     for record in completed:
         bucket = by_pattern.setdefault(record.pattern_type or "unknown", {"wins": 0, "total": 0})
         bucket["total"] += 1
         if record.outcome == "win":
             bucket["wins"] += 1
+        intent_bucket = by_intent.setdefault(_normalize_intent(record.intent), {"wins": 0, "total": 0})
+        intent_bucket["total"] += 1
+        if record.outcome == "win":
+            intent_bucket["wins"] += 1
 
     return {
         "total_records": len(records),
         "completed": len(completed),
         "wins": len(wins),
         "win_rate": round(len(wins) / max(len(completed), 1), 3),
+        "avg_hold_days": round(sum(hold_days) / len(hold_days), 2) if hold_days else 0.0,
         "pending": len([record for record in records if record.outcome == "pending"]),
         "cancelled": len([record for record in records if record.outcome == "cancelled"]),
         "by_pattern": {
             key: {**value, "win_rate": round(value["wins"] / max(value["total"], 1), 3)}
             for key, value in sorted(by_pattern.items(), key=lambda item: -item[1]["total"])
+        },
+        "by_intent": {
+            key: {**value, "win_rate": round(value["wins"] / max(value["total"], 1), 3)}
+            for key, value in sorted(by_intent.items(), key=lambda item: -item[1]["total"])
         },
     }
 
@@ -472,6 +537,8 @@ async def update_outcome(outcome_id: int, update: OutcomeUpdate) -> dict:
         patch = {key: value for key, value in update.model_dump().items() if value is not None}
         for key, value in patch.items():
             setattr(record, key, value)
+        if update.outcome in {"win", "loss", "stopped_out", "cancelled"} and not record.evaluation_basis:
+            record.evaluation_basis = "manual"
         record.updated_at = datetime.now()
         await session.commit()
         return {"status": "ok", "id": outcome_id}

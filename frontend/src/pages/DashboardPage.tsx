@@ -31,6 +31,11 @@ interface FocusCandidate {
   score: number
 }
 
+interface WatchlistDeck {
+  triggerClose: DashboardItem[]
+  riskClose: DashboardItem[]
+}
+
 interface RoutineDeck {
   premarket: DashboardItem[]
   intraday: DashboardItem[]
@@ -189,6 +194,7 @@ export default function DashboardPage() {
   }, [allDashboardItems, overview?.generated_at, timeframe])
 
   const focusDeck = useMemo(() => buildFocusDeck(allDashboardItems, snapshotBaseline, isWatched), [allDashboardItems, snapshotBaseline, isWatched])
+  const watchlistDeck = useMemo(() => buildWatchlistDeck(allDashboardItems, isWatched), [allDashboardItems, isWatched])
   const routineDeck = useMemo(() => buildRoutineDeck(focusDeck, allDashboardItems, isWatched), [allDashboardItems, focusDeck, isWatched])
   const routineSymbols = useMemo(() => uniqueRoutineSymbols(routineDeck), [routineDeck])
   const routinePriceQueries = useQueries({
@@ -474,6 +480,50 @@ export default function DashboardPage() {
           </div>
         </Card>
       </section>
+
+      {(watchlistDeck.triggerClose.length > 0 || watchlistDeck.riskClose.length > 0) && (
+        <section className="grid gap-4 xl:grid-cols-2">
+          <Card className="space-y-4 border-amber-400/20 bg-amber-400/5">
+            <div>
+              <div className="text-sm font-semibold">내 관심종목 중 트리거 가까운 것</div>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                관심종목 중에서 오늘 바로 다시 볼 가치가 큰 후보만 먼저 묶었습니다.
+              </p>
+            </div>
+            <div className="space-y-2">
+              {watchlistDeck.triggerClose.length === 0 ? (
+                <div className="rounded-lg border border-border bg-background/60 p-3 text-xs text-muted-foreground">
+                  오늘은 관심종목 중 즉시 재확인할 후보가 아직 없습니다.
+                </div>
+              ) : (
+                watchlistDeck.triggerClose.map(item => (
+                  <RoutineRow key={`watch-trigger-${item.timeframe}-${item.symbol.code}`} item={item} mode="intraday" price={routinePrices[item.symbol.code]} onOpen={openCandidate} />
+                ))
+              )}
+            </div>
+          </Card>
+
+          <Card className="space-y-4 border-red-500/20 bg-red-500/5">
+            <div>
+              <div className="text-sm font-semibold">내 관심종목 중 무효화 위험</div>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                관심종목인데 구조가 약해졌거나 무효화 확인이 필요한 후보를 따로 모아뒀습니다.
+              </p>
+            </div>
+            <div className="space-y-2">
+              {watchlistDeck.riskClose.length === 0 ? (
+                <div className="rounded-lg border border-border bg-background/60 p-3 text-xs text-muted-foreground">
+                  지금은 무효화 위험이 크게 올라온 관심종목이 없습니다.
+                </div>
+              ) : (
+                watchlistDeck.riskClose.map(item => (
+                  <RoutineRow key={`watch-risk-${item.timeframe}-${item.symbol.code}`} item={item} mode="afterMarket" price={routinePrices[item.symbol.code]} onOpen={openCandidate} />
+                ))
+              )}
+            </div>
+          </Card>
+        </section>
+      )}
 
       <RoutineDesk deck={routineDeck} prices={routinePrices} isFetchingPrices={routinePriceQueries.some(query => query.isFetching)} onOpen={openCandidate} />
 
@@ -1282,6 +1332,24 @@ function buildFocusDeck(items: DashboardItem[], snapshot: Record<string, Candida
       weakening: candidates.filter(candidate => candidate.movement === 'weakening').length,
     },
   }
+}
+
+function buildWatchlistDeck(items: DashboardItem[], isWatched: (code: string) => boolean): WatchlistDeck {
+  const watchedItems = items.filter(item => isWatched(item.symbol.code))
+  const triggerClose = [...watchedItems]
+    .filter(item => !item.no_signal_flag && ['ready_now', 'watch'].includes(item.action_plan))
+    .sort(
+      (left, right) =>
+        dashboardPriorityScore(right, 'steady', true) - dashboardPriorityScore(left, 'steady', true),
+    )
+    .slice(0, 4)
+
+  const riskClose = [...watchedItems]
+    .filter(item => item.no_signal_flag || item.action_plan === 'recheck' || item.risk_flags.length > 0)
+    .sort((left, right) => afterMarketPriority(right) - afterMarketPriority(left))
+    .slice(0, 4)
+
+  return { triggerClose, riskClose }
 }
 
 function buildRoutineDeck(focusDeck: ReturnType<typeof buildFocusDeck>, items: DashboardItem[], isWatched: (code: string) => boolean): RoutineDeck {

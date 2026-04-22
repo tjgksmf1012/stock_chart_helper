@@ -22,7 +22,7 @@ from ..core.redis import cache_get, cache_set
 
 logger = structlog.get_logger()
 
-_OVERLAY_CACHE_PREFIX = "ai:recommendation-overlay:v3"
+_OVERLAY_CACHE_PREFIX = "ai:recommendation-overlay:v4"
 _IN_FLIGHT_REFRESHES: set[str] = set()
 
 
@@ -96,9 +96,16 @@ async def _request_overlay(payload: dict[str, Any]) -> dict[str, Any]:
                 "content": (
                     "You are a cautious Korean equity portfolio assistant. "
                     "Rewrite the supplied rule-based scan commentary into concise Korean portfolio notes for daily execution. "
-                    "Keep the tone operational and concrete. "
+                    "Keep the tone operational, concrete, and slightly conservative. "
+                    "Avoid vague phrasing. Do not promise returns and do not use direct buy or sell imperatives. "
                     "For each item, produce these exact fields in Korean: summary, action_line, do_now, avoid_if, review_price, skip_reason, overlap_risk, position_hint, next_actions. "
-                    "Do not promise returns and do not use direct buy or sell imperatives."
+                    "Formatting rules: "
+                    "action_line must start with '지금 할 일:' and include a condition or price zone followed by the next action. "
+                    "avoid_if must clearly state the entry-ban condition. "
+                    "review_price must be a re-check price or condition. "
+                    "skip_reason must say why this can be ignored today. "
+                    "overlap_risk must mention duplicate exposure or concentration when relevant, otherwise return an empty string. "
+                    "next_actions should be a short 2-4 step operator checklist."
                 ),
             },
             {
@@ -210,6 +217,7 @@ def _make_prompt_payload(response: AiRecommendationResponse) -> dict[str, Any]:
                 "rule_review_price": item.review_price,
                 "rule_skip_reason": item.skip_reason,
                 "rule_overlap_risk": item.overlap_risk,
+                "watchlist_priority": item.watchlist_priority,
                 "next_trigger": item.next_trigger,
             }
         )
@@ -251,6 +259,7 @@ def _apply_overlay(response: AiRecommendationResponse, overlay: dict[str, Any]) 
             "priority_items": [apply_item(item) for item in response.priority_items],
             "watch_items": [apply_item(item) for item in response.watch_items],
             "risk_items": [apply_item(item) for item in response.risk_items],
+            "watchlist_focus_items": [apply_item(item) for item in response.watchlist_focus_items],
         }
     )
 

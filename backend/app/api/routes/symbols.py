@@ -12,7 +12,7 @@ from ...services.analysis_service import analyze_symbol_dataframe, build_no_sign
 import pandas as pd
 
 from ...services.data_fetcher import get_data_fetcher
-from ...services.reference_case_service import build_reference_cases
+from ...services.reference_case_service import build_reference_cases, schedule_reference_case_warmup
 from ...services.scanner import FALLBACK_CODES, get_scan_results
 from ...services.timeframe_service import DEFAULT_TIMEFRAME, SUPPORTED_TIMEFRAMES, get_timeframe_spec
 
@@ -186,6 +186,7 @@ async def get_analysis(
         else build_no_signal_snapshot(symbol_info, timeframe, df)
     )
     await cache_set(cache_key, result.model_dump(), settings.pattern_cache_ttl)
+    await schedule_reference_case_warmup(symbol_code=symbol, timeframe=timeframe, analysis=result, limit=3)
     return result
 
 

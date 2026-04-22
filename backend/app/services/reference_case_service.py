@@ -16,6 +16,7 @@ from .timeframe_service import timeframe_label
 
 REFERENCE_CASES_TTL = 60 * 60 * 6
 REFERENCE_UNIVERSE_LIMIT = 5
+_REFERENCE_CASE_WARMUPS: set[str] = set()
 
 
 @dataclass
@@ -551,3 +552,32 @@ async def build_reference_cases(
     )
     await cache_set(cache_key, response.model_dump(), REFERENCE_CASES_TTL)
     return response
+
+
+async def schedule_reference_case_warmup(
+    *,
+    symbol_code: str,
+    timeframe: str,
+    analysis: AnalysisResult,
+    limit: int = 3,
+) -> bool:
+    if not analysis.patterns:
+        return False
+
+    cache_key = f"reference_cases:v2:{symbol_code}:{timeframe}:{limit}"
+    cached = await cache_get(cache_key)
+    if cached:
+        return False
+    if cache_key in _REFERENCE_CASE_WARMUPS:
+        return False
+
+    _REFERENCE_CASE_WARMUPS.add(cache_key)
+
+    async def _runner() -> None:
+        try:
+            await build_reference_cases(symbol_code=symbol_code, timeframe=timeframe, analysis=analysis, limit=limit)
+        finally:
+            _REFERENCE_CASE_WARMUPS.discard(cache_key)
+
+    asyncio.create_task(_runner())
+    return True

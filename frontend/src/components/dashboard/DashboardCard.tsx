@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
 import { Bookmark, ChevronDown, Star } from 'lucide-react'
 
-import type { DashboardItem } from '@/types/api'
+import type { DashboardItem, OutcomeIntent } from '@/types/api'
 import { outcomesApi } from '@/lib/api'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
@@ -32,6 +32,7 @@ export function DashboardCard({ item }: DashboardCardProps) {
   const watched = isWatched(item.symbol.code)
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [savedId, setSavedId] = useState<number | null>(null)
+  const [selectedIntent, setSelectedIntent] = useState<OutcomeIntent>('breakout_wait')
 
   const saveMutation = useMutation({
     mutationFn: () =>
@@ -44,7 +45,9 @@ export function DashboardCard({ item }: DashboardCardProps) {
         entry_price: 0,
         target_price: null,
         stop_price: null,
+        intent: selectedIntent,
         outcome: 'pending',
+        notes: `intent:${selectedIntent}`,
         p_up_at_signal: item.p_up,
         composite_score_at_signal: item.trade_readiness_score ?? 0,
         textbook_similarity_at_signal: item.textbook_similarity,
@@ -171,6 +174,34 @@ export function DashboardCard({ item }: DashboardCardProps) {
             <DetailRow label="평균 MFE/MAE" value={`${fmtPct(item.avg_mfe_pct, 0)} / ${fmtPct(item.avg_mae_pct, 0)}`} />
           </div>
 
+          <div className="rounded-lg border border-border bg-background/55 p-3">
+            <div className="text-xs font-medium text-foreground">신호 저장 분류</div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {OUTCOME_INTENT_OPTIONS.map(option => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={event => {
+                    event.stopPropagation()
+                    setSelectedIntent(option.value)
+                  }}
+                  disabled={savedId != null || saveMutation.isPending}
+                  className={cn(
+                    'rounded-md border px-2.5 py-1.5 text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+                    selectedIntent === option.value
+                      ? 'border-primary/30 bg-primary/15 text-primary'
+                      : 'border-border bg-card/65 text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+              {OUTCOME_INTENT_DESCRIPTIONS[selectedIntent]}
+            </p>
+          </div>
+
           {item.trade_readiness_summary && <SummaryPane title={item.trade_readiness_label} accent="emerald" text={item.trade_readiness_summary} />}
           {item.entry_window_summary && <SummaryPane title={item.entry_window_label} accent="sky" text={item.entry_window_summary} />}
           {item.freshness_summary && <SummaryPane title={item.freshness_label} accent="violet" text={item.freshness_summary} />}
@@ -267,4 +298,18 @@ function scoreTone(score: number) {
   if (score >= 0.56) return 'text-sky-200'
   if (score >= 0.4) return 'text-amber-200'
   return 'text-muted-foreground'
+}
+
+const OUTCOME_INTENT_OPTIONS: Array<{ value: OutcomeIntent; label: string }> = [
+  { value: 'observe', label: '관망' },
+  { value: 'breakout_wait', label: '돌파 대기' },
+  { value: 'pullback_candidate', label: '눌림 매수 후보' },
+  { value: 'invalidation_watch', label: '무효화 감시' },
+]
+
+const OUTCOME_INTENT_DESCRIPTIONS: Record<OutcomeIntent, string> = {
+  observe: '아직 진입보다 구조 관찰이 더 중요한 후보입니다.',
+  breakout_wait: '트리거 돌파와 거래 반응이 확인될 때 대응할 후보입니다.',
+  pullback_candidate: '돌파 뒤 눌림이나 지지 확인을 기다리는 후보입니다.',
+  invalidation_watch: '신규 진입보다 무효화 여부를 먼저 체크해야 하는 후보입니다.',
 }

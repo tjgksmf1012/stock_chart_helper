@@ -33,5 +33,8 @@ class SignalOutcome(Base):
     composite_score_at_signal: Mapped[float | None] = mapped_column(Float)
     textbook_similarity_at_signal: Mapped[float | None] = mapped_column(Float)
     trade_readiness_at_signal: Mapped[float | None] = mapped_column(Float)
+    evaluation_basis: Mapped[str | None] = mapped_column(String(40))
+    observed_high: Mapped[float | None] = mapped_column(Float)
+    observed_low: Mapped[float | None] = mapped_column(Float)
     recorded_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime)

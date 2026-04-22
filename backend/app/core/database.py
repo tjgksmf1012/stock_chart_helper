@@ -90,3 +90,9 @@ def _run_runtime_migrations(sync_conn) -> None:
     if "intent" not in columns:
         sync_conn.execute(text("ALTER TABLE signal_outcomes ADD COLUMN intent VARCHAR(40)"))
         sync_conn.execute(text("UPDATE signal_outcomes SET intent = 'breakout_wait' WHERE intent IS NULL"))
+    if "evaluation_basis" not in columns:
+        sync_conn.execute(text("ALTER TABLE signal_outcomes ADD COLUMN evaluation_basis VARCHAR(40)"))
+    if "observed_high" not in columns:
+        sync_conn.execute(text("ALTER TABLE signal_outcomes ADD COLUMN observed_high DOUBLE PRECISION"))
+    if "observed_low" not in columns:
+        sync_conn.execute(text("ALTER TABLE signal_outcomes ADD COLUMN observed_low DOUBLE PRECISION"))
