@@ -606,7 +606,7 @@ async def _fetch_universe_codes(limit: int = 100) -> tuple[list[tuple[str, str, 
 
         reference_day, _ = resolve_daily_reference_date()
         today = reference_day.strftime("%Y%m%d")
-        rows: list[tuple[str, str, str, float]] = []
+        rows: list[tuple[str, str, str, float, float]] = []  # code, name, market, mktcap, turnover
 
         for market in ("KOSPI", "KOSDAQ"):
             cap_df = await asyncio.to_thread(krx.get_market_cap_by_ticker, today, market=market)
@@ -615,16 +615,34 @@ async def _fetch_universe_codes(limit: int = 100) -> tuple[list[tuple[str, str, 
             market_cap_col = next((column for column in ("시가총액", "MarketCap", "market_cap") if column in cap_df.columns), None)
             if market_cap_col is None:
                 raise KeyError(f"market cap column missing: {list(cap_df.columns)}")
+            turnover_col = next((col for col in ("거래대금",) if col in cap_df.columns), None)
             for code, row in cap_df.iterrows():
                 market_cap = float(row.get(market_cap_col, 0)) / 1e8
                 if market_cap < settings.min_market_cap_billion:
                     continue
                 code_str = str(code)
-                rows.append((code_str, universe_names.get(code_str, code_str), market, market_cap))
+                turnover = float(row.get(turnover_col, 0)) if turnover_col else 0.0
+                rows.append((code_str, universe_names.get(code_str, code_str), market, market_cap, turnover))
 
         if rows:
+            # Liquidity filter: remove bottom 52% by single-day trading value (거래대금).
+            # Stocks with thin liquidity often disconnect from chart patterns because
+            # the bid-ask spread can't support normal position sizing.
+            # Percentile is computed across the full market-cap-filtered universe so
+            # the threshold reflects a true market-wide ranking.
+            turnovers = [r[4] for r in rows]
+            if any(t > 0 for t in turnovers):
+                sorted_turnovers = sorted(turnovers)
+                threshold = max(1.0, sorted_turnovers[int(len(sorted_turnovers) * 0.52)])
+                before = len(rows)
+                rows = [r for r in rows if r[4] >= threshold]
+                logger.info(
+                    "Liquidity filter applied: %d → %d stocks (bottom 52%% removed, threshold %.0f만원/day)",
+                    before, len(rows), threshold / 10_000,
+                )
+
             rows.sort(key=lambda item: item[3], reverse=True)
-            result = [(code, name, market) for code, name, market, _ in rows[:limit]]
+            result = [(code, name, market) for code, name, market, _, _ in rows[:limit]]
             result, watchlist_included = _merge_priority_rows(result, watchlist_rows, limit=limit)
             logger.info(
                 "Universe loaded: %d stocks via pykrx market-cap (limit=%d, watchlist_included=%d)",
