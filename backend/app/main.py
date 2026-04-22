@@ -55,6 +55,7 @@ def _start_scheduler() -> None:
         from apscheduler.triggers.cron import CronTrigger
         from apscheduler.triggers.interval import IntervalTrigger
 
+        from .api.routes.outcomes import run_scheduled_outcome_evaluation
         from .api.routes.system import run_scheduled_intraday_warmup
         from .services.backtest_engine import run_backtest
         from .services.scanner import run_scan
@@ -80,6 +81,12 @@ def _start_scheduler() -> None:
             CronTrigger(day_of_week="mon-fri", hour=16, minute=0, timezone="Asia/Seoul"),
             kwargs={"timeframe": "1d"},
             id="close_scan",
+            replace_existing=True,
+        )
+        scheduler.add_job(
+            run_scheduled_outcome_evaluation,
+            CronTrigger(day_of_week="mon-fri", hour=16, minute=20, timezone="Asia/Seoul"),
+            id="close_outcome_evaluation",
             replace_existing=True,
         )
         scheduler.add_job(
@@ -133,6 +140,7 @@ def _start_scheduler() -> None:
             "morning_scan",
             "midday_scan",
             "close_scan",
+            "close_outcome_evaluation",
             "weekly_backtest",
             "open_intraday_warmup",
             "midday_intraday_warmup",

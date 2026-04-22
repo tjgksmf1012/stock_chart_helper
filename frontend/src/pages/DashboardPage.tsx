@@ -11,7 +11,7 @@ import { dashboardApi, outcomesApi, symbolsApi, systemApi } from '@/lib/api'
 import { TIMEFRAME_OPTIONS, normalizeDisplayTimeframe, timeframeLabel } from '@/lib/timeframes'
 import { cn, fmtDateTime, fmtPct, fmtPrice, INTRADAY_COLLECTION_MODE_LABELS, PATTERN_NAMES, SETUP_STAGE_LABELS } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
-import type { DashboardItem, DashboardResponse, OutcomeEvaluationResponse, OutcomeRecord, OutcomeStatus, PriceInfo, ScanStatusResponse, Timeframe } from '@/types/api'
+import type { DashboardItem, DashboardResponse, OutcomeEvaluationResponse, OutcomeRecord, OutcomesSummary, OutcomeStatus, PriceInfo, ScanStatusResponse, Timeframe } from '@/types/api'
 
 type IntradayView = 'all' | 'live' | 'stored' | 'public' | 'mixed' | 'cooldown'
 type IntradayPreset = 'all' | 'ready-now' | 'watch' | 'recheck' | 'cooling'
@@ -88,6 +88,11 @@ export default function DashboardPage() {
   const outcomesQ = useQuery({
     queryKey: ['outcomes', 'dashboard', timeframe],
     queryFn: outcomesApi.list,
+    staleTime: 60_000,
+  })
+  const outcomesSummaryQ = useQuery({
+    queryKey: ['outcomes', 'summary', 'dashboard'],
+    queryFn: outcomesApi.summary,
     staleTime: 60_000,
   })
 
@@ -222,11 +227,17 @@ export default function DashboardPage() {
         outcome,
         exit_date: new Date().toISOString().slice(0, 10),
       }),
-    onSuccess: () => outcomesQ.refetch(),
+    onSuccess: () => {
+      outcomesQ.refetch()
+      outcomesSummaryQ.refetch()
+    },
   })
   const evaluateOutcomesMutation = useMutation({
     mutationFn: outcomesApi.evaluatePending,
-    onSuccess: () => outcomesQ.refetch(),
+    onSuccess: () => {
+      outcomesQ.refetch()
+      outcomesSummaryQ.refetch()
+    },
   })
 
   const openCandidate = (item: DashboardItem) => {
@@ -474,6 +485,8 @@ export default function DashboardPage() {
         onUpdate={(id, outcome) => updateOutcomeMutation.mutate({ id, outcome })}
         onEvaluate={() => evaluateOutcomesMutation.mutate()}
       />
+
+      <PersonalPerformanceDesk summary={outcomesSummaryQ.data} isLoading={outcomesSummaryQ.isLoading} />
 
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
         <Card className="space-y-4">
@@ -1029,6 +1042,55 @@ function PendingDecisionDesk({
   )
 }
 
+function PersonalPerformanceDesk({ summary, isLoading }: { summary: OutcomesSummary | undefined; isLoading: boolean }) {
+  const bestPattern = useMemo(() => bestPersonalPattern(summary), [summary])
+  const total = summary?.total_records ?? 0
+  const completed = summary?.completed ?? 0
+  const pending = summary?.pending ?? 0
+  const cancelled = summary?.cancelled ?? 0
+
+  return (
+    <section className="rounded-lg border border-border bg-card/55 p-4">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="text-sm font-semibold">내 성과 요약</div>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            판단을 저장하고 결과를 닫을수록 이 영역이 내 스타일을 보여주는 성과판이 됩니다.
+          </p>
+        </div>
+        {isLoading && <Loader2 size={14} className="animate-spin text-muted-foreground" />}
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <PerformanceMetric label="전체 기록" value={`${total}건`} />
+        <PerformanceMetric label="종료 기록" value={`${completed}건`} />
+        <PerformanceMetric label="내 승률" value={completed > 0 ? fmtPct(summary?.win_rate ?? 0, 0) : '-'} tone="text-emerald-300" />
+        <PerformanceMetric label="대기 / 취소" value={`${pending} / ${cancelled}`} />
+        <PerformanceMetric
+          label="강한 패턴"
+          value={bestPattern ? `${PATTERN_NAMES[bestPattern.pattern] ?? bestPattern.pattern} ${fmtPct(bestPattern.winRate, 0)}` : '-'}
+          tone="text-primary"
+        />
+      </div>
+
+      {total === 0 && !isLoading && (
+        <div className="mt-3 rounded-lg border border-border bg-background/60 p-3 text-xs leading-relaxed text-muted-foreground">
+          아직 저장된 판단이 없습니다. 차트 화면에서 좋은 셋업을 볼 때 `신호 저장`을 눌러두면, 이후 결과가 자동/수동으로 정리되고 여기서 내 성과가 쌓입니다.
+        </div>
+      )}
+    </section>
+  )
+}
+
+function PerformanceMetric({ label, value, tone }: { label: string; value: string; tone?: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-background/60 p-3">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className={cn('mt-1 truncate text-sm font-semibold text-foreground', tone)}>{value}</div>
+    </div>
+  )
+}
+
 function filterDashboard(
   data: DashboardResponse | undefined,
   intradayMode: boolean,
@@ -1240,6 +1302,20 @@ function routineActionText(item: DashboardItem, mode: 'premarket' | 'intraday' |
   if (item.risk_flags.length > 0) return item.risk_flags[0]
   if (item.action_plan === 'recheck') return '무효화 또는 재확인 기준에 닿았는지 장후에 정리합니다.'
   return '오늘 판단을 기록하고 다음 스캔에서 유지 여부를 확인합니다.'
+}
+
+function bestPersonalPattern(summary: OutcomesSummary | undefined) {
+  if (!summary?.by_pattern) return null
+  const entries = Object.entries(summary.by_pattern)
+    .filter(([, stats]) => stats.total > 0)
+    .sort((left, right) => {
+      const [, leftStats] = left
+      const [, rightStats] = right
+      return rightStats.win_rate - leftStats.win_rate || rightStats.total - leftStats.total
+    })
+  const best = entries[0]
+  if (!best) return null
+  return { pattern: best[0], winRate: best[1].win_rate, total: best[1].total }
 }
 
 function dashboardPriorityScore(item: DashboardItem, movement: CandidateMovement, watched: boolean) {

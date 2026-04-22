@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -13,6 +14,7 @@ from ...services.data_fetcher import get_data_fetcher
 from ...services.kis_client import get_kis_client
 
 router = APIRouter(prefix="/outcomes", tags=["outcomes"])
+logger = logging.getLogger(__name__)
 
 _KEY = "outcomes:v1:records"
 _TTL = 60 * 60 * 24 * 365 * 3  # 3 years
@@ -183,6 +185,19 @@ async def evaluate_pending_outcomes() -> OutcomeEvaluationResponse:
         updated=len(items),
         skipped=skipped,
         items=items,
+    )
+
+
+async def run_scheduled_outcome_evaluation() -> None:
+    """Run the same pending evaluation from APScheduler."""
+    result = await evaluate_pending_outcomes()
+    logger.info(
+        "scheduled outcome evaluation finished",
+        extra={
+            "checked": result.checked,
+            "updated": result.updated,
+            "skipped": result.skipped,
+        },
     )
 
 
