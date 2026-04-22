@@ -11,7 +11,7 @@ from ...core.redis import cache_get, cache_set
 from ...services.analysis_service import analyze_symbol_dataframe, build_no_signal_snapshot
 import pandas as pd
 
-from ...services.data_fetcher import get_data_fetcher
+from ...services.data_fetcher import UNIVERSE_CACHE_KEY, get_data_fetcher
 from ...services.reference_case_service import build_reference_cases, schedule_reference_case_warmup
 from ...services.scanner import FALLBACK_CODES, get_scan_results
 from ...services.timeframe_service import DEFAULT_TIMEFRAME, SUPPORTED_TIMEFRAMES, get_timeframe_spec
@@ -28,16 +28,20 @@ def _validate_timeframe(timeframe: str) -> str:
 
 
 async def _get_search_universe(fetcher) -> pd.DataFrame:
-    universe = await fetcher.get_universe()
-    if not universe.empty:
-        return universe
+    # Fast path: universe already cached → return immediately (no pykrx call)
+    cached_raw = await cache_get(UNIVERSE_CACHE_KEY)
+    if cached_raw:
+        return pd.DataFrame(cached_raw)
 
-    # Build from scan cache when KRX is unreachable
+    # Cache miss: return fast fallback (scan results + hardcoded codes) immediately
+    # and kick off background warmup so subsequent searches are fast.
+    asyncio.create_task(fetcher.get_universe())
+
     rows: list[dict] = []
     seen: set[str] = set()
     try:
-        cached = await get_scan_results(DEFAULT_TIMEFRAME)
-        for row in cached:
+        cached_scan = await get_scan_results(DEFAULT_TIMEFRAME)
+        for row in cached_scan:
             code = row.get("code") or row.get("symbol", {}).get("code", "")
             if code and code not in seen:
                 seen.add(code)
