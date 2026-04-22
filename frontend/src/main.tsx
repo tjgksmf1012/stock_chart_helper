@@ -27,6 +27,7 @@ const AiRecommendationsPage = lazyWithRetry(() => import('./pages/AiRecommendati
 const ChartPage = lazyWithRetry(() => import('./pages/ChartPage'), 'ChartPage')
 const PatternLibraryPage = lazyWithRetry(() => import('./pages/PatternLibraryPage'), 'PatternLibraryPage')
 const PatternPerformancePage = lazyWithRetry(() => import('./pages/PatternPerformancePage'), 'PatternPerformancePage')
+const ReferenceChartsPage = lazyWithRetry(() => import('./pages/ReferenceChartsPage'), 'ReferenceChartsPage')
 const ScreenerPage = lazyWithRetry(() => import('./pages/ScreenerPage'), 'ScreenerPage')
 const WatchlistPage = lazyWithRetry(() => import('./pages/WatchlistPage'), 'WatchlistPage')
 const SystemStatusPage = lazyWithRetry(() => import('./pages/SystemStatusPage'), 'SystemStatusPage')
@@ -61,6 +62,7 @@ createRoot(document.getElementById('root')!).render(
                 <Route path="ai" element={<AiRecommendationsPage />} />
                 <Route path="chart" element={<ChartPage />} />
                 <Route path="chart/:symbol" element={<ChartPage />} />
+                <Route path="reference-charts" element={<ReferenceChartsPage />} />
                 <Route path="watchlist" element={<WatchlistPage />} />
                 <Route path="library" element={<PatternLibraryPage />} />
                 <Route path="reports/patterns" element={<PatternPerformancePage />} />

@@ -20,6 +20,20 @@ interface CandleChartProps {
   height?: number
 }
 
+interface CloudPoint {
+  time: Time
+  spanA: number
+  spanB: number
+}
+
+interface IchimokuData {
+  conversion: LineData[]
+  base: LineData[]
+  spanA: LineData[]
+  spanB: LineData[]
+  cloud: CloudPoint[]
+}
+
 const OVERLAY_COLORS = {
   neckline: '#f59e0b',
   target: '#34d399',
@@ -28,6 +42,12 @@ const OVERLAY_COLORS = {
   projectionBear: '#fb7185',
   projectionNeutral: '#94a3b8',
   projectionRisk: '#f59e0b',
+  ichimokuConversion: '#60a5fa',
+  ichimokuBase: '#f59e0b',
+  ichimokuSpanA: '#34d399',
+  ichimokuSpanB: '#f87171',
+  ichimokuBullFill: 'rgba(52, 211, 153, 0.14)',
+  ichimokuBearFill: 'rgba(248, 113, 113, 0.12)',
 }
 
 const CHART_COLORS = {
@@ -38,16 +58,104 @@ const CHART_COLORS = {
 }
 
 export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) {
-  const containerRef = useRef<HTMLDivElement>(null)
+  const chartHostRef = useRef<HTMLDivElement>(null)
+  const cloudCanvasRef = useRef<HTMLCanvasElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const candleRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
   const volumeRef = useRef<ISeriesApi<'Histogram'> | null>(null)
   const overlayRef = useRef<ISeriesApi<'Line'>[]>([])
+  const ichimokuRef = useRef<{
+    conversion: ISeriesApi<'Line'> | null
+    base: ISeriesApi<'Line'> | null
+    spanA: ISeriesApi<'Line'> | null
+    spanB: ISeriesApi<'Line'> | null
+  }>({
+    conversion: null,
+    base: null,
+    spanA: null,
+    spanB: null,
+  })
+  const cloudPointsRef = useRef<CloudPoint[]>([])
+  const redrawFrameRef = useRef<number | null>(null)
+  const resizeObserverRef = useRef<ResizeObserver | null>(null)
+
+  const syncCloudCanvas = () => {
+    const host = chartHostRef.current
+    const canvas = cloudCanvasRef.current
+    if (!host || !canvas) return
+
+    const rect = host.getBoundingClientRect()
+    const width = Math.max(1, Math.round(rect.width))
+    const heightPx = Math.max(1, Math.round(rect.height))
+    const dpr = window.devicePixelRatio || 1
+
+    if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(heightPx * dpr)) {
+      canvas.width = Math.round(width * dpr)
+      canvas.height = Math.round(heightPx * dpr)
+      canvas.style.width = `${width}px`
+      canvas.style.height = `${heightPx}px`
+    }
+  }
+
+  const drawCloud = () => {
+    redrawFrameRef.current = null
+    syncCloudCanvas()
+
+    const canvas = cloudCanvasRef.current
+    const chart = chartRef.current
+    const candleSeries = candleRef.current
+    if (!canvas || !chart || !candleSeries) return
+
+    const context = canvas.getContext('2d')
+    if (!context) return
+
+    const dpr = window.devicePixelRatio || 1
+    context.setTransform(1, 0, 0, 1, 0, 0)
+    context.clearRect(0, 0, canvas.width, canvas.height)
+    context.scale(dpr, dpr)
+
+    const cloudPoints = cloudPointsRef.current
+    if (cloudPoints.length < 2) return
+
+    for (let index = 1; index < cloudPoints.length; index += 1) {
+      const previous = cloudPoints[index - 1]
+      const current = cloudPoints[index]
+      const x1 = chart.timeScale().timeToCoordinate(previous.time)
+      const x2 = chart.timeScale().timeToCoordinate(current.time)
+      const a1 = candleSeries.priceToCoordinate(previous.spanA)
+      const a2 = candleSeries.priceToCoordinate(current.spanA)
+      const b1 = candleSeries.priceToCoordinate(previous.spanB)
+      const b2 = candleSeries.priceToCoordinate(current.spanB)
+
+      if ([x1, x2, a1, a2, b1, b2].some(value => value == null)) {
+        continue
+      }
+
+      context.beginPath()
+      context.moveTo(x1!, a1!)
+      context.lineTo(x2!, a2!)
+      context.lineTo(x2!, b2!)
+      context.lineTo(x1!, b1!)
+      context.closePath()
+      context.fillStyle =
+        (previous.spanA + current.spanA) / 2 >= (previous.spanB + current.spanB) / 2
+          ? OVERLAY_COLORS.ichimokuBullFill
+          : OVERLAY_COLORS.ichimokuBearFill
+      context.fill()
+    }
+  }
+
+  const scheduleCloudDraw = () => {
+    if (redrawFrameRef.current != null) {
+      window.cancelAnimationFrame(redrawFrameRef.current)
+    }
+    redrawFrameRef.current = window.requestAnimationFrame(drawCloud)
+  }
 
   useEffect(() => {
-    if (!containerRef.current) return
+    if (!chartHostRef.current) return
 
-    const chart = createChart(containerRef.current, {
+    const chart = createChart(chartHostRef.current, {
       autoSize: true,
       layout: {
         background: { type: ColorType.Solid, color: CHART_COLORS.background },
@@ -70,22 +178,76 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
       wickDownColor: '#ef5350',
     })
 
-    const volSeries = chart.addHistogramSeries({
+    const volumeSeries = chart.addHistogramSeries({
       color: '#385263',
       priceFormat: { type: 'volume' },
       priceScaleId: 'vol',
+    })
+
+    const conversionSeries = chart.addLineSeries({
+      color: OVERLAY_COLORS.ichimokuConversion,
+      lineWidth: 1,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
+    })
+
+    const baseSeries = chart.addLineSeries({
+      color: OVERLAY_COLORS.ichimokuBase,
+      lineWidth: 1,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
+    })
+
+    const spanASeries = chart.addLineSeries({
+      color: OVERLAY_COLORS.ichimokuSpanA,
+      lineWidth: 1,
+      lineStyle: LineStyle.Solid,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
+    })
+
+    const spanBSeries = chart.addLineSeries({
+      color: OVERLAY_COLORS.ichimokuSpanB,
+      lineWidth: 1,
+      lineStyle: LineStyle.Solid,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
     })
 
     chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.85, bottom: 0 } })
 
     chartRef.current = chart
     candleRef.current = candleSeries
-    volumeRef.current = volSeries
+    volumeRef.current = volumeSeries
+    ichimokuRef.current = {
+      conversion: conversionSeries,
+      base: baseSeries,
+      spanA: spanASeries,
+      spanB: spanBSeries,
+    }
+
+    const handleRangeChange = () => scheduleCloudDraw()
+    chart.timeScale().subscribeVisibleLogicalRangeChange(handleRangeChange)
+
+    resizeObserverRef.current = new ResizeObserver(() => scheduleCloudDraw())
+    resizeObserverRef.current.observe(chartHostRef.current)
+
+    scheduleCloudDraw()
 
     return () => {
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleRangeChange)
+      resizeObserverRef.current?.disconnect()
+      resizeObserverRef.current = null
+      if (redrawFrameRef.current != null) {
+        window.cancelAnimationFrame(redrawFrameRef.current)
+      }
       chart.remove()
     }
-  }, [height])
+  }, [])
 
   useEffect(() => {
     if (!candleRef.current || !volumeRef.current || bars.length === 0) return
@@ -113,9 +275,18 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
       color: bar.close >= bar.open ? 'rgba(38,166,154,0.4)' : 'rgba(239,83,80,0.4)',
     }))
 
+    const ichimoku = buildIchimoku(sortedBars)
+
     candleRef.current.setData(candleData)
     volumeRef.current.setData(volumeData)
+    ichimokuRef.current.conversion?.setData(ichimoku.conversion)
+    ichimokuRef.current.base?.setData(ichimoku.base)
+    ichimokuRef.current.spanA?.setData(ichimoku.spanA)
+    ichimokuRef.current.spanB?.setData(ichimoku.spanB)
+    cloudPointsRef.current = ichimoku.cloud
+
     chartRef.current?.timeScale().fitContent()
+    scheduleCloudDraw()
   }, [bars])
 
   useEffect(() => {
@@ -133,7 +304,10 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
     overlayRef.current = []
     candleSeries.setMarkers([])
 
-    if (!analysis) return
+    if (!analysis) {
+      scheduleCloudDraw()
+      return
+    }
 
     const sortedBars = [...bars].sort((left, right) => compareBarDates(left.date, right.date))
     const firstTime = toChartTime(sortedBars[0].date)
@@ -142,7 +316,10 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
     const lastClose = lastBar.close
     const best = getChartPattern(analysis)
     const projectionScenarios = getProjectionScenarios(analysis, best)
-    if (!best && projectionScenarios.length === 0) return
+    if (!best && projectionScenarios.length === 0) {
+      scheduleCloudDraw()
+      return
+    }
 
     const addHorizontalLine = (price: number, color: string, style: LineStyle) => {
       const series = chart.addLineSeries({
@@ -185,6 +362,7 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
 
       candleSeries.setMarkers(markers)
     }
+
     projectionScenarios.slice(0, 3).forEach((scenario, index) => {
       const projectionSeries = chart.addLineSeries({
         color: scenarioColor(scenario),
@@ -207,6 +385,7 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
     })
 
     chart.timeScale().fitContent()
+    scheduleCloudDraw()
   }, [analysis, bars])
 
   const chartPattern = analysis ? getChartPattern(analysis) : null
@@ -214,21 +393,35 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
 
   return (
     <div className="space-y-1">
-      <div ref={containerRef} className="chart-container w-full rounded-lg" style={{ height: height - 80 }} />
-      {analysis && (chartPattern || projectionScenarios.length > 0 || analysis.no_signal_flag) && (
-        <div className="space-y-2 px-2 text-xs text-muted-foreground">
-          <div className="flex flex-wrap items-center gap-4">
+      <div className="relative w-full overflow-hidden rounded-lg" style={{ height: height - 80 }}>
+        <div ref={chartHostRef} className="chart-container absolute inset-0" />
+        <canvas ref={cloudCanvasRef} className="pointer-events-none absolute inset-0 z-10" />
+      </div>
+      <div className="space-y-2 px-2 text-xs text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-4">
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-px w-3 bg-blue-400" /> 전환선
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-px w-3 bg-amber-400" /> 기준선
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-2.5 w-3 rounded-sm bg-emerald-400/25 ring-1 ring-emerald-400/30" /> 상승 구름
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-2.5 w-3 rounded-sm bg-red-400/20 ring-1 ring-red-400/30" /> 하락 구름
+          </span>
           {chartPattern && (
             <>
-          <span className="flex items-center gap-1">
-            <span className="inline-block h-px w-3 bg-amber-400" style={{ borderTop: '1px dashed' }} /> 목선
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="inline-block h-px w-3 bg-green-400" style={{ borderTop: '1px dotted' }} /> 목표가
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="inline-block h-px w-3 bg-red-400" style={{ borderTop: '1px dotted' }} /> 무효화 기준
-          </span>
+              <span className="flex items-center gap-1">
+                <span className="inline-block h-px w-3 bg-amber-400" style={{ borderTop: '1px dashed' }} /> 목선
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="inline-block h-px w-3 bg-green-400" style={{ borderTop: '1px dotted' }} /> 목표가
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="inline-block h-px w-3 bg-red-400" style={{ borderTop: '1px dotted' }} /> 무효화
+              </span>
             </>
           )}
           {projectionScenarios.length > 0 && (
@@ -251,17 +444,85 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
               )}
             </>
           )}
-          </div>
-          {projectionScenarios.length > 0 && (
-            <p className="leading-relaxed text-muted-foreground/90">
-              예상선은 확정 예측이 아니라 최근 변동성과 현재 준비도를 반영한 조건부 경로입니다. 주 시나리오만 보지 말고 횡보/리스크
-              대안도 함께 확인하세요.
-            </p>
-          )}
         </div>
-      )}
+        <p className="leading-relaxed text-muted-foreground/90">
+          일목 구름은 가격이 바로 돌파를 못할 때 어디에서 쉬고 다시 힘을 받는지 보기 좋게 얹어둔 보조선입니다. 구름 상단을 딛는지, 기준선 아래로 다시 밀리는지를 패턴 목선과 함께 보시면 됩니다.
+        </p>
+        {projectionScenarios.length > 0 && (
+          <p className="leading-relaxed text-muted-foreground/90">
+            예상 경로는 확정 예언이 아니라 최근 변동성과 현재 준비도를 반영한 조건부 경로입니다. 주 시나리오만 보지 말고 횡보와 리스크 경로도 같이 확인해 주세요.
+          </p>
+        )}
+      </div>
     </div>
   )
+}
+
+function buildIchimoku(sortedBars: OHLCVBar[]): IchimokuData {
+  const conversion: LineData[] = []
+  const base: LineData[] = []
+  const spanA: LineData[] = []
+  const spanB: LineData[] = []
+  const cloud: CloudPoint[] = []
+  const stepMs = inferStepMs(sortedBars)
+
+  for (let index = 0; index < sortedBars.length; index += 1) {
+    const conversionValue = midpoint(sortedBars, index, 9)
+    const baseValue = midpoint(sortedBars, index, 26)
+
+    if (conversionValue != null) {
+      conversion.push({ time: toChartTime(sortedBars[index].date), value: conversionValue })
+    }
+
+    if (baseValue != null) {
+      base.push({ time: toChartTime(sortedBars[index].date), value: baseValue })
+    }
+
+    if (conversionValue != null && baseValue != null) {
+      const leadingTime = shiftChartTime(sortedBars[index].date, stepMs * 26)
+      const leadingA = (conversionValue + baseValue) / 2
+      spanA.push({ time: leadingTime, value: leadingA })
+
+      const leadingB = midpoint(sortedBars, index, 52)
+      if (leadingB != null) {
+        spanB.push({ time: leadingTime, value: leadingB })
+        cloud.push({ time: leadingTime, spanA: leadingA, spanB: leadingB })
+      }
+    }
+  }
+
+  return { conversion, base, spanA, spanB, cloud }
+}
+
+function midpoint(bars: OHLCVBar[], endIndex: number, period: number) {
+  if (endIndex < period - 1) return null
+
+  let highest = Number.NEGATIVE_INFINITY
+  let lowest = Number.POSITIVE_INFINITY
+  for (let index = endIndex - period + 1; index <= endIndex; index += 1) {
+    highest = Math.max(highest, bars[index].high)
+    lowest = Math.min(lowest, bars[index].low)
+  }
+
+  return (highest + lowest) / 2
+}
+
+function inferStepMs(bars: OHLCVBar[]) {
+  if (bars.length < 2) return 24 * 60 * 60 * 1000
+
+  const diffs: number[] = []
+  for (let index = 1; index < bars.length; index += 1) {
+    const diff = toTimestamp(bars[index].date) - toTimestamp(bars[index - 1].date)
+    if (diff > 0) diffs.push(diff)
+  }
+
+  if (diffs.length === 0) return 24 * 60 * 60 * 1000
+  diffs.sort((left, right) => left - right)
+  return diffs[Math.floor(diffs.length / 2)]
+}
+
+function shiftChartTime(value: string, diffMs: number): Time {
+  return Math.floor((toTimestamp(value) + diffMs) / 1000) as Time
 }
 
 function getChartPattern(analysis: AnalysisResult): PatternInfo | null {
@@ -310,10 +571,7 @@ function scenarioColor(scenario: ProjectionScenario): string {
 }
 
 function toChartTime(value: string): Time {
-  if (value.includes('T')) {
-    return Math.floor(new Date(value).getTime() / 1000) as Time
-  }
-  return value as Time
+  return Math.floor(toTimestamp(value) / 1000) as Time
 }
 
 function markerLabel(type: string): string {

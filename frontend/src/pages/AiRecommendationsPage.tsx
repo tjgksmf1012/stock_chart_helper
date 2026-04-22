@@ -5,7 +5,7 @@ import { AlertTriangle, BarChart2, Loader2, RefreshCw, ShieldCheck, Sparkles, Ta
 
 import { Card } from '@/components/ui/Card'
 import { aiApi } from '@/lib/api'
-import { DEFAULT_TIMEFRAME, TIMEFRAME_OPTIONS } from '@/lib/timeframes'
+import { TIMEFRAME_OPTIONS, normalizeDisplayTimeframe } from '@/lib/timeframes'
 import { cn, fmtDateTime, fmtPct, PATTERN_NAMES } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
 import type { AiRecommendationItem } from '@/types/api'
@@ -20,7 +20,7 @@ const STANCE_STYLES: Record<AiRecommendationItem['stance'], string> = {
 export default function AiRecommendationsPage() {
   const nav = useNavigate()
   const { selectedTimeframe, setTimeframe } = useAppStore()
-  const timeframe = selectedTimeframe ?? DEFAULT_TIMEFRAME
+  const timeframe = normalizeDisplayTimeframe(selectedTimeframe)
 
   const recommendationsQ = useQuery({
     queryKey: ['ai-recommendations', timeframe],

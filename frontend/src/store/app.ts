@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
 import type { Timeframe, WatchlistItem } from '@/types/api'
-import { DEFAULT_TIMEFRAME } from '@/lib/timeframes'
+import { DEFAULT_TIMEFRAME, normalizeDisplayTimeframe } from '@/lib/timeframes'
 import { watchlistApi } from '@/lib/api'
 
 interface AppStore {
@@ -26,7 +26,7 @@ export const useAppStore = create<AppStore>()(
       watchlist: [],
 
       setSymbol: code => set({ selectedSymbol: code }),
-      setTimeframe: tf => set({ selectedTimeframe: tf }),
+      setTimeframe: tf => set({ selectedTimeframe: normalizeDisplayTimeframe(tf) }),
 
       addToWatchlist: item => {
         const { watchlist } = get()
@@ -67,6 +67,14 @@ export const useAppStore = create<AppStore>()(
     {
       name: 'sch-app-store',
       partialize: state => ({ watchlist: state.watchlist, selectedTimeframe: state.selectedTimeframe }),
+      merge: (persistedState, currentState) => {
+        const typedState = (persistedState as Partial<AppStore> | undefined) ?? {}
+        return {
+          ...currentState,
+          ...typedState,
+          selectedTimeframe: normalizeDisplayTimeframe(typedState.selectedTimeframe ?? currentState.selectedTimeframe),
+        }
+      },
     },
   ),
 )

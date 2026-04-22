@@ -19,7 +19,7 @@ import type { DashboardItem, ScreenerRequest, Timeframe } from '@/types/api'
 
 type IntradayView = 'all' | 'live' | 'stored' | 'public' | 'mixed' | 'cooldown'
 type IntradayPreset = 'all' | 'ready-now' | 'watch' | 'recheck' | 'cooling'
-type QuickPresetId = 'daily-ready' | 'daily-fresh' | 'intraday-ready' | 'intraday-watch' | 'reentry-focus'
+type QuickPresetId = 'daily-ready' | 'daily-fresh' | 'weekly-alignment' | 'reentry-focus'
 
 const DEFAULT_SCREENER_REQUEST: ScreenerRequest = {
   min_textbook_similarity: 0.25,
@@ -177,37 +177,21 @@ const QUICK_PRESETS: Array<{
     }),
   },
   {
-    id: 'intraday-ready',
-    label: '분봉 즉시형',
-    description: 'live 적격이 강하고 지금 바로 볼 만한 분봉 후보를 우선합니다.',
+    id: 'weekly-alignment',
+    label: '주봉 정렬형',
+    description: '일봉보다 큰 흐름이 같은 방향으로 받쳐주는 후보를 먼저 모읍니다.',
     build: () => ({
       ...DEFAULT_SCREENER_REQUEST,
-      timeframes: ['60m', '30m', '15m'],
+      timeframes: ['1wk', '1d'],
       states: ['armed', 'confirmed'],
       min_trade_readiness_score: 0.45,
-      min_entry_window_score: 0.4,
+      min_entry_window_score: 0.3,
       min_data_quality: 0.45,
       min_historical_edge_score: 0.2,
       max_p_down: 0.4,
-      sort_by: 'entry_window_score',
+      min_confluence_score: 0.15,
+      sort_by: 'confluence_score',
       limit: 24,
-    }),
-  },
-  {
-    id: 'intraday-watch',
-    label: '분봉 관찰형',
-    description: '형성 중이지만 흐름이 살아 있어 지켜볼 가치가 있는 분봉 후보를 고릅니다.',
-    build: () => ({
-      ...DEFAULT_SCREENER_REQUEST,
-      timeframes: ['60m', '30m', '15m'],
-      states: ['forming', 'armed'],
-      min_trade_readiness_score: 0.2,
-      min_entry_window_score: 0.1,
-      min_freshness_score: 0.25,
-      min_data_quality: 0.35,
-      max_p_down: 0.6,
-      sort_by: 'active_setup_score',
-      limit: 30,
     }),
   },
   {
@@ -216,7 +200,7 @@ const QUICK_PRESETS: Array<{
     description: '박스 재축적, 눌림 후 재상승, 실패 돌파 복구 같은 재진입 시나리오만 따로 봅니다.',
     build: () => ({
       ...DEFAULT_SCREENER_REQUEST,
-      timeframes: ['1d', '60m'],
+      timeframes: ['1d', '1wk'],
       reentry_cases: ['box_reaccumulation', 'pullback_relaunch', 'failed_breakout_recovery'],
       min_reentry_score: 0.35,
       min_reentry_volume_recovery_score: 0.25,
@@ -403,7 +387,7 @@ export default function ScreenerPage() {
     if (!preset) return
     setReq(preset.build())
     setIntradayView('all')
-    setIntradayPreset(presetId === 'intraday-ready' ? 'ready-now' : presetId === 'intraday-watch' ? 'watch' : 'all')
+    setIntradayPreset('all')
     setActiveQuickPreset(presetId)
     setSubmitted(true)
   }

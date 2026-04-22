@@ -6,7 +6,7 @@ import { DashboardSection } from '@/components/dashboard/DashboardSection'
 import { Card } from '@/components/ui/Card'
 import { QueryError } from '@/components/ui/QueryError'
 import { dashboardApi } from '@/lib/api'
-import { DEFAULT_TIMEFRAME, TIMEFRAME_OPTIONS, timeframeLabel } from '@/lib/timeframes'
+import { TIMEFRAME_OPTIONS, normalizeDisplayTimeframe, timeframeLabel } from '@/lib/timeframes'
 import { cn, fmtDateTime, fmtPct, INTRADAY_COLLECTION_MODE_LABELS, SETUP_STAGE_LABELS } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
 import type { DashboardItem, DashboardResponse, ScanStatusResponse, Timeframe } from '@/types/api'
@@ -33,7 +33,7 @@ const INTRADAY_PRESET_OPTIONS: Array<[IntradayPreset, string]> = [
 
 export default function DashboardPage() {
   const { selectedTimeframe, setTimeframe } = useAppStore()
-  const timeframe = selectedTimeframe ?? DEFAULT_TIMEFRAME
+  const timeframe = normalizeDisplayTimeframe(selectedTimeframe)
   const intradayMode = ['60m', '30m', '15m', '1m'].includes(timeframe)
   const [isTriggeringScan, setIsTriggeringScan] = useState(false)
   const [intradayView, setIntradayView] = useState<IntradayView>('all')

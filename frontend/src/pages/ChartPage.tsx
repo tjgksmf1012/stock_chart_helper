@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQueries, useQuery } from '@tanstack/react-query'
 import {
-  AlertTriangle,
   ArrowLeft,
+  ExternalLink,
   Bookmark,
+  BookOpen,
   Database,
   Layers3,
   Loader2,
@@ -22,10 +23,10 @@ import { Card } from '@/components/ui/Card'
 import { QueryError } from '@/components/ui/QueryError'
 import { outcomesApi, symbolsApi } from '@/lib/api'
 import {
-  DEFAULT_TIMEFRAME,
   getChartLookbackDays,
   getContextTimeframes,
   TIMEFRAME_OPTIONS,
+  normalizeDisplayTimeframe,
   timeframeLabel,
 } from '@/lib/timeframes'
 import { cn, fmtDateTime, fmtNumber, fmtPct, fmtPrice } from '@/lib/utils'
@@ -36,7 +37,7 @@ export default function ChartPage() {
   const { symbol } = useParams<{ symbol: string }>()
   const nav = useNavigate()
   const { selectedTimeframe, setTimeframe, addToWatchlist, removeFromWatchlist, isWatched } = useAppStore()
-  const timeframe = selectedTimeframe ?? DEFAULT_TIMEFRAME
+  const timeframe = normalizeDisplayTimeframe(selectedTimeframe)
   const watched = symbol ? isWatched(symbol) : false
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<Array<{ code: string; name: string; market: string }>>([])
@@ -48,7 +49,7 @@ export default function ChartPage() {
     queryFn: () => symbolsApi.getBars(symbol!, timeframe, getChartLookbackDays(timeframe)),
     enabled: !!symbol,
     staleTime: 60_000,
-    retry: ['1m', '15m', '30m', '60m'].includes(timeframe) ? 0 : 1,
+    retry: 1,
   })
 
   const analysisQ = useQuery({
@@ -108,6 +109,7 @@ export default function ChartPage() {
   }, [symbol])
 
   const analysis = analysisQ.data
+  const referenceCases = buildReferenceCases(analysis, symbol, timeframe)
   const contextAnalyses = contextQueries.flatMap(query => (query.data ? [query.data] : []))
   const contextSummary = summarizeContext(analysis, contextAnalyses)
   const hasBars = (barsQ.data?.length ?? 0) > 0
@@ -137,6 +139,16 @@ export default function ChartPage() {
     },
     onSuccess: result => setSavedId(result.id),
   })
+
+  const openReferenceWindow = (focusCase?: string) => {
+    const params = new URLSearchParams()
+    if (symbol) params.set('symbol', symbol)
+    params.set('timeframe', timeframe)
+    if (analysis?.patterns[0]?.pattern_type) params.set('pattern', analysis.patterns[0].pattern_type)
+    if (focusCase) params.set('case', focusCase)
+
+    window.open(`/reference-charts?${params.toString()}`, '_blank', 'noopener,noreferrer')
+  }
 
   return (
     <div className="space-y-5">
@@ -369,6 +381,58 @@ export default function ChartPage() {
         </section>
       )}
 
+      {analysis && (
+        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <Card className="space-y-4">
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <BookOpen size={15} className="text-primary" />
+              과거 레퍼런스 비교
+            </div>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              지금 보고 있는 차트와 닮은 과거 시나리오를 새 창으로 띄워 비교할 수 있게 묶어뒀습니다. 패턴 자체만 보는 용도보다, 어디서 쉬고 어디를 넘지 못했는지까지 함께 보는 데 초점을 맞췄습니다.
+            </p>
+            <div className="grid gap-3 md:grid-cols-3">
+              {referenceCases.map(referenceCase => (
+                <button
+                  key={referenceCase.key}
+                  onClick={() => openReferenceWindow(referenceCase.key)}
+                  className="rounded-lg border border-border bg-background/55 p-4 text-left transition-colors hover:border-primary/35 hover:bg-background/70"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-foreground">{referenceCase.title}</div>
+                      <div className="mt-1 text-xs text-primary">{referenceCase.tag}</div>
+                    </div>
+                    <ExternalLink size={14} className="mt-0.5 text-muted-foreground" />
+                  </div>
+                  <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{referenceCase.summary}</p>
+                  <div className="mt-3 text-[11px] text-muted-foreground/80">{referenceCase.focus}</div>
+                </button>
+              ))}
+            </div>
+          </Card>
+
+          <Card className="space-y-3">
+            <div className="text-sm font-semibold">읽는 포인트</div>
+            <SummaryCallout
+              title="구름대 체크"
+              body="윗꼬리만 치는지, 구름 상단을 딛고 눌림을 만드는지부터 먼저 확인합니다."
+              tone="sky"
+            />
+            <SummaryCallout
+              title="전고점 계단"
+              body="직전 고점만 넘겼는지, 그 이전 고점까지 같이 정리했는지 구간별로 나눠 봅니다."
+              tone="primary"
+            />
+            <SummaryCallout
+              title="비교 창 활용"
+              body="새 창은 현재 차트 옆에 띄워두고 neckline, cloud, 눌림 위치를 나란히 비교하는 용도로 쓰면 좋습니다."
+              tone="amber"
+            />
+          </Card>
+        </section>
+      )}
+
       {isPrimaryLoading && (
         <Card className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
           <Loader2 size={16} className="animate-spin" />
@@ -391,9 +455,18 @@ export default function ChartPage() {
       {symbol && (analysis || hasBars || isChartLoading || isChartError) && (
         <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
           <Card className="space-y-3 overflow-hidden">
-            <div className="border-b border-border/70 px-4 py-3">
-              <div className="text-sm font-semibold">차트</div>
-              <p className="mt-1 text-xs text-muted-foreground">첫 화면에서는 차트와 핵심 판단만 먼저 보고, 자세한 해석은 오른쪽 탭에서 확인합니다.</p>
+            <div className="flex items-start justify-between gap-3 border-b border-border/70 px-4 py-3">
+              <div>
+                <div className="text-sm font-semibold">차트</div>
+                <p className="mt-1 text-xs text-muted-foreground">첫 화면에서는 차트와 일목 구름대를 먼저 보고, 자세한 해석은 오른쪽 탭에서 확인합니다.</p>
+              </div>
+              <button
+                onClick={() => openReferenceWindow()}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background/60 px-3 py-2 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <ExternalLink size={13} />
+                레퍼런스 창
+              </button>
             </div>
             <div className="p-4 pt-0">
               {hasBars && barsQ.data ? (
@@ -609,4 +682,38 @@ function actionPlanVariant(plan: string): 'bullish' | 'warning' | 'muted' | 'neu
   if (plan === 'watch') return 'neutral'
   if (plan === 'recheck') return 'warning'
   return 'muted'
+}
+
+function buildReferenceCases(
+  analysis: AnalysisResult | undefined,
+  symbol: string | undefined,
+  timeframe: Timeframe,
+) {
+  const patternType = analysis?.patterns[0]?.pattern_type ?? 'double_bottom'
+  const symbolLabel = analysis?.symbol.name ?? symbol ?? '현재 종목'
+  const timeframeText = timeframeLabel(timeframe)
+
+  return [
+    {
+      key: 'double-bottom-breakout',
+      title: '쌍바닥 돌파 상승',
+      tag: '정석 breakout',
+      summary: `${symbolLabel}의 ${timeframeText} 구조와 비교하기 좋은 기본 레퍼런스입니다. neckline 돌파 뒤 눌림이 짧고, 이전 공급대까지 한 번에 정리하는 흐름을 보여줍니다.`,
+      focus: '체크 포인트: neckline 안착 -> 이전 고점 정리 -> 거래량 유지',
+    },
+    {
+      key: 'double-bottom-partial-breakout',
+      title: '직전 고점만 넘긴 케이스',
+      tag: 'partial breakout',
+      summary: `${symbolLabel}처럼 위쪽 매물대가 남아 있을 때 참고하기 좋은 유형입니다. 바로 앞 고점은 넘지만 전전 고점에서 다시 쉬거나 되밀리는 흐름을 비교할 수 있습니다.`,
+      focus: '체크 포인트: 1차 전고점 돌파 성공, 2차 전고점 저항 확인',
+    },
+    {
+      key: patternType === 'double_bottom' ? 'double-bottom-cloud-support' : 'cloud-support-relaunch',
+      title: '구름대 상단 지지 후 재출발',
+      tag: 'Ichimoku pullback',
+      summary: '228,500원처럼 바로 못 넘는 가격대가 있을 때, 구름 상단까지 쉬었다가 지지받고 다시 가는 상황을 따로 비교할 수 있게 준비했습니다.',
+      focus: '체크 포인트: 구름 상단 터치 -> 지지 확인 -> 재가속',
+    },
+  ]
 }
