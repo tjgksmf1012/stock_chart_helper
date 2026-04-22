@@ -509,6 +509,57 @@ export interface RuntimeStatusResponse {
   data_notes: string[]
 }
 
+export interface ScanHistoryRunSummary {
+  id: number
+  timeframe: Timeframe | string
+  timeframe_label: string
+  source: string | null
+  status: string
+  candidate_source: string | null
+  reference_date: string | null
+  reference_reason: string | null
+  universe_size: number | null
+  candidate_count: number | null
+  result_count: number
+  duration_ms: number | null
+  started_at: string | null
+  finished_at: string | null
+  last_error: string | null
+}
+
+export interface ScanQualitySummary {
+  avg_close_return_pct: number
+  avg_max_runup_pct: number
+  avg_max_drawdown_pct: number
+  positive_close_rate: number
+  hit_3pct_rate: number
+  hit_5pct_rate: number
+}
+
+export interface ScanQualityBucket extends ScanQualitySummary {
+  bucket: string
+  sample_count: number
+}
+
+export interface ScanQualityActionPlan extends ScanQualitySummary {
+  action_plan: string
+  sample_count: number
+}
+
+export interface ScanQualityReportResponse {
+  generated_at: string
+  timeframe: Timeframe | string
+  lookback_days: number
+  forward_bars: number
+  run_count: number
+  evaluated_count: number
+  latest_reference_date: string | null
+  summary: ScanQualitySummary
+  score_buckets: ScanQualityBucket[]
+  action_plans: ScanQualityActionPlan[]
+  notes: string[]
+}
+
 export interface KisPrimeStatus {
   status: string
   is_running: boolean

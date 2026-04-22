@@ -1,15 +1,36 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { useMemo, useState } from 'react'
-import { Activity, Clock3, Database, DatabaseZap, KeyRound, RefreshCw, ServerCog, ShieldAlert, ShieldCheck } from 'lucide-react'
+import {
+  Activity,
+  BarChart3,
+  Clock3,
+  Database,
+  DatabaseZap,
+  History,
+  KeyRound,
+  RefreshCw,
+  ServerCog,
+  ShieldAlert,
+  ShieldCheck,
+} from 'lucide-react'
 
 import { Badge } from '@/components/ui/Badge'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { QueryError } from '@/components/ui/QueryError'
 import { StatRow } from '@/components/ui/StatRow'
 import { systemApi } from '@/lib/api'
-import { fmtDateTime } from '@/lib/utils'
-import type { IntradayWarmupJobStatus, KisPrimeStatus, RuntimeStatusResponse, Timeframe } from '@/types/api'
+import { fmtDateTime, fmtPct } from '@/lib/utils'
+import type {
+  IntradayWarmupJobStatus,
+  KisPrimeStatus,
+  RuntimeStatusResponse,
+  ScanHistoryRunSummary,
+  ScanQualityActionPlan,
+  ScanQualityBucket,
+  ScanQualityReportResponse,
+  Timeframe,
+} from '@/types/api'
 
 const INTRADAY_TIMEFRAMES = ['15m', '30m', '60m']
 
@@ -33,9 +54,25 @@ export default function SystemStatusPage() {
     refetchInterval: query => (query.state.data?.is_running ? 2_000 : 15_000),
   })
 
+  const scanHistoryQ = useQuery({
+    queryKey: ['system', 'scan-history', sourceTimeframe],
+    queryFn: () => systemApi.scanHistory({ timeframe: sourceTimeframe, limit: 8 }),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  })
+
+  const scanQualityQ = useQuery({
+    queryKey: ['system', 'scan-quality-report', sourceTimeframe],
+    queryFn: () => systemApi.scanQualityReport({ timeframe: sourceTimeframe, lookback_days: 180, forward_bars: 20 }),
+    staleTime: 60_000,
+    refetchInterval: 120_000,
+  })
+
   const refreshAll = () => {
     statusQ.refetch()
     warmupStatusQ.refetch()
+    scanHistoryQ.refetch()
+    scanQualityQ.refetch()
   }
 
   const manualWarmup = useMutation({
@@ -62,6 +99,8 @@ export default function SystemStatusPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['system', 'status'] })
       queryClient.invalidateQueries({ queryKey: ['system', 'intraday-warmup-status'] })
+      queryClient.invalidateQueries({ queryKey: ['system', 'scan-history'] })
+      queryClient.invalidateQueries({ queryKey: ['system', 'scan-quality-report'] })
     },
   })
 
@@ -74,6 +113,8 @@ export default function SystemStatusPage() {
 
   const data = statusQ.data
   const warmupStatus = warmupStatusQ.data
+  const history = scanHistoryQ.data ?? []
+  const quality = scanQualityQ.data
   const isWarming = manualWarmup.isPending || candidateWarmup.isPending || Boolean(warmupStatus?.is_running)
   const readiness = useMemo(() => (data ? buildReadiness(data) : null), [data])
   const parsedSymbols = parseSymbols(manualSymbols)
@@ -85,8 +126,7 @@ export default function SystemStatusPage() {
         <div>
           <h1 className="text-xl font-bold">운영 상태</h1>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            KIS 연결, 토큰 준비, 캐시 방식, 분봉 저장소, 자동 예열 상태를 한 번에 보고 지금 이 앱이 실전용으로 얼마나 준비됐는지
-            빠르게 판단합니다.
+            KIS 연결, 토큰 준비 여부, 캐시 상태, 분봉 저장소, 자동 예열 상태와 최근 스캔 품질을 한 화면에서 확인합니다.
           </p>
         </div>
         <button
@@ -185,11 +225,11 @@ export default function SystemStatusPage() {
                   disabled={kisPrime.isPending}
                   className="rounded-md border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs text-primary hover:bg-primary/15 disabled:opacity-60"
                 >
-                  {kisPrime.isPending ? 'KIS 프라이밍 중' : '토큰 발급 + 첫 분봉 확인'}
+                  {kisPrime.isPending ? 'KIS 프라임 중' : '토큰 발급 + 첫 분봉 확인'}
                 </button>
                 {lastPrime?.finished_at && (
                   <Badge variant={lastPrime.ok ? 'bullish' : 'warning'}>
-                    최근 프라이밍 {fmtDateTime(lastPrime.finished_at)}
+                    최근 프라임 {fmtDateTime(lastPrime.finished_at)}
                   </Badge>
                 )}
               </div>
@@ -210,7 +250,7 @@ export default function SystemStatusPage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <ServerCog size={15} className="text-primary" />
-                  캐시와 데이터 운영
+                  캐시와 데이터 저장
                 </CardTitle>
               </CardHeader>
               <div className="space-y-2">
@@ -249,8 +289,8 @@ export default function SystemStatusPage() {
               분봉 캐시 예열
             </div>
             <p className="text-xs leading-relaxed text-muted-foreground">
-              대시보드 상위 후보나 직접 입력한 종목의 15분, 30분, 60분 데이터를 미리 채웁니다. 기본은 저장소와 공개 데이터를 우선
-              써서 호출을 아끼고, 최신성이 꼭 중요할 때만 KIS 포함 예열을 돌리는 흐름이 안전합니다.
+              대시보드 상위 후보나 직접 입력한 종목의 15분, 30분, 60분 데이터를 미리 채워 둡니다. 기본은 예산 우선 모드이고,
+              정말 필요한 경우에만 KIS를 포함해 예열하도록 나눠 두었습니다.
             </p>
 
             <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
@@ -279,7 +319,7 @@ export default function SystemStatusPage() {
                     disabled={isWarming}
                     className="rounded-md border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground disabled:opacity-60"
                   >
-                    저장 우선 예열
+                    저장소 우선 예열
                   </button>
                   <button
                     onClick={() => candidateWarmup.mutate(true)}
@@ -305,7 +345,7 @@ export default function SystemStatusPage() {
                     disabled={isWarming || parsedSymbols.length === 0}
                     className="rounded-md border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground disabled:opacity-60"
                   >
-                    저장 우선 예열
+                    저장소 우선 예열
                   </button>
                   <button
                     onClick={() => manualWarmup.mutate(true)}
@@ -321,10 +361,54 @@ export default function SystemStatusPage() {
             {warmupStatus && warmupStatus.status !== 'idle' && <WarmupJobStatusCard status={warmupStatus} />}
             {(manualWarmup.isError || candidateWarmup.isError) && (
               <p className="text-xs text-red-300">
-                분봉 예열 중 오류가 발생했습니다. 종목 코드가 맞는지 확인하고, 필요하면 백엔드 로그도 함께 확인해 주세요.
+                분봉 예열 중 오류가 발생했습니다. 종목 코드가 맞는지 확인하고, 필요하면 백엔드 로그도 같이 확인해 주세요.
               </p>
             )}
           </Card>
+
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <Card className="space-y-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  <History size={15} className="text-primary" />
+                  최근 스캔 이력
+                </div>
+                <Badge variant="muted">{sourceTimeframe}</Badge>
+              </div>
+              {scanHistoryQ.isError ? (
+                <QueryError compact message="스캔 이력을 불러오지 못했습니다." onRetry={() => scanHistoryQ.refetch()} />
+              ) : history.length === 0 ? (
+                <div className="rounded-lg border border-border bg-background/60 p-3 text-xs text-muted-foreground">
+                  아직 저장된 스캔 이력이 없습니다. 다음 스캔부터 자동으로 쌓입니다.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {history.map(run => (
+                    <ScanHistoryCard key={run.id} run={run} />
+                  ))}
+                </div>
+              )}
+            </Card>
+
+            <Card className="space-y-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  <BarChart3 size={15} className="text-primary" />
+                  신호 품질 검증
+                </div>
+                <Badge variant="muted">최근 180일 / 20봉 기준</Badge>
+              </div>
+              {scanQualityQ.isError ? (
+                <QueryError compact message="신호 품질 리포트를 불러오지 못했습니다." onRetry={() => scanQualityQ.refetch()} />
+              ) : quality ? (
+                <ScanQualitySection report={quality} />
+              ) : (
+                <div className="rounded-lg border border-border bg-background/60 p-3 text-xs text-muted-foreground">
+                  리포트를 계산하는 중입니다.
+                </div>
+              )}
+            </Card>
+          </div>
 
           {data.scheduled_warmups.length > 0 && (
             <Card className="space-y-3">
@@ -333,8 +417,7 @@ export default function SystemStatusPage() {
                 자동 예열 스케줄
               </div>
               <p className="text-xs leading-relaxed text-muted-foreground">
-                평소에는 상위 후보군을 다시 뽑아 분봉 캐시를 자동으로 채웁니다. 기본은 저장 우선 방식이고, 필요할 때만 수동으로 KIS
-                포함 예열을 추가로 돌리면 됩니다.
+                장중에 상위 후보군을 다시 골라 분봉 캐시를 자동으로 채웁니다. 기본은 저장소 우선 방식이고, 필요한 경우만 KIS 포함 예열을 사용합니다.
               </p>
               <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
                 {data.scheduled_warmups.map(plan => (
@@ -344,7 +427,7 @@ export default function SystemStatusPage() {
                         <div className="text-xs font-semibold text-foreground">{plan.label}</div>
                         <div className="mt-1 text-[11px] text-muted-foreground">{plan.schedule}</div>
                       </div>
-                      <Badge variant={plan.allow_live ? 'bullish' : 'muted'}>{plan.allow_live ? 'KIS 포함' : '저장 우선'}</Badge>
+                      <Badge variant={plan.allow_live ? 'bullish' : 'muted'}>{plan.allow_live ? 'KIS 포함' : '저장소 우선'}</Badge>
                     </div>
                     <div className="mt-3 space-y-1 text-xs text-muted-foreground">
                       <div>
@@ -391,6 +474,109 @@ export default function SystemStatusPage() {
   )
 }
 
+function ScanHistoryCard({ run }: { run: ScanHistoryRunSummary }) {
+  const statusTone = run.status === 'ready' ? 'bullish' : run.status === 'error' ? 'warning' : 'neutral'
+
+  return (
+    <div className="rounded-lg border border-border bg-background/60 p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant={statusTone}>{scanRunStatusLabel(run.status)}</Badge>
+        <Badge variant="muted">{run.timeframe_label}</Badge>
+        {run.candidate_source && <Badge variant="muted">{run.candidate_source}</Badge>}
+        {run.reference_date && <Badge variant="muted">기준일 {run.reference_date}</Badge>}
+      </div>
+      <div className="mt-3 grid grid-cols-1 gap-1.5 text-xs text-muted-foreground md:grid-cols-2">
+        <div>완료 시각: {fmtDateTime(run.finished_at)}</div>
+        <div>소요 시간: {formatDurationMs(run.duration_ms)}</div>
+        <div>유니버스: {run.universe_size ?? '-'}개</div>
+        <div>후보 수: {run.candidate_count ?? '-'}개</div>
+        <div>저장 결과: {run.result_count}개</div>
+        <div>기준 사유: {scanReferenceReasonLabel(run.reference_reason)}</div>
+      </div>
+      {run.last_error && <p className="mt-2 text-xs text-red-300">{run.last_error}</p>}
+    </div>
+  )
+}
+
+function ScanQualitySection({ report }: { report: ScanQualityReportResponse }) {
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3">
+        <QualityMetric label="평가 신호 수" value={`${report.evaluated_count}건`} />
+        <QualityMetric label="스캔 런 수" value={`${report.run_count}회`} />
+        <QualityMetric label="평균 종가 수익" value={fmtPct(report.summary.avg_close_return_pct, 1)} />
+        <QualityMetric label="양봉 마감 비율" value={fmtPct(report.summary.positive_close_rate, 0)} />
+        <QualityMetric label="최대 상승 평균" value={fmtPct(report.summary.avg_max_runup_pct, 1)} />
+        <QualityMetric label="최대 낙폭 평균" value={fmtPct(report.summary.avg_max_drawdown_pct, 1)} />
+      </div>
+
+      <div className="rounded-lg border border-border bg-background/60 p-3">
+        <div className="mb-2 text-xs font-semibold">점수 구간별 결과</div>
+        <div className="space-y-2">
+          {report.score_buckets.map(bucket => (
+            <BucketRow key={bucket.bucket} bucket={bucket} />
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-border bg-background/60 p-3">
+        <div className="mb-2 text-xs font-semibold">행동 계획별 결과</div>
+        <div className="space-y-2">
+          {report.action_plans.map(plan => (
+            <ActionPlanRow key={plan.action_plan} plan={plan} />
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-border bg-background/60 p-3 text-xs text-muted-foreground">
+        <div className="mb-2 text-xs font-semibold text-foreground">해석 메모</div>
+        <div className="space-y-1.5">
+          {report.notes.map((note, index) => (
+            <p key={`${note}-${index}`}>{index + 1}. {note}</p>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function BucketRow({ bucket }: { bucket: ScanQualityBucket }) {
+  return (
+    <div className="grid grid-cols-[100px_1fr] items-center gap-3 text-xs">
+      <div className="font-medium text-foreground">{bucket.bucket}</div>
+      <div className="grid grid-cols-2 gap-2 text-muted-foreground md:grid-cols-4">
+        <span>표본 {bucket.sample_count}건</span>
+        <span>양봉 마감 {fmtPct(bucket.positive_close_rate, 0)}</span>
+        <span>+3% 도달 {fmtPct(bucket.hit_3pct_rate, 0)}</span>
+        <span>평균 종가 {fmtPct(bucket.avg_close_return_pct, 1)}</span>
+      </div>
+    </div>
+  )
+}
+
+function ActionPlanRow({ plan }: { plan: ScanQualityActionPlan }) {
+  return (
+    <div className="grid grid-cols-[120px_1fr] items-center gap-3 text-xs">
+      <div className="font-medium text-foreground">{plan.action_plan}</div>
+      <div className="grid grid-cols-2 gap-2 text-muted-foreground md:grid-cols-4">
+        <span>표본 {plan.sample_count}건</span>
+        <span>양봉 마감 {fmtPct(plan.positive_close_rate, 0)}</span>
+        <span>+5% 도달 {fmtPct(plan.hit_5pct_rate, 0)}</span>
+        <span>평균 최대상승 {fmtPct(plan.avg_max_runup_pct, 1)}</span>
+      </div>
+    </div>
+  )
+}
+
+function QualityMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-background/60 p-3">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="mt-1 text-sm font-semibold text-foreground">{value}</div>
+    </div>
+  )
+}
+
 function WarmupJobStatusCard({ status }: { status: IntradayWarmupJobStatus }) {
   const progress = status.total_requests > 0 ? status.completed_count / status.total_requests : 0
 
@@ -403,7 +589,7 @@ function WarmupJobStatusCard({ status }: { status: IntradayWarmupJobStatus }) {
         <Badge variant={status.failure_count > 0 ? 'warning' : 'bullish'}>
           성공 {status.success_count}/{status.total_requests}
         </Badge>
-        <Badge variant={status.allow_live ? 'bullish' : 'muted'}>{status.allow_live ? 'KIS 포함' : '저장 우선'}</Badge>
+        <Badge variant={status.allow_live ? 'bullish' : 'muted'}>{status.allow_live ? 'KIS 포함' : '저장소 우선'}</Badge>
         <span className="text-muted-foreground">
           {status.symbols.length}종목 / {status.timeframes.join(', ')}
         </span>
@@ -448,7 +634,7 @@ function KisPrimeCard({ status }: { status: KisPrimeStatus }) {
     <div className="mt-4 rounded-lg border border-border bg-background/60 p-3">
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <Badge variant={status.ok ? 'bullish' : status.is_running ? 'neutral' : 'warning'}>
-          {status.is_running ? '프라이밍 진행 중' : status.ok ? '프라이밍 완료' : '프라이밍 점검 필요'}
+          {status.is_running ? '프라임 진행 중' : status.ok ? '프라임 완료' : '프라임 재시도 필요'}
         </Badge>
         {status.symbol && <Badge variant="muted">{status.symbol} {status.timeframe ?? '1m'}</Badge>}
         {status.store_rows_added > 0 && <Badge variant="bullish">분봉 {status.store_rows_added}개 추가</Badge>}
@@ -473,6 +659,28 @@ function warmupJobLabel(status: string): string {
   if (status === 'ready') return '완료'
   if (status === 'error') return '오류'
   return '대기'
+}
+
+function scanRunStatusLabel(status: string): string {
+  if (status === 'ready') return '완료'
+  if (status === 'running') return '진행 중'
+  if (status === 'error') return '오류'
+  return status
+}
+
+function scanReferenceReasonLabel(reason: string | null | undefined): string {
+  switch (reason) {
+    case 'same_day_after_close':
+      return '장 마감 후 당일 일봉'
+    case 'previous_session_before_close':
+      return '장중에는 직전 거래일 기준'
+    case 'weekend_previous_session':
+      return '주말/휴장일 직전 거래일 기준'
+    case 'intraday_live_session':
+      return '당일 분봉 세션 기준'
+    default:
+      return '-'
+  }
 }
 
 function StatusSummary({
@@ -515,6 +723,16 @@ function formatDuration(seconds: number | null): string {
   return `${hours}시간 ${minutes}분`
 }
 
+function formatDurationMs(milliseconds: number | null): string {
+  if (!milliseconds || milliseconds <= 0) return '-'
+  if (milliseconds < 1000) return `${milliseconds}ms`
+  const seconds = milliseconds / 1000
+  if (seconds < 60) return `${seconds.toFixed(1)}초`
+  const minutes = Math.floor(seconds / 60)
+  const remain = Math.round(seconds % 60)
+  return `${minutes}분 ${remain}초`
+}
+
 function buildReadiness(data: RuntimeStatusResponse) {
   const items = [
     {
@@ -522,36 +740,36 @@ function buildReadiness(data: RuntimeStatusResponse) {
       ok: data.kis.configured,
       detail: data.kis.configured
         ? '실시간 분봉을 위해 필요한 KIS 자격 증명이 연결되어 있습니다.'
-        : 'KIS가 비어 있어 분봉은 공개 데이터나 저장소 fallback 의존도가 높습니다.',
+        : 'KIS가 비어 있어 분봉과 토큰 관련 기능은 제한적으로만 동작합니다.',
     },
     {
       label: '토큰 준비',
       ok: data.kis.token_cached,
       detail: data.kis.token_cached
         ? `현재 토큰이 캐시되어 있고 만료 예정 시각은 ${data.kis.token_expires_at ? fmtDateTime(data.kis.token_expires_at) : '확인 불가'}입니다.`
-        : '실시간 요청 전에 토큰 발급이 먼저 필요합니다.',
+        : '첫 실시간 요청 전에 토큰 발급이 한 번 더 필요합니다.',
     },
     {
       label: '분봉 저장소',
       ok: data.intraday_store.symbol_count > 0 && data.intraday_store.total_rows > 0,
       detail:
         data.intraday_store.symbol_count > 0
-          ? `${data.intraday_store.symbol_count}종목, ${data.intraday_store.total_rows.toLocaleString('ko-KR')}개 바가 저장되어 있어 첫 응답이 한결 안정적입니다.`
-          : '아직 저장된 분봉 데이터가 거의 없어 초기 진입 시 지연이 생길 수 있습니다.',
+          ? `${data.intraday_store.symbol_count}종목, ${data.intraday_store.total_rows.toLocaleString('ko-KR')}개 바가 저장되어 있어 첫 응답 체감이 더 안정적입니다.`
+          : '아직 저장된 분봉 데이터가 거의 없어 첫 진입 시 체감이 느릴 수 있습니다.',
     },
     {
       label: '캐시 안정성',
       ok: data.cache.redis_available,
       detail: data.cache.redis_available
-        ? 'Redis가 연결되어 있어 재시작 이후에도 캐시 안정성이 높습니다.'
-        : '지금은 메모리 fallback 중심이라 재시작이나 재배포 후 캐시가 다시 비워질 수 있습니다.',
+        ? 'Redis가 연결되어 있어 서버 재시작 이후에도 캐시 안정성이 좋습니다.'
+        : '지금은 메모리 fallback 상태라 재시작 시 캐시가 다시 비워질 수 있습니다.',
     },
     {
       label: '자동 예열',
       ok: data.scheduler_enabled && data.scheduled_warmups.length > 0,
       detail: data.scheduler_enabled
         ? `${data.scheduled_warmups.length}개의 자동 예열 스케줄이 켜져 있어 분봉 후보군을 꾸준히 채웁니다.`
-        : '자동 예열이 꺼져 있어 장중 후보군이 천천히 채워질 수 있습니다.',
+        : '자동 예열이 꺼져 있어 수동으로 캐시를 채워야 합니다.',
     },
   ]
 
@@ -564,16 +782,16 @@ function buildReadiness(data: RuntimeStatusResponse) {
     level,
     title:
       level === 'ready'
-        ? '실전 이용 준비가 대부분 완료되어 있습니다'
+        ? '실전 사용 준비가 대부분 완료되어 있습니다'
         : level === 'usable'
-          ? '이용 가능하지만 아직 보완할 부분이 있습니다'
-          : '테스트용에 가깝고 실전 이용 전 보완이 필요합니다',
+          ? '사용 가능하지만 아직 보완할 부분이 남아 있습니다'
+          : '테스트용에 가깝고 운영 보완이 더 필요합니다',
     summary:
       level === 'ready'
-        ? 'KIS, 토큰, 저장 분봉, 자동 예열이 대부분 준비되어 있어 분봉 응답과 안정성이 이전보다 훨씬 낫습니다.'
+        ? 'KIS, 토큰, 저장 분봉, 자동 예열과 캐시 안정성이 대부분 갖춰져 있어 실제 사용 흐름이 한결 부드럽습니다.'
         : level === 'usable'
-          ? '기본 사용은 가능하지만 저장 분봉이나 Redis 같은 운영 기반이 부족하면 장중 체감 품질이 흔들릴 수 있습니다.'
-          : '실행은 가능하지만 분봉 정확도와 안정성을 기대하기에는 아직 부족합니다. 운영 기반부터 먼저 채우는 편이 좋습니다.',
+          ? '기본 사용은 가능하지만 저장 분봉, Redis, 토큰 같은 운영 기반이 부족하면 체감이 흔들릴 수 있습니다.'
+          : '실행은 가능하지만 응답 속도와 안정성을 기대하려면 운영 기반을 더 채우는 편이 좋습니다.',
     bannerClass:
       level === 'ready'
         ? 'border-emerald-500/20 bg-emerald-500/5'

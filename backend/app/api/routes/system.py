@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from ..schemas import (
     CacheRuntimeStatus,
@@ -19,12 +19,15 @@ from ..schemas import (
     KisPrimeStatus,
     KisRuntimeStatus,
     RuntimeStatusResponse,
+    ScanHistoryRunSummary,
+    ScanQualityReportResponse,
 )
 from ...core.config import get_settings
 from ...core.redis import cache_backend_status
 from ...services.data_fetcher import get_data_fetcher
 from ...services.intraday_store import get_intraday_store
 from ...services.kis_client import get_kis_client
+from ...services.scan_history_service import build_scan_quality_report, list_recent_scan_runs, prune_scan_history
 from ...services.scanner import get_scan_results
 from ...services.timeframe_service import get_timeframe_spec, is_intraday_timeframe
 
@@ -195,6 +198,29 @@ async def get_runtime_status() -> RuntimeStatusResponse:
             "운영 중에는 모든 분봉 후보를 실시간 호출하지 않고, 우선순위가 높은 후보부터 예열하는 방식으로 비용과 호출 수를 관리합니다.",
         ],
     )
+
+
+@router.get("/scan-history", response_model=list[ScanHistoryRunSummary])
+async def get_scan_history(
+    timeframe: str | None = Query(default=None),
+    limit: int = Query(default=10, ge=1, le=30),
+) -> list[ScanHistoryRunSummary]:
+    rows = await list_recent_scan_runs(limit=limit, timeframe=timeframe)
+    return [ScanHistoryRunSummary(**row) for row in rows]
+
+
+@router.get("/scan-quality-report", response_model=ScanQualityReportResponse)
+async def get_scan_quality_report(
+    timeframe: str = Query(default="1d"),
+    lookback_days: int = Query(default=180, ge=30, le=730),
+    forward_bars: int = Query(default=20, ge=5, le=60),
+) -> ScanQualityReportResponse:
+    payload = await build_scan_quality_report(
+        timeframe=timeframe,
+        lookback_days=lookback_days,
+        forward_bars=forward_bars,
+    )
+    return ScanQualityReportResponse(**payload)
 
 
 async def _resolve_kis_prime_symbol(symbol: str | None) -> str:

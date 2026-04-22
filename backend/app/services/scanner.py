@@ -17,7 +17,8 @@ from ..core.config import get_settings
 from ..core.redis import cache_delete, cache_get, cache_set
 from .analysis_service import analyze_symbol_dataframe, build_no_signal_snapshot
 from .data_fetcher import get_data_fetcher
-from .timeframe_service import DEFAULT_TIMEFRAME, timeframe_label
+from .scan_history_service import persist_scan_history
+from .timeframe_service import DEFAULT_TIMEFRAME, is_intraday_timeframe, resolve_daily_reference_date, timeframe_label
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -553,7 +554,8 @@ async def _fetch_universe_codes(limit: int = 100) -> tuple[list[tuple[str, str, 
     try:
         from pykrx import stock as krx
 
-        today = datetime.today().strftime("%Y%m%d")
+        reference_day, _ = resolve_daily_reference_date()
+        today = reference_day.strftime("%Y%m%d")
         rows: list[tuple[str, str, str, float]] = []
 
         for market in ("KOSPI", "KOSDAQ"):
@@ -732,7 +734,17 @@ async def _analyze_one(
             is_in_universe=True,
         )
         analysis = await analyze_symbol_dataframe(symbol, timeframe, df)
-        result = _analysis_to_scan_row(analysis, code=code, name=name, market=market, timeframe=timeframe)
+        signal_price = float(df["close"].iloc[-1]) if "close" in df.columns and not df.empty else None
+        reference_day, _ = resolve_daily_reference_date()
+        result = _analysis_to_scan_row(
+            analysis,
+            code=code,
+            name=name,
+            market=market,
+            timeframe=timeframe,
+            signal_price=signal_price,
+            reference_date=reference_day.isoformat() if not is_intraday_timeframe(timeframe) else _kst_now().date().isoformat(),
+        )
 
         if include_confluence:
             result.update(
@@ -860,6 +872,8 @@ def _analysis_to_scan_row(
     name: str,
     market: str,
     timeframe: str,
+    signal_price: float | None = None,
+    reference_date: str | None = None,
 ) -> dict[str, Any]:
     result: dict[str, Any] = {
         "code": code,
@@ -867,8 +881,13 @@ def _analysis_to_scan_row(
         "market": market,
         "timeframe": timeframe,
         "timeframe_label": analysis.timeframe_label,
+        "signal_price": signal_price,
+        "reference_date": reference_date,
         "pattern_type": analysis.patterns[0].pattern_type if analysis.patterns else None,
         "state": analysis.patterns[0].state if analysis.patterns else None,
+        "trigger_level": analysis.patterns[0].neckline if analysis.patterns else None,
+        "invalidation_level": analysis.patterns[0].invalidation_level if analysis.patterns else None,
+        "target_level": analysis.patterns[0].target_level if analysis.patterns else None,
         "setup_stage": "neutral",
         "p_up": analysis.p_up,
         "p_down": analysis.p_down,
@@ -1096,6 +1115,31 @@ async def run_scan(
             )
             await cache_set(cache_key, results, ttl=settings.dashboard_cache_ttl * 20)
             finished_at = datetime.utcnow()
+            reference_day, reference_reason = resolve_daily_reference_date()
+            if timeframe in {"1m", "15m", "30m", "60m"}:
+                reference_date = _kst_now().date().isoformat()
+                reference_reason = "intraday_live_session"
+            else:
+                reference_date = reference_day.isoformat()
+            try:
+                await persist_scan_history(
+                    timeframe=timeframe,
+                    timeframe_label=timeframe_label(timeframe),
+                    source=source,
+                    status="ready",
+                    candidate_source=_candidate_source,
+                    reference_date=reference_date,
+                    reference_reason=reference_reason,
+                    universe_size=_universe_size,
+                    candidate_count=_candidate_count,
+                    started_at=started_at,
+                    finished_at=finished_at,
+                    duration_ms=int((finished_at - started_at).total_seconds() * 1000),
+                    last_error=None,
+                    results=results,
+                )
+            except Exception as history_exc:
+                logger.warning("Scan history persistence failed for %s: %s", timeframe, history_exc)
             _update_scan_status(
                 timeframe,
                 status="ready",

@@ -19,7 +19,7 @@ from ..core.config import get_settings
 from ..core.redis import cache_get, cache_set
 from .intraday_store import get_intraday_store
 from .kis_client import KISClient, get_kis_client
-from .timeframe_service import get_timeframe_spec, is_intraday_timeframe
+from .timeframe_service import get_timeframe_spec, is_intraday_timeframe, resolve_daily_reference_date
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -178,7 +178,7 @@ class KRXDataFetcher:
                 allow_live_intraday=allow_live_intraday,
             )
 
-        end = date.today()
+        end, _ = resolve_daily_reference_date()
         base_daily = await self.get_stock_ohlcv(code, end - timedelta(days=period_days), end)
         if base_daily.empty or timeframe == "1d":
             return base_daily
@@ -534,7 +534,8 @@ class KRXDataFetcher:
             try:
                 from pykrx import stock as krx
 
-                today = datetime.today().strftime("%Y%m%d")
+                reference_day, _ = resolve_daily_reference_date()
+                today = reference_day.strftime("%Y%m%d")
 
                 def build_rows() -> list[dict[str, str]]:
                     rows: list[dict[str, str]] = []
@@ -601,7 +602,8 @@ class KRXDataFetcher:
         try:
             from pykrx import stock as krx
 
-            today = datetime.today().strftime("%Y%m%d")
+            reference_day, _ = resolve_daily_reference_date()
+            today = reference_day.strftime("%Y%m%d")
             df = await asyncio.to_thread(krx.get_market_cap, today, today, code)
             if df.empty:
                 await cache_set(cache_key, {"market_cap": None}, ttl=900)

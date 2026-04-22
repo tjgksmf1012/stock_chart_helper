@@ -424,6 +424,69 @@ class RuntimeStatusResponse(BaseModel):
     data_notes: list[str] = Field(default_factory=list)
 
 
+class ScanHistoryRunSummary(BaseModel):
+    id: int
+    timeframe: str
+    timeframe_label: str
+    source: str | None = None
+    status: str
+    candidate_source: str | None = None
+    reference_date: str | None = None
+    reference_reason: str | None = None
+    universe_size: int | None = None
+    candidate_count: int | None = None
+    result_count: int = 0
+    duration_ms: int | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
+    last_error: str | None = None
+
+
+class ScanQualitySummary(BaseModel):
+    avg_close_return_pct: float = 0.0
+    avg_max_runup_pct: float = 0.0
+    avg_max_drawdown_pct: float = 0.0
+    positive_close_rate: float = 0.0
+    hit_3pct_rate: float = 0.0
+    hit_5pct_rate: float = 0.0
+
+
+class ScanQualityBucket(BaseModel):
+    bucket: str
+    sample_count: int = 0
+    avg_close_return_pct: float = 0.0
+    avg_max_runup_pct: float = 0.0
+    avg_max_drawdown_pct: float = 0.0
+    positive_close_rate: float = 0.0
+    hit_3pct_rate: float = 0.0
+    hit_5pct_rate: float = 0.0
+
+
+class ScanQualityActionPlan(BaseModel):
+    action_plan: str
+    sample_count: int = 0
+    avg_close_return_pct: float = 0.0
+    avg_max_runup_pct: float = 0.0
+    avg_max_drawdown_pct: float = 0.0
+    positive_close_rate: float = 0.0
+    hit_3pct_rate: float = 0.0
+    hit_5pct_rate: float = 0.0
+
+
+class ScanQualityReportResponse(BaseModel):
+    generated_at: str
+    timeframe: str
+    lookback_days: int
+    forward_bars: int
+    run_count: int = 0
+    evaluated_count: int = 0
+    latest_reference_date: str | None = None
+    summary: ScanQualitySummary = Field(default_factory=ScanQualitySummary)
+    score_buckets: list[ScanQualityBucket] = Field(default_factory=list)
+    action_plans: list[ScanQualityActionPlan] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
 class KisPrimeStatus(BaseModel):
     status: str = "idle"
     is_running: bool = False

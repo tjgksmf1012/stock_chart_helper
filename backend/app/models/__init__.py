@@ -5,6 +5,7 @@ from .prediction import Prediction, RecommendationSnapshot
 from .backtest import BacktestRun
 from .regime import RegimeLabel
 from .outcome import SignalOutcome
+from .scan_history import ScanCandidateSnapshot, ScanRun
 
 __all__ = [
     "Symbol",
@@ -14,4 +15,6 @@ __all__ = [
     "BacktestRun",
     "RegimeLabel",
     "SignalOutcome",
+    "ScanRun",
+    "ScanCandidateSnapshot",
 ]

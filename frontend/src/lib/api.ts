@@ -2,7 +2,7 @@ import axios, { type InternalAxiosRequestConfig } from 'axios'
 import type {
   SymbolInfo, OHLCVBar, AnalysisResult, PriceInfo,
   AiRecommendationItem, AiRecommendationResponse, DashboardOverviewResponse, DashboardResponse, PatternLibraryEntry, ScreenerRequest, DashboardItem, ReferenceCaseResponse, ScanStatusResponse, Timeframe,
-  IntradayCandidateWarmupRequest, IntradayWarmupJobStatus, IntradayWarmupRequest, IntradayWarmupResponse, KisPrimeStatus, PatternStatsResponse, RuntimeStatusResponse,
+  IntradayCandidateWarmupRequest, IntradayWarmupJobStatus, IntradayWarmupRequest, IntradayWarmupResponse, KisPrimeStatus, PatternStatsResponse, RuntimeStatusResponse, ScanHistoryRunSummary, ScanQualityReportResponse,
   WatchlistItem, OutcomeEvaluationResponse, OutcomeRecord, OutcomesSummary, OutcomeStatus,
 } from '@/types/api'
 
@@ -319,6 +319,10 @@ export const outcomesApi = {
 
 export const systemApi = {
   status: () => api.get<RuntimeStatusResponse>('/system/status').then(r => r.data),
+  scanHistory: (params?: { timeframe?: Timeframe | string; limit?: number }) =>
+    api.get<ScanHistoryRunSummary[]>('/system/scan-history', { params }).then(r => r.data),
+  scanQualityReport: (params?: { timeframe?: Timeframe | string; lookback_days?: number; forward_bars?: number }) =>
+    api.get<ScanQualityReportResponse>('/system/scan-quality-report', { params }).then(r => r.data),
   kisPrimeStatus: () => api.get<KisPrimeStatus>('/system/kis/prime-status').then(r => r.data),
   primeKis: (params?: { symbol?: string; timeframe?: string }) =>
     api.post<KisPrimeStatus>('/system/kis/prime', null, { params }).then(r => r.data),

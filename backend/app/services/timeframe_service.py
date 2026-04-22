@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 
 @dataclass(frozen=True)
@@ -52,6 +54,8 @@ TIMEFRAME_SPECS: dict[str, TimeframeSpec] = {
 SUPPORTED_TIMEFRAMES = tuple(TIMEFRAME_SPECS.keys())
 DEFAULT_TIMEFRAME = "1d"
 DASHBOARD_TIMEFRAMES = ("1mo", "1wk", "1d", "60m", "30m", "15m", "1m")
+KST = ZoneInfo("Asia/Seoul")
+DAILY_MARKET_CLOSE_BUFFER = time(16, 5)
 
 PATTERN_THRESHOLD_PROFILES: dict[str | None, PatternThresholdProfile] = {
     None: PatternThresholdProfile(0.62, -0.05, 0.02, 0.025, 0.55, 0.10, 0.08, 0.30, 6.0),
@@ -97,3 +101,34 @@ def pattern_threshold_profile(timeframe: str | None) -> PatternThresholdProfile:
 
 def probability_threshold_profile(timeframe: str | None) -> ProbabilityThresholdProfile:
     return PROBABILITY_THRESHOLD_PROFILES.get(timeframe, PROBABILITY_THRESHOLD_PROFILES[None])
+
+
+def kst_now(now: datetime | None = None) -> datetime:
+    current = now or datetime.now(tz=KST)
+    if current.tzinfo is None:
+        return current.replace(tzinfo=KST)
+    return current.astimezone(KST)
+
+
+def current_krx_session_day(day: date) -> date:
+    current = day
+    while current.weekday() >= 5:
+        current -= timedelta(days=1)
+    return current
+
+
+def previous_krx_session_day(day: date) -> date:
+    current = day - timedelta(days=1)
+    while current.weekday() >= 5:
+        current -= timedelta(days=1)
+    return current
+
+
+def resolve_daily_reference_date(now: datetime | None = None) -> tuple[date, str]:
+    current = kst_now(now)
+    session_day = current_krx_session_day(current.date())
+    if current.weekday() >= 5:
+        return session_day, "weekend_previous_session"
+    if current.timetz().replace(tzinfo=None) >= DAILY_MARKET_CLOSE_BUFFER:
+        return session_day, "same_day_after_close"
+    return previous_krx_session_day(session_day), "previous_session_before_close"
