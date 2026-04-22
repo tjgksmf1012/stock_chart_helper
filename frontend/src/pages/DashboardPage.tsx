@@ -1277,6 +1277,7 @@ function PendingDecisionDesk({
 
 function PersonalPerformanceDesk({ summary, isLoading }: { summary: OutcomesSummary | undefined; isLoading: boolean }) {
   const bestPattern = useMemo(() => bestPersonalPattern(summary), [summary])
+  const styleProfile = summary?.style_profile
   const total = summary?.total_records ?? 0
   const completed = summary?.completed ?? 0
   const pending = summary?.pending ?? 0
@@ -1293,6 +1294,20 @@ function PersonalPerformanceDesk({ summary, isLoading }: { summary: OutcomesSumm
         </div>
         {isLoading && <Loader2 size={14} className="animate-spin text-muted-foreground" />}
       </div>
+
+      {styleProfile && (
+        <div className="mt-3 rounded-lg border border-violet-400/20 bg-violet-400/5 p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-md border border-violet-400/30 bg-violet-400/10 px-2 py-1 text-[11px] font-semibold text-violet-100">
+              {styleProfile.style_label}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              신뢰도 {fmtPct(styleProfile.confidence ?? 0, 0)} / 종료 기록 {styleProfile.sample_count ?? 0}건
+            </span>
+          </div>
+          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{styleProfile.summary}</p>
+        </div>
+      )}
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <PerformanceMetric label="전체 기록" value={`${total}건`} />
