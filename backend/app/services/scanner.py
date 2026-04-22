@@ -1038,6 +1038,11 @@ async def run_scan(
 
         try:
             universe, candidate_source, live_codes, live_phase = await _select_candidates(limit, timeframe)
+            # Capture locally so concurrent cold-start calls cannot overwrite these
+            # values in _scan_status before we reach the final status update.
+            _universe_size = len(universe)
+            _candidate_count = len(universe)
+            _candidate_source = candidate_source
             _update_scan_status(
                 timeframe,
                 universe_size=len(universe),
@@ -1091,18 +1096,20 @@ async def run_scan(
             )
             await cache_set(cache_key, results, ttl=settings.dashboard_cache_ttl * 20)
             finished_at = datetime.utcnow()
-            snap = _status_snapshot(timeframe)
             _update_scan_status(
                 timeframe,
                 status="ready",
                 is_running=False,
+                source=source,
                 cached_result_count=len(results),
                 last_finished_at=finished_at.isoformat(),
                 duration_ms=int((finished_at - started_at).total_seconds() * 1000),
-                # explicitly preserve so these survive a subsequent get_scan_results call
-                candidate_source=snap.get("candidate_source"),
-                universe_size=snap.get("universe_size"),
-                candidate_count=snap.get("candidate_count"),
+                # Use locally captured values — concurrent cold-start calls can
+                # overwrite _scan_status during the long scan loop, so we cannot
+                # rely on _status_snapshot to recover the correct universe metadata.
+                candidate_source=_candidate_source,
+                universe_size=_universe_size,
+                candidate_count=_candidate_count,
             )
             return results
         except Exception as exc:
