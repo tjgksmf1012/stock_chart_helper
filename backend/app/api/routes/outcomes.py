@@ -373,9 +373,10 @@ def _fallback_close_decision(
 @router.post("", status_code=201)
 async def record_outcome(record: OutcomeRecord) -> dict:
     """Create a new outcome record in PostgreSQL."""
+    payload = record.model_dump(exclude={"intent"})
     async with AsyncSessionLocal() as session:
         entry = SignalOutcome(
-            **record.model_dump(),
+            **payload,
             intent=_normalize_intent(record.intent),
             recorded_at=datetime.now(),
         )
