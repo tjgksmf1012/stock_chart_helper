@@ -21,7 +21,7 @@ class ScanRun(Base):
     source: Mapped[str | None] = mapped_column(String(40))
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="ready")
     candidate_source: Mapped[str | None] = mapped_column(String(40))
-    reference_date: Mapped[str | None] = mapped_column(String(20), index=True)
+    reference_date: Mapped[str | None] = mapped_column(String(20))
     reference_reason: Mapped[str | None] = mapped_column(String(40))
     universe_size: Mapped[int | None] = mapped_column(Integer)
     candidate_count: Mapped[int | None] = mapped_column(Integer)
@@ -56,7 +56,7 @@ class ScanCandidateSnapshot(Base):
     market: Mapped[str] = mapped_column(String(20), nullable=False)
     timeframe: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
     timeframe_label: Mapped[str] = mapped_column(String(20), nullable=False)
-    signal_date: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    signal_date: Mapped[str] = mapped_column(String(20), nullable=False)
     signal_price: Mapped[float | None] = mapped_column(Float)
 
     pattern_type: Mapped[str | None] = mapped_column(String(50), index=True)
