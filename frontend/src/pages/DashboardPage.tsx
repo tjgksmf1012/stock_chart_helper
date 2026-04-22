@@ -1277,6 +1277,7 @@ function PendingDecisionDesk({
 
 function PersonalPerformanceDesk({ summary, isLoading }: { summary: OutcomesSummary | undefined; isLoading: boolean }) {
   const bestPattern = useMemo(() => bestPersonalPattern(summary), [summary])
+  const topIntents = useMemo(() => bestPersonalIntents(summary), [summary])
   const styleProfile = summary?.style_profile
   const total = summary?.total_records ?? 0
   const completed = summary?.completed ?? 0
@@ -1320,6 +1321,19 @@ function PersonalPerformanceDesk({ summary, isLoading }: { summary: OutcomesSumm
           tone="text-primary"
         />
       </div>
+
+      {topIntents.length > 0 && (
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {topIntents.map(intent => (
+            <PerformanceMetric
+              key={intent.key}
+              label={`${intent.label} 성과`}
+              value={`${intent.total}건 / ${fmtPct(intent.winRate, 0)}`}
+              tone="text-violet-200"
+            />
+          ))}
+        </div>
+      )}
 
       {total === 0 && !isLoading && (
         <div className="mt-3 rounded-lg border border-border bg-background/60 p-3 text-xs leading-relaxed text-muted-foreground">
@@ -1582,6 +1596,32 @@ function bestPersonalPattern(summary: OutcomesSummary | undefined) {
   const best = entries[0]
   if (!best) return null
   return { pattern: best[0], winRate: best[1].win_rate, total: best[1].total }
+}
+
+function bestPersonalIntents(summary: OutcomesSummary | undefined) {
+  if (!summary?.by_intent) return []
+
+  const labels: Record<string, string> = {
+    observe: '관망',
+    breakout_wait: '돌파 대기',
+    pullback_candidate: '눌림 매수',
+    invalidation_watch: '무효화 감시',
+  }
+
+  return Object.entries(summary.by_intent)
+    .filter(([, stats]) => stats.total > 0)
+    .sort((left, right) => {
+      const [, leftStats] = left
+      const [, rightStats] = right
+      return rightStats.total - leftStats.total || rightStats.win_rate - leftStats.win_rate
+    })
+    .slice(0, 4)
+    .map(([key, stats]) => ({
+      key,
+      label: labels[key] ?? key,
+      total: stats.total,
+      winRate: stats.win_rate,
+    }))
 }
 
 function dashboardPriorityScore(item: DashboardItem, movement: CandidateMovement, watched: boolean) {

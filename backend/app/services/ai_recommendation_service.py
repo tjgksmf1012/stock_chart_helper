@@ -53,6 +53,7 @@ async def build_ai_recommendations(timeframe: str = DEFAULT_TIMEFRAME, limit: in
         ranked.sort(
             key=lambda item: (
                 item.watchlist_priority,
+                _watchlist_focus_score(item),
                 item.personal_fit_score,
                 item.score,
                 item.confidence,
@@ -77,7 +78,13 @@ async def build_ai_recommendations(timeframe: str = DEFAULT_TIMEFRAME, limit: in
                 reverse=True,
             )[:limit]
         )
-        watchlist_focus_items = _rerank([item for item in ranked if item.watchlist_priority][:limit])
+        watchlist_focus_items = _rerank(
+            sorted(
+                [item for item in ranked if item.watchlist_priority],
+                key=lambda item: (_watchlist_focus_score(item), item.personal_fit_score, item.score, item.confidence),
+                reverse=True,
+            )[:limit]
+        )
         personalized_items = _rerank(
             sorted(
                 [item for item in ranked if item.personal_fit_score > 0],
@@ -123,11 +130,11 @@ async def _load_watchlist_codes() -> set[str]:
 
 
 def _make_recommendation(row: dict, timeframe: str, watch_codes: set[str], personalization: dict | None) -> AiRecommendationItem:
-    score = _recommendation_score(row)
+    watched = str(row.get("code", "")) in watch_codes
+    score = min(_recommendation_score(row) + _watchlist_score_bonus(row, watched), 100.0)
     confidence = _confidence(row)
     stance = _stance(row, score)
     symbol_code = row["code"]
-    watched = symbol_code in watch_codes
     personal_fit_score, personal_fit_label, personal_fit_reasons = score_personal_fit(row, personalization)
 
     return AiRecommendationItem(
@@ -174,6 +181,38 @@ def _make_recommendation(row: dict, timeframe: str, watch_codes: set[str], perso
         personal_fit_score=personal_fit_score,
         personal_fit_label=personal_fit_label,
         personal_fit_reasons=personal_fit_reasons,
+    )
+
+
+def _watchlist_score_bonus(row: dict, watched: bool) -> float:
+    if not watched:
+        return 0.0
+
+    bonus = 6.0
+    if float(row.get("entry_window_score", 0.0)) >= 0.5:
+        bonus += 2.0
+    if float(row.get("trade_readiness_score", 0.0)) >= 0.55:
+        bonus += 1.5
+    if row.get("no_signal_flag") or row.get("action_plan") == "cooling":
+        bonus -= 2.5
+    return max(bonus, 1.5)
+
+
+def _watchlist_focus_score(item: AiRecommendationItem) -> float:
+    stance_bonus = {
+        "priority_watch": 26.0,
+        "wait_for_trigger": 18.0,
+        "avoid_chase": 12.0,
+        "risk_review": 20.0,
+    }.get(item.stance, 0.0)
+    risk_bonus = min(len(item.risk_flags) * 1.5, 6.0)
+    return (
+        stance_bonus
+        + item.score * 0.45
+        + item.personal_fit_score * 0.20
+        + item.trade_readiness_score * 12.0
+        + item.entry_window_score * 10.0
+        + risk_bonus
     )
 
 

@@ -97,7 +97,10 @@ export const aiApi = {
     try {
       return await api.get<AiRecommendationResponse>('/ai/recommendations', { params: { timeframe, limit } }).then(r => r.data)
     } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.status === 404) {
+      if (
+        axios.isAxiosError(error) &&
+        (!error.response || [404, 500, 502, 503, 504].includes(error.response.status))
+      ) {
         return fallbackAiRecommendations(timeframe, limit)
       }
       throw error
@@ -151,6 +154,20 @@ async function fallbackAiRecommendations(timeframe: Timeframe, limit: number): P
     watch_items: watchItems,
     risk_items: riskItems,
     watchlist_focus_items: [],
+    personalized_items: [],
+    personal_style: {
+      style_key: 'developing',
+      style_label: '학습 중',
+      summary: '아직 충분한 종료 기록이 없어 개인 성향은 계속 학습 중입니다.',
+      confidence: 0,
+      sample_count: 0,
+      primary_intent: 'breakout_wait',
+      primary_intent_label: '돌파 대기',
+      focus_points: ['신호 저장과 결과 정리가 쌓이면 내 스타일 기준 후보가 더 또렷해집니다.'],
+    },
+    llm_enabled: false,
+    llm_status: 'fallback_rule_only',
+    llm_source: 'rule_based',
     disclaimer: '투자 권유가 아닌 기술적 분석 보조 정보입니다. 실제 매매 여부와 손절 기준은 직접 확인하세요.',
   }
 }

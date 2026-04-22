@@ -53,6 +53,17 @@ export default function AiRecommendationsPage() {
     const source = fromServer.length > 0 ? fromServer : data?.items ?? []
     return sortAiItems(source.filter(item => isWatched(item.symbol.code)), isWatched).slice(0, 4)
   }, [data?.items, data?.watchlist_focus_items, isWatched])
+  const watchlistTriggerItems = useMemo(
+    () => watchlistFocusItems.filter(item => item.stance !== 'risk_review').slice(0, 4),
+    [watchlistFocusItems],
+  )
+  const watchlistRiskItems = useMemo(
+    () =>
+      watchlistFocusItems
+        .filter(item => item.stance === 'risk_review' || item.risk_flags.length > 0)
+        .slice(0, 4),
+    [watchlistFocusItems],
+  )
   const llmBadge = useMemo(() => buildLlmBadge(data), [data])
 
   return (
@@ -146,11 +157,19 @@ export default function AiRecommendationsPage() {
       />
 
       <RecommendationBand
-        title="내 관심종목 중 오늘 먼저 볼 것"
+        title="내 관심종목 중 트리거 가까운 것"
         icon={<Star size={16} className="text-amber-300" />}
-        items={watchlistFocusItems}
+        items={watchlistTriggerItems}
         loading={recommendationsQ.isLoading}
-        empty="관심종목 중 오늘 우선해서 볼 후보가 없습니다."
+        empty="관심종목 중 오늘 바로 다시 볼 가격대에 가까운 후보가 없습니다."
+      />
+
+      <RecommendationBand
+        title="내 관심종목 중 무효화 위험"
+        icon={<AlertTriangle size={16} className="text-rose-300" />}
+        items={watchlistRiskItems}
+        loading={recommendationsQ.isLoading}
+        empty="관심종목 중 지금 당장 무효화 위험이 크게 올라온 후보는 없습니다."
       />
 
       <RecommendationBand

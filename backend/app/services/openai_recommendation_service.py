@@ -218,6 +218,9 @@ def _make_prompt_payload(response: AiRecommendationResponse) -> dict[str, Any]:
                 "rule_skip_reason": item.skip_reason,
                 "rule_overlap_risk": item.overlap_risk,
                 "watchlist_priority": item.watchlist_priority,
+                "personal_fit_label": item.personal_fit_label,
+                "personal_fit_score": round(item.personal_fit_score, 1),
+                "personal_fit_reasons": item.personal_fit_reasons[:3],
                 "next_trigger": item.next_trigger,
             }
         )
@@ -226,6 +229,8 @@ def _make_prompt_payload(response: AiRecommendationResponse) -> dict[str, Any]:
         "timeframe_label": response.timeframe_label,
         "rule_market_brief": response.market_brief,
         "rule_portfolio_guidance": response.portfolio_guidance,
+        "personal_style": response.personal_style.model_dump(mode="json") if response.personal_style else {},
+        "watchlist_focus_count": len(response.watchlist_focus_items),
         "items": items,
     }
 

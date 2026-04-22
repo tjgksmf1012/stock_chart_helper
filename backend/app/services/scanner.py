@@ -58,6 +58,7 @@ _scan_tasks: dict[str, asyncio.Task] = {}
 _quick_scan_tasks: dict[str, asyncio.Task] = {}
 _scan_status: dict[str, dict[str, Any]] = {}
 _KST = ZoneInfo("Asia/Seoul")
+WATCHLIST_CACHE_KEY = "watchlist:v1:default"
 
 
 def _full_scan_cache_key(timeframe: str) -> str:
@@ -151,6 +152,54 @@ def _fallback_universe_rows(universe, limit: int) -> list[tuple[str, str, str]]:
             break
 
     return ordered[:limit]
+
+
+async def _load_watchlist_rows() -> list[tuple[str, str, str]]:
+    stored = await cache_get(WATCHLIST_CACHE_KEY)
+    if not isinstance(stored, list):
+        return []
+
+    rows: list[tuple[str, str, str]] = []
+    seen: set[str] = set()
+    for item in stored:
+        if not isinstance(item, dict):
+            continue
+        code = str(item.get("code") or "").strip()
+        if not code or code in seen:
+            continue
+        rows.append(
+            (
+                code,
+                str(item.get("name") or code),
+                str(item.get("market") or "KRX"),
+            )
+        )
+        seen.add(code)
+    return rows
+
+
+def _merge_priority_rows(
+    base_rows: list[tuple[str, str, str]],
+    priority_rows: list[tuple[str, str, str]],
+    *,
+    limit: int,
+) -> tuple[list[tuple[str, str, str]], int]:
+    effective_limit = max(limit, len(priority_rows))
+    merged: list[tuple[str, str, str]] = []
+    seen: set[str] = set()
+    priority_codes = {code for code, _, _ in priority_rows}
+
+    for row in [*priority_rows, *base_rows]:
+        code = str(row[0])
+        if code in seen:
+            continue
+        seen.add(code)
+        merged.append(row)
+        if len(merged) >= effective_limit:
+            break
+
+    included_priority = sum(1 for code, _, _ in merged if code in priority_codes)
+    return merged, included_priority
 
 
 def _direction_score(row: dict[str, Any]) -> float:
@@ -542,6 +591,7 @@ async def get_scan_status(timeframe: str = DEFAULT_TIMEFRAME) -> dict[str, Any]:
 async def _fetch_universe_codes(limit: int = 100) -> tuple[list[tuple[str, str, str]], str]:
     fetcher = get_data_fetcher()
     universe = await fetcher.get_universe()
+    watchlist_rows = await _load_watchlist_rows()
     universe_names = (
         {
             str(row["code"]): row.get("name", row["code"]) or row["code"]
@@ -575,26 +625,34 @@ async def _fetch_universe_codes(limit: int = 100) -> tuple[list[tuple[str, str, 
         if rows:
             rows.sort(key=lambda item: item[3], reverse=True)
             result = [(code, name, market) for code, name, market, _ in rows[:limit]]
-            logger.info("Universe loaded: %d stocks via pykrx market-cap (limit=%d)", len(result), limit)
-            return result, "krx_universe"
+            result, watchlist_included = _merge_priority_rows(result, watchlist_rows, limit=limit)
+            logger.info(
+                "Universe loaded: %d stocks via pykrx market-cap (limit=%d, watchlist_included=%d)",
+                len(result),
+                limit,
+                watchlist_included,
+            )
+            return result, "krx_universe+watchlist" if watchlist_included else "krx_universe"
     except Exception as exc:
         logger.warning("Bulk market-cap universe fetch failed: %s", exc)
 
     if universe is not None and not universe.empty:
         result = _fallback_universe_rows(universe, limit)
+        result, watchlist_included = _merge_priority_rows(result, watchlist_rows, limit=limit)
         logger.warning(
             "Universe fallback: using broad FDR/pykrx universe (%d stocks, limit=%d). "
             "pykrx market-cap fetch failed — check network/market hours.",
             len(result), limit,
         )
-        return result, "krx_universe_fdr"
+        return result, "krx_universe_fdr+watchlist" if watchlist_included else "krx_universe_fdr"
 
     logger.error(
         "Universe STATIC FALLBACK: only %d hardcoded stocks will be scanned. "
         "pykrx AND FDR universe both failed. Full market scan is NOT running.",
         len(FALLBACK_CODES[:limit]),
     )
-    return FALLBACK_CODES[:limit], "static_fallback"
+    result, watchlist_included = _merge_priority_rows(FALLBACK_CODES[:limit], watchlist_rows, limit=limit)
+    return result, "static_fallback+watchlist" if watchlist_included else "static_fallback"
 
 
 async def _build_confluence(
@@ -793,6 +851,8 @@ async def _analyze_one(
 
 
 async def _select_candidates(limit: int, timeframe: str) -> tuple[list[tuple[str, str, str]], str, set[str], str]:
+    watchlist_rows = await _load_watchlist_rows()
+    watch_codes = {code for code, _, _ in watchlist_rows}
     if timeframe in {"1d", "1wk", "1mo"}:
         codes, universe_source = await _fetch_universe_codes(limit)
         return codes, universe_source, set(), "neutral"
@@ -802,9 +862,14 @@ async def _select_candidates(limit: int, timeframe: str) -> tuple[list[tuple[str
     daily_candidates = [
         row
         for row in daily_candidates
-        if row.get("entry_score", 0) >= 0.45
-        and row.get("confidence", 0) >= 0.30
-        and row.get("action_plan") != "cooling"
+        if (
+            str(row.get("code") or "") in watch_codes
+            or (
+                row.get("entry_score", 0) >= 0.45
+                and row.get("confidence", 0) >= 0.30
+                and row.get("action_plan") != "cooling"
+            )
+        )
     ]
     daily_candidates.sort(
         key=lambda row: (
@@ -821,9 +886,11 @@ async def _select_candidates(limit: int, timeframe: str) -> tuple[list[tuple[str
     if daily_candidates:
         selected_rows = daily_candidates[:seed_limit]
         selected = [(row["code"], row["name"], row.get("market", "KRX")) for row in selected_rows]
-        live_limit, live_phase = _effective_live_intraday_limit(timeframe, len(selected_rows))
+        selected, watchlist_included = _merge_priority_rows(selected, watchlist_rows, limit=seed_limit)
+        row_map = {str(row["code"]): row for row in daily_candidates}
+        live_limit, live_phase = _effective_live_intraday_limit(timeframe, len(selected))
         live_priority_rows = sorted(
-            selected_rows,
+            [row_map.get(code) for code, _, _ in selected if row_map.get(code)],
             key=lambda row: (
                 _live_intraday_priority(row, timeframe),
                 row.get("composite_score", 0.0),
@@ -832,7 +899,7 @@ async def _select_candidates(limit: int, timeframe: str) -> tuple[list[tuple[str
             reverse=True,
         )
         live_codes = {str(row["code"]) for row in live_priority_rows[:live_limit]}
-        return selected, "daily_seed", live_codes, live_phase
+        return selected, "daily_seed+watchlist" if watchlist_included else "daily_seed", live_codes, live_phase
 
     fallback, fallback_source = await _fetch_universe_codes(seed_limit)
     live_limit, live_phase = _effective_live_intraday_limit(timeframe, len(fallback))
