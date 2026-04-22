@@ -11,7 +11,7 @@ import { dashboardApi, outcomesApi, symbolsApi, systemApi } from '@/lib/api'
 import { TIMEFRAME_OPTIONS, normalizeDisplayTimeframe, timeframeLabel } from '@/lib/timeframes'
 import { cn, fmtDateTime, fmtPct, fmtPrice, INTRADAY_COLLECTION_MODE_LABELS, PATTERN_NAMES, SETUP_STAGE_LABELS } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
-import type { DashboardItem, DashboardResponse, OutcomeRecord, OutcomeStatus, PriceInfo, ScanStatusResponse, Timeframe } from '@/types/api'
+import type { DashboardItem, DashboardResponse, OutcomeEvaluationResponse, OutcomeRecord, OutcomeStatus, PriceInfo, ScanStatusResponse, Timeframe } from '@/types/api'
 
 type IntradayView = 'all' | 'live' | 'stored' | 'public' | 'mixed' | 'cooldown'
 type IntradayPreset = 'all' | 'ready-now' | 'watch' | 'recheck' | 'cooling'
@@ -222,6 +222,10 @@ export default function DashboardPage() {
         outcome,
         exit_date: new Date().toISOString().slice(0, 10),
       }),
+    onSuccess: () => outcomesQ.refetch(),
+  })
+  const evaluateOutcomesMutation = useMutation({
+    mutationFn: outcomesApi.evaluatePending,
     onSuccess: () => outcomesQ.refetch(),
   })
 
@@ -464,8 +468,11 @@ export default function DashboardPage() {
         records={pendingOutcomeRecords}
         isLoading={outcomesQ.isLoading}
         isUpdating={updateOutcomeMutation.isPending}
+        isEvaluating={evaluateOutcomesMutation.isPending}
+        evaluationResult={evaluateOutcomesMutation.data}
         onOpen={code => nav(`/chart/${code}`)}
         onUpdate={(id, outcome) => updateOutcomeMutation.mutate({ id, outcome })}
+        onEvaluate={() => evaluateOutcomesMutation.mutate()}
       />
 
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
@@ -902,43 +909,80 @@ function PendingDecisionDesk({
   records,
   isLoading,
   isUpdating,
+  isEvaluating,
+  evaluationResult,
   onOpen,
   onUpdate,
+  onEvaluate,
 }: {
   records: OutcomeRecord[]
   isLoading: boolean
   isUpdating: boolean
+  isEvaluating: boolean
+  evaluationResult: OutcomeEvaluationResponse | undefined
   onOpen: (code: string) => void
   onUpdate: (id: number, outcome: OutcomeStatus) => void
+  onEvaluate: () => void
 }) {
   if (isLoading || records.length === 0) {
     return (
       <section className="rounded-lg border border-border bg-card/55 p-4">
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="text-sm font-semibold">미정리 판단</div>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
               {isLoading ? '저장한 판단 기록을 확인하는 중입니다.' : '현재 장후에 닫아야 할 대기 기록이 없습니다.'}
             </p>
+            {evaluationResult && !isLoading && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                마지막 자동 점검: {evaluationResult.checked}건 확인, {evaluationResult.updated}건 정리
+              </p>
+            )}
           </div>
-          {isLoading && <Loader2 size={14} className="animate-spin text-muted-foreground" />}
+          {isLoading ? (
+            <Loader2 size={14} className="animate-spin text-muted-foreground" />
+          ) : (
+            <button
+              onClick={onEvaluate}
+              disabled={isEvaluating}
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-border bg-background/60 px-3 py-2 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isEvaluating ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+              자동 점검
+            </button>
+          )}
         </div>
       </section>
     )
   }
 
   return (
-    <section className="space-y-3 rounded-lg border border-amber-400/20 bg-amber-400/8 p-4">
-      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+    <section className="space-y-3 rounded-lg border border-amber-400/20 bg-amber-400/10 p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="text-sm font-semibold">미정리 판단</div>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
             저장해둔 시나리오는 성공, 실패, 손절, 취소 중 하나로 닫아야 내 성과 데이터가 쌓입니다.
           </p>
+          {evaluationResult && (
+            <p className="mt-2 text-xs text-amber-100">
+              자동 점검: {evaluationResult.checked}건 확인, {evaluationResult.updated}건 정리, {evaluationResult.skipped}건 보류
+            </p>
+          )}
         </div>
-        <span className="rounded-md border border-amber-400/25 bg-amber-400/10 px-2 py-1 text-xs text-amber-100">
-          대기 {records.length}건
-        </span>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={onEvaluate}
+            disabled={isEvaluating}
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-xs text-amber-100 transition-colors hover:bg-amber-400/15 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isEvaluating ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+            현재가로 자동 점검
+          </button>
+          <span className="rounded-md border border-amber-400/25 bg-amber-400/10 px-2 py-2 text-xs text-amber-100">
+            대기 {records.length}건
+          </span>
+        </div>
       </div>
 
       <div className="grid gap-2 xl:grid-cols-2">

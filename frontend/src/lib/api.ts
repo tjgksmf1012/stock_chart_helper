@@ -3,7 +3,7 @@ import type {
   SymbolInfo, OHLCVBar, AnalysisResult, PriceInfo,
   AiRecommendationItem, AiRecommendationResponse, DashboardOverviewResponse, DashboardResponse, PatternLibraryEntry, ScreenerRequest, DashboardItem, ScanStatusResponse, Timeframe,
   IntradayCandidateWarmupRequest, IntradayWarmupJobStatus, IntradayWarmupRequest, IntradayWarmupResponse, KisPrimeStatus, PatternStatsResponse, RuntimeStatusResponse,
-  WatchlistItem, OutcomeRecord, OutcomesSummary, OutcomeStatus,
+  WatchlistItem, OutcomeEvaluationResponse, OutcomeRecord, OutcomesSummary, OutcomeStatus,
 } from '@/types/api'
 
 // In development the Vite proxy forwards /api → backend (see vite.config.ts).
@@ -305,6 +305,8 @@ export const outcomesApi = {
     api.delete<{ status: string; deleted_id: number }>(`/outcomes/${id}`).then(r => r.data),
   /** Aggregate stats: overall win-rate + per-pattern breakdown. */
   summary: () => api.get<OutcomesSummary>('/outcomes/summary').then(r => r.data),
+  /** Auto-close pending records when current price reached target or stop. */
+  evaluatePending: () => api.post<OutcomeEvaluationResponse>('/outcomes/evaluate-pending').then(r => r.data),
 }
 
 export const systemApi = {

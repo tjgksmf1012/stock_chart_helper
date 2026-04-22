@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from ...core.redis import cache_get, cache_set
+from ...services.data_fetcher import get_data_fetcher
+from ...services.kis_client import get_kis_client
 
 router = APIRouter(prefix="/outcomes", tags=["outcomes"])
 
@@ -44,12 +46,54 @@ class OutcomeUpdate(BaseModel):
     notes: str | None = None
 
 
+class OutcomeEvaluationItem(BaseModel):
+    id: int
+    symbol_code: str
+    symbol_name: str
+    outcome: str
+    close: float
+    target_price: float | None = None
+    stop_price: float | None = None
+    reason: str
+
+
+class OutcomeEvaluationResponse(BaseModel):
+    status: str
+    checked: int
+    updated: int
+    skipped: int
+    items: list[OutcomeEvaluationItem]
+
+
 async def _load() -> list[dict[str, Any]]:
     return await cache_get(_KEY) or []
 
 
 async def _save(records: list[dict[str, Any]]) -> None:
     await cache_set(_KEY, records, _TTL)
+
+
+async def _latest_close(symbol: str) -> float | None:
+    kis = get_kis_client()
+    if kis.configured:
+        try:
+            kis_data = await kis.fetch_current_price(symbol)
+            if kis_data and kis_data.get("close"):
+                return float(kis_data["close"])
+        except Exception:
+            pass
+
+    try:
+        fetcher = get_data_fetcher()
+        end = date.today()
+        start = end - timedelta(days=7)
+        hist = await fetcher.get_stock_ohlcv(symbol, start, end)
+        if not hist.empty:
+            return float(hist["close"].iloc[-1])
+    except Exception:
+        pass
+
+    return None
 
 
 @router.post("", status_code=201)
@@ -71,6 +115,75 @@ async def list_outcomes() -> list[dict]:
     """Return all outcome records, newest first."""
     records = await _load()
     return list(reversed(records))
+
+
+@router.post("/evaluate-pending")
+async def evaluate_pending_outcomes() -> OutcomeEvaluationResponse:
+    """Close pending records when the latest price has reached target or stop."""
+    records = await _load()
+    pending = [record for record in records if record.get("outcome") == "pending"]
+    items: list[OutcomeEvaluationItem] = []
+    checked = 0
+    skipped = 0
+
+    for record in pending:
+        record_id = int(record.get("id", -1))
+        symbol = str(record.get("symbol_code") or "")
+        if not symbol:
+            skipped += 1
+            continue
+
+        close = await _latest_close(symbol)
+        if close is None or close <= 0:
+            skipped += 1
+            continue
+
+        checked += 1
+        target = record.get("target_price")
+        stop = record.get("stop_price")
+        target_price = float(target) if target is not None else None
+        stop_price = float(stop) if stop is not None else None
+
+        next_outcome: str | None = None
+        reason = ""
+        if target_price is not None and close >= target_price:
+            next_outcome = "win"
+            reason = "latest price reached target"
+        elif stop_price is not None and close <= stop_price:
+            next_outcome = "stopped_out"
+            reason = "latest price reached stop"
+
+        if not next_outcome:
+            continue
+
+        record["outcome"] = next_outcome
+        record["exit_price"] = close
+        record["exit_date"] = date.today().isoformat()
+        record["notes"] = "auto_evaluated"
+        record["updated_at"] = datetime.now().isoformat()
+        items.append(
+            OutcomeEvaluationItem(
+                id=record_id,
+                symbol_code=symbol,
+                symbol_name=str(record.get("symbol_name") or symbol),
+                outcome=next_outcome,
+                close=close,
+                target_price=target_price,
+                stop_price=stop_price,
+                reason=reason,
+            )
+        )
+
+    if items:
+        await _save(records)
+
+    return OutcomeEvaluationResponse(
+        status="ok",
+        checked=checked,
+        updated=len(items),
+        skipped=skipped,
+        items=items,
+    )
 
 
 @router.patch("/{outcome_id}")

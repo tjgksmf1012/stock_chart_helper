@@ -581,6 +581,25 @@ export interface OutcomesSummary {
   by_pattern: Record<string, { wins: number; total: number; win_rate: number }>
 }
 
+export interface OutcomeEvaluationItem {
+  id: number
+  symbol_code: string
+  symbol_name: string
+  outcome: OutcomeStatus
+  close: number
+  target_price?: number | null
+  stop_price?: number | null
+  reason: string
+}
+
+export interface OutcomeEvaluationResponse {
+  status: string
+  checked: number
+  updated: number
+  skipped: number
+  items: OutcomeEvaluationItem[]
+}
+
 // ─── Screener ─────────────────────────────────────────────────────────────────
 
 export interface ScreenerRequest {
