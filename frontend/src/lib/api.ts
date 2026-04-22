@@ -6,9 +6,6 @@ import type {
   WatchlistItem, OutcomeEvaluationResponse, OutcomeRecord, OutcomesSummary, OutcomeStatus,
 } from '@/types/api'
 
-// In development the Vite proxy forwards /api → backend (see vite.config.ts).
-// In production set VITE_API_BASE_URL to your backend's public URL
-// (e.g. https://stock-chart-helper-api.onrender.com) and this will call it directly.
 function resolveApiBase() {
   if (typeof window !== 'undefined' && window.location.hostname.endsWith('vercel.app')) {
     return '/api/v1'
@@ -141,23 +138,29 @@ async function fallbackAiRecommendations(timeframe: Timeframe, limit: number): P
     generated_at: new Date().toISOString(),
     timeframe,
     timeframe_label: timeframeLabel,
-    market_brief: `${timeframeLabel} 후보를 기존 스캔 API로 재계산했습니다. 우선 검토 ${priorityItems.length}개, 트리거 대기 ${watchItems.length}개, 리스크 점검 ${riskItems.length}개입니다.`,
+    market_brief: `${timeframeLabel} 기준으로 우선 검토 ${priorityItems.length}개, 대기 ${watchItems.length}개, 리스크 점검 ${riskItems.length}개입니다.`,
     portfolio_guidance: priorityItems[0]
-      ? `${priorityItems[0].symbol.name}처럼 준비도와 데이터 품질이 같이 맞는 후보를 먼저 보고, 같은 방향 후보가 과하게 겹치지 않게 관리하세요.`
+      ? `${priorityItems[0].symbol.name}처럼 준비도와 데이터 품질이 함께 맞는 후보부터 보는 편이 낫습니다.`
       : watchItems[0]
-        ? `${watchItems[0].symbol.name} 같은 트리거 대기 후보가 중심입니다. 확인 신호 전에는 관찰 비중을 유지하는 쪽이 좋습니다.`
-        : '강한 후보가 적습니다. 공격보다 관망과 리스크 점검이 우선입니다.',
+        ? `${watchItems[0].symbol.name}처럼 트리거 확인이 필요한 후보가 많습니다. 서두르지 않는 편이 낫습니다.`
+        : '강한 우선 후보가 적어 관망과 리스크 점검 비중이 높습니다.',
     items,
     priority_items: priorityItems,
     watch_items: watchItems,
     risk_items: riskItems,
-    disclaimer: '투자 권유가 아닌 기술적 분석 보조 의견입니다. 실제 매매 전 재무, 뉴스, 수급, 손절 기준을 직접 확인하세요.',
+    watchlist_focus_items: [],
+    disclaimer: '투자 권유가 아닌 기술적 분석 보조 정보입니다. 실제 매매 여부와 손절 기준은 직접 확인하세요.',
   }
 }
 
 function makeFallbackRecommendation(item: DashboardItem): AiRecommendationItem {
   const score = fallbackScore(item)
   const stance = fallbackStance(item, score)
+  const doNow = buildFallbackDoNow(item, stance)
+  const avoidIf = buildFallbackAvoidIf(item)
+  const reviewPrice = buildFallbackReviewPrice(item)
+  const skipReason = buildFallbackSkipReason(item, stance)
+
   return {
     rank: 0,
     symbol: item.symbol,
@@ -168,33 +171,41 @@ function makeFallbackRecommendation(item: DashboardItem): AiRecommendationItem {
     score,
     confidence: clamp01(0.35 * item.confidence + 0.25 * item.sample_reliability + 0.25 * item.data_quality + 0.15 * item.liquidity_score),
     source_category: item.live_intraday_candidate ? 'live_intraday' : item.no_signal_flag ? 'risk_watch' : item.state === 'forming' ? 'forming_pattern' : 'active_pattern',
+    watchlist_priority: false,
     summary:
       stance === 'priority_watch'
-        ? `${item.symbol.name}은 패턴 구조와 거래 준비도가 함께 들어와 우선 관찰 후보입니다.`
+        ? `${item.symbol.name}은 준비도와 구조가 살아 있어 오늘 우선 검토 후보입니다.`
         : stance === 'avoid_chase'
-          ? `${item.symbol.name}은 방향성은 보이나 진입 구간 점수가 낮아 추격보다 눌림 확인이 우선입니다.`
+          ? `${item.symbol.name}은 방향성은 좋지만 추격보다 눌림 확인이 더 중요합니다.`
           : stance === 'wait_for_trigger'
-            ? `${item.symbol.name}은 구조는 살아 있지만 확인 트리거를 기다리는 편이 좋습니다.`
-            : `${item.symbol.name}은 현재 리스크와 데이터 품질을 먼저 점검해야 합니다.`,
-    action_line: buildFallbackActionLine(item, stance),
+            ? `${item.symbol.name}은 구조는 유지되지만 트리거 확인이 먼저입니다.`
+            : `${item.symbol.name}은 리스크와 데이터 상태를 먼저 점검해야 합니다.`,
+    action_line: `지금 할 일: ${doNow}`,
+    do_now: doNow,
+    avoid_if: avoidIf,
+    review_price: reviewPrice,
+    skip_reason: skipReason,
+    overlap_risk: '',
     reasons: [
-      `상승확률 ${(item.p_up * 100).toFixed(1)}%, 하락확률 ${(item.p_down * 100).toFixed(1)}%`,
-      `거래준비도 ${(item.trade_readiness_score * 100).toFixed(0)}%, 진입구간 ${(item.entry_window_score * 100).toFixed(0)}%`,
+      `상승 확률 ${(item.p_up * 100).toFixed(1)}%, 하락 확률 ${(item.p_down * 100).toFixed(1)}%`,
+      `거래 준비도 ${(item.trade_readiness_score * 100).toFixed(0)}%, 진입 구간 ${(item.entry_window_score * 100).toFixed(0)}%`,
       `데이터 품질 ${(item.data_quality * 100).toFixed(0)}%, 신뢰도 ${(item.confidence * 100).toFixed(0)}%`,
       item.reason_summary || item.confluence_summary,
     ].filter(Boolean),
     risk_flags: item.risk_flags?.length ? item.risk_flags : item.trend_warning ? [item.trend_warning] : [],
     next_actions: [
-      item.next_trigger,
-      ...(item.confirmation_checklist ?? []).slice(0, 3),
-      stance === 'priority_watch' ? '확인 신호와 손절 기준을 동시에 고정' : '트리거 충족 전에는 관심종목에만 보관',
+      `지금 할 일: ${doNow}`,
+      `진입 금지 조건: ${avoidIf}`,
+      `다시 볼 가격: ${reviewPrice}`,
+      `오늘 안 봐도 되는 이유: ${skipReason}`,
+      ...(item.confirmation_checklist ?? []).slice(0, 2),
     ].filter(Boolean),
     position_hint:
       stance === 'priority_watch'
-        ? '우선 관찰 후보입니다. 진입은 확인 트리거 이후가 적합합니다.'
+        ? '우선 검토 후보입니다. 확인 신호가 나오면 대응하고 무효화 기준은 미리 정해두는 편이 낫습니다.'
         : stance === 'risk_review'
-          ? '현재는 방어적 판단이 우선입니다.'
-          : '관심종목에 두고 트리거가 맞을 때만 다시 평가하세요.',
+          ? '지금은 방어적 판단이 우선입니다.'
+          : '트리거가 맞을 때만 다시 평가하는 편이 낫습니다.',
     pattern_type: item.pattern_type,
     state: item.state,
     p_up: item.p_up,
@@ -244,26 +255,31 @@ function clamp01(value: number) {
   return Math.max(0, Math.min(1, value))
 }
 
-function buildFallbackActionLine(item: DashboardItem, stance: AiRecommendationItem['stance']) {
-  if (stance === 'risk_review') {
-    if (item.risk_flags?.length) {
-      return `지금 할 일: 매수/추격 보류 -> 그 이후 ${item.risk_flags[0]} 해소 여부 확인`
-    }
-    return '지금 할 일: 방어적으로 관망 -> 그 이후 점수와 트리거가 다시 정렬될 때 재평가'
-  }
-  if (stance === 'avoid_chase') {
-    return '지금 할 일: 추격 대신 눌림 구간 대기 -> 그 이후 지지 확인 시 재평가'
-  }
-  if (item.next_trigger) {
-    return `지금 할 일: ${item.next_trigger} -> 그 이후 종가와 지지 유지 여부 재확인`
-  }
-  if (stance === 'priority_watch') {
-    return '지금 할 일: 핵심 트리거 전까지 시나리오 유지 -> 그 이후 목표가와 무효화 기준 재확인'
-  }
-  if (item.risk_flags?.length) {
-    return `지금 할 일: ${item.risk_flags[0]} 점검 -> 그 이후 재평가`
-  }
-  return '지금 할 일: 현재 구조 유지 여부 관찰 -> 그 이후 다음 트리거가 생기면 재평가'
+function buildFallbackDoNow(item: DashboardItem, stance: AiRecommendationItem['stance']) {
+  if (item.next_trigger) return `${item.next_trigger} 확인 후 재평가`
+  if (stance === 'priority_watch') return '핵심 가격대와 거래량 반응 확인'
+  if (stance === 'avoid_chase') return '눌림 또는 지지 확인 전까지 대기'
+  if (stance === 'risk_review') return '신규 진입보다 리스크 정리 우선'
+  return '트리거 형성 전까지 관찰 유지'
+}
+
+function buildFallbackAvoidIf(item: DashboardItem) {
+  if (item.risk_flags?.length) return item.risk_flags[0]
+  if (item.no_signal_flag && item.reason_summary) return item.reason_summary
+  if (item.reward_risk_ratio < 1.2) return '손익비가 낮아 비중 확대를 피해야 함'
+  return '핵심 가격대 지지 확인 전 추격 금지'
+}
+
+function buildFallbackReviewPrice(item: DashboardItem) {
+  return item.next_trigger || item.entry_window_summary || item.reentry_trigger || '핵심 가격대가 다시 정렬될 때 재검토'
+}
+
+function buildFallbackSkipReason(item: DashboardItem, stance: AiRecommendationItem['stance']) {
+  if (stance === 'priority_watch') return '이미 상위 우선 후보라 오늘 안 볼 이유가 크지 않음'
+  if (item.no_signal_flag && item.reason_summary) return item.reason_summary
+  if (item.data_quality < 0.45) return '데이터 품질이 낮아 오늘은 강하게 해석하지 않는 편이 나음'
+  if (stance === 'avoid_chase') return '가격이 먼저 달려 눌림 없이 접근하면 기대값이 떨어짐'
+  return '트리거가 아직 완성되지 않아 서둘러 볼 이유가 약함'
 }
 
 export const patternsApi = {
@@ -278,34 +294,24 @@ export const screenerApi = {
 }
 
 export const watchlistApi = {
-  /** Return the server-side watchlist. */
   get: () => api.get<WatchlistItem[]>('/watchlist').then(r => r.data),
-  /** Full replace — overwrite the server list with the current local list. */
   sync: (items: WatchlistItem[]) => api.post<WatchlistItem[]>('/watchlist', items).then(r => r.data),
-  /** Add one symbol (idempotent). */
   add: (item: Omit<WatchlistItem, 'addedAt'>) =>
     api.post<WatchlistItem[]>('/watchlist/add', item).then(r => r.data),
-  /** Remove one symbol by code. */
   remove: (code: string) => api.delete<WatchlistItem[]>(`/watchlist/${code}`).then(r => r.data),
 }
 
 export const outcomesApi = {
-  /** Return all outcome records (newest first). */
   list: () => api.get<OutcomeRecord[]>('/outcomes').then(r => r.data),
-  /** Record a new signal outcome (outcome='pending' by default). */
   record: (record: Omit<OutcomeRecord, 'id' | 'recorded_at' | 'updated_at'>) =>
     api.post<{ status: string; id: number; total_records: number }>('/outcomes', record).then(r => r.data),
-  /** Update the outcome of a previously-recorded signal. */
   update: (
     id: number,
     update: { outcome: OutcomeStatus; exit_price?: number; exit_date?: string; notes?: string },
   ) => api.patch<{ status: string; id: number }>(`/outcomes/${id}`, update).then(r => r.data),
-  /** Delete a record. */
   remove: (id: number) =>
     api.delete<{ status: string; deleted_id: number }>(`/outcomes/${id}`).then(r => r.data),
-  /** Aggregate stats: overall win-rate + per-pattern breakdown. */
   summary: () => api.get<OutcomesSummary>('/outcomes/summary').then(r => r.data),
-  /** Auto-close pending records when current price reached target or stop. */
   evaluatePending: () => api.post<OutcomeEvaluationResponse>('/outcomes/evaluate-pending').then(r => r.data),
 }
 

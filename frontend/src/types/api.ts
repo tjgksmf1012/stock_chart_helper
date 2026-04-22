@@ -306,8 +306,14 @@ export interface AiRecommendationItem {
   score: number
   confidence: number
   source_category: string
+  watchlist_priority?: boolean
   summary: string
   action_line: string
+  do_now?: string
+  avoid_if?: string
+  review_price?: string
+  skip_reason?: string
+  overlap_risk?: string
   reasons: string[]
   risk_flags: string[]
   next_actions: string[]
@@ -336,6 +342,7 @@ export interface AiRecommendationResponse {
   priority_items: AiRecommendationItem[]
   watch_items: AiRecommendationItem[]
   risk_items: AiRecommendationItem[]
+  watchlist_focus_items?: AiRecommendationItem[]
   disclaimer: string
   llm_enabled?: boolean
   llm_model?: string | null
@@ -548,6 +555,7 @@ export interface WatchlistItem {
 // ─── Outcome tracking ─────────────────────────────────────────────────────────
 
 export type OutcomeStatus = 'win' | 'loss' | 'stopped_out' | 'pending' | 'cancelled'
+export type OutcomeIntent = 'observe' | 'breakout_wait' | 'pullback_candidate' | 'invalidation_watch'
 
 export interface OutcomeRecord {
   id?: number
@@ -559,6 +567,7 @@ export interface OutcomeRecord {
   entry_price: number
   target_price?: number | null
   stop_price?: number | null
+  intent?: OutcomeIntent | null
   outcome: OutcomeStatus
   exit_price?: number | null
   exit_date?: string | null
@@ -587,6 +596,9 @@ export interface OutcomeEvaluationItem {
   symbol_name: string
   outcome: OutcomeStatus
   close: number
+  high?: number | null
+  low?: number | null
+  evaluation_basis?: string
   target_price?: number | null
   stop_price?: number | null
   reason: string

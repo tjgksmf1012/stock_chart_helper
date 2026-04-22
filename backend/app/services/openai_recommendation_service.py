@@ -95,8 +95,10 @@ async def _request_overlay(payload: dict[str, Any]) -> dict[str, Any]:
                 "role": "system",
                 "content": (
                     "You are a cautious Korean equity portfolio assistant. "
-                    "Rewrite the supplied rule-based scan commentary into concise Korean portfolio notes. "
-                    "Do not promise returns or use direct buy/sell language."
+                    "Rewrite the supplied rule-based scan commentary into concise Korean portfolio notes for daily execution. "
+                    "Keep the tone operational and concrete. "
+                    "For each item, produce these exact fields in Korean: summary, action_line, do_now, avoid_if, review_price, skip_reason, overlap_risk, position_hint, next_actions. "
+                    "Do not promise returns and do not use direct buy or sell imperatives."
                 ),
             },
             {
@@ -127,6 +129,11 @@ async def _request_overlay(payload: dict[str, Any]) -> dict[str, Any]:
                                     "symbol_code": {"type": "string"},
                                     "summary": {"type": "string"},
                                     "action_line": {"type": "string"},
+                                    "do_now": {"type": "string"},
+                                    "avoid_if": {"type": "string"},
+                                    "review_price": {"type": "string"},
+                                    "skip_reason": {"type": "string"},
+                                    "overlap_risk": {"type": "string"},
                                     "position_hint": {"type": "string"},
                                     "next_actions": {
                                         "type": "array",
@@ -134,7 +141,18 @@ async def _request_overlay(payload: dict[str, Any]) -> dict[str, Any]:
                                         "maxItems": 4,
                                     },
                                 },
-                                "required": ["symbol_code", "summary", "action_line", "position_hint", "next_actions"],
+                                "required": [
+                                    "symbol_code",
+                                    "summary",
+                                    "action_line",
+                                    "do_now",
+                                    "avoid_if",
+                                    "review_price",
+                                    "skip_reason",
+                                    "overlap_risk",
+                                    "position_hint",
+                                    "next_actions",
+                                ],
                             },
                             "maxItems": settings.openai_overlay_item_limit,
                         },
@@ -187,6 +205,11 @@ def _make_prompt_payload(response: AiRecommendationResponse) -> dict[str, Any]:
                 "risk_flags": item.risk_flags[:3],
                 "rule_summary": item.summary,
                 "rule_action_line": item.action_line,
+                "rule_do_now": item.do_now,
+                "rule_avoid_if": item.avoid_if,
+                "rule_review_price": item.review_price,
+                "rule_skip_reason": item.skip_reason,
+                "rule_overlap_risk": item.overlap_risk,
                 "next_trigger": item.next_trigger,
             }
         )
@@ -210,6 +233,11 @@ def _apply_overlay(response: AiRecommendationResponse, overlay: dict[str, Any]) 
             update={
                 "summary": str(update.get("summary") or item.summary),
                 "action_line": str(update.get("action_line") or item.action_line),
+                "do_now": str(update.get("do_now") or item.do_now),
+                "avoid_if": str(update.get("avoid_if") or item.avoid_if),
+                "review_price": str(update.get("review_price") or item.review_price),
+                "skip_reason": str(update.get("skip_reason") or item.skip_reason),
+                "overlap_risk": str(update.get("overlap_risk") or item.overlap_risk),
                 "position_hint": str(update.get("position_hint") or item.position_hint),
                 "next_actions": [str(action) for action in update.get("next_actions", item.next_actions)][:5],
             }
@@ -304,6 +332,8 @@ def _overlay_cache_key(payload: dict[str, Any]) -> str:
                 "p_up": item.get("p_up"),
                 "trade_readiness": item.get("trade_readiness"),
                 "entry_window": item.get("entry_window"),
+                "rule_do_now": item.get("rule_do_now"),
+                "rule_review_price": item.get("rule_review_price"),
             }
             for item in items
         ],

@@ -3,6 +3,7 @@ from __future__ import annotations
 import ssl
 from typing import Any
 
+from sqlalchemy import inspect, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
@@ -76,3 +77,16 @@ async def get_db():
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(_run_runtime_migrations)
+
+
+def _run_runtime_migrations(sync_conn) -> None:
+    inspector = inspect(sync_conn)
+    tables = set(inspector.get_table_names())
+    if "signal_outcomes" not in tables:
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("signal_outcomes")}
+    if "intent" not in columns:
+        sync_conn.execute(text("ALTER TABLE signal_outcomes ADD COLUMN intent VARCHAR(40)"))
+        sync_conn.execute(text("UPDATE signal_outcomes SET intent = 'breakout_wait' WHERE intent IS NULL"))

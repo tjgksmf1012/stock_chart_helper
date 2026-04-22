@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { type ReactNode, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, BarChart2, Loader2, RefreshCw, ShieldCheck, Sparkles, Star, Target } from 'lucide-react'
@@ -34,6 +34,11 @@ export default function AiRecommendationsPage() {
   const priorityItems = useMemo(() => sortAiItems(data?.priority_items ?? [], isWatched), [data?.priority_items, isWatched])
   const watchItems = useMemo(() => sortAiItems(data?.watch_items ?? [], isWatched), [data?.watch_items, isWatched])
   const riskItems = useMemo(() => sortAiItems(data?.risk_items ?? [], isWatched), [data?.risk_items, isWatched])
+  const watchlistFocusItems = useMemo(() => {
+    const fromServer = data?.watchlist_focus_items ?? []
+    const source = fromServer.length > 0 ? fromServer : data?.items ?? []
+    return sortAiItems(source.filter(item => isWatched(item.symbol.code)), isWatched).slice(0, 4)
+  }, [data?.items, data?.watchlist_focus_items, isWatched])
   const llmBadge = useMemo(() => buildLlmBadge(data), [data])
 
   return (
@@ -115,7 +120,7 @@ export default function AiRecommendationsPage() {
         <Card className="space-y-3">
           <div className="flex items-center gap-2 text-sm font-semibold">
             <Target size={16} className="text-emerald-300" />
-            상위 후보 빠른 보기
+            빠른 진입 후보
           </div>
           <div className="space-y-2">
             {topItems.length === 0 && !recommendationsQ.isLoading ? (
@@ -151,6 +156,14 @@ export default function AiRecommendationsPage() {
           </div>
         </Card>
       </div>
+
+      <RecommendationBand
+        title="내 관심종목 중 오늘 트리거 가까운 것"
+        icon={<Star size={16} className="text-amber-300" />}
+        items={watchlistFocusItems}
+        loading={recommendationsQ.isLoading}
+        empty="관심종목 중 오늘 우선해서 볼 후보가 없습니다."
+      />
 
       <RecommendationBand
         title="우선 검토"
@@ -199,7 +212,7 @@ function buildLlmBadge(data: { llm_enabled?: boolean; llm_status?: string; llm_c
   if (data.llm_enabled && data.llm_status === 'cached_refreshing') {
     return {
       className: 'border-cyan-500/20 bg-cyan-500/5 text-cyan-100',
-      text: `최근 OpenAI 코멘트를 보여주는 중입니다. 백그라운드에서 새 코멘트를 다시 생성하고 있어요.${data.llm_cached_at ? ` 마지막 AI 갱신 ${fmtDateTime(data.llm_cached_at)}.` : ''}`,
+      text: `최근 OpenAI 코멘트를 보여주는 중입니다. 백그라운드에서 새 코멘트를 다시 생성하고 있습니다.${data.llm_cached_at ? ` 마지막 AI 갱신 ${fmtDateTime(data.llm_cached_at)}.` : ''}`,
     }
   }
 
@@ -213,14 +226,14 @@ function buildLlmBadge(data: { llm_enabled?: boolean; llm_status?: string; llm_c
   if (data.llm_status === 'refreshing') {
     return {
       className: 'border-sky-500/20 bg-sky-500/5 text-sky-100',
-      text: '지금은 규칙 기반 코멘트를 먼저 보여주고 있습니다. OpenAI 해설은 백그라운드에서 생성 중이며, 다음 새로고침 때 자동 반영됩니다.',
+      text: '지금은 규칙 기반 코멘트를 먼저 보여주고 있습니다. OpenAI 코멘트는 백그라운드에서 생성 중이며, 다음 새로고침 때 반영됩니다.',
     }
   }
 
   if (data.llm_error) {
     return {
       className: 'border-amber-500/20 bg-amber-500/5 text-amber-100',
-      text: `OpenAI 해설이 바로 붙지 않아 규칙 기반 코멘트로 표시 중입니다. 최근 상태: ${data.llm_error}.`,
+      text: `OpenAI 코멘트를 붙이지 못해 규칙 기반 코멘트로 표시 중입니다. 최근 상태: ${data.llm_error}.`,
     }
   }
 
@@ -238,7 +251,7 @@ function RecommendationBand({
   empty,
 }: {
   title: string
-  icon: React.ReactNode
+  icon: ReactNode
   items: AiRecommendationItem[]
   loading: boolean
   empty: string
@@ -310,7 +323,7 @@ function RecommendationCard({ item }: { item: AiRecommendationItem }) {
       <p className="text-sm leading-relaxed text-foreground">{item.summary}</p>
 
       <div className="rounded-lg border border-primary/20 bg-primary/10 p-3 text-sm font-semibold leading-relaxed text-primary">
-        {item.action_line || item.next_actions[0] || '지금 할 일: 핵심 조건 확인 후 재평가'}
+        {item.action_line || item.next_actions[0] || '지금 할 일: 핵심 가격대 확인 후 재평가'}
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -320,20 +333,30 @@ function RecommendationCard({ item }: { item: AiRecommendationItem }) {
         <Metric label="손익비" value={item.reward_risk_ratio.toFixed(2)} />
       </div>
 
+      <div className="grid gap-3 lg:grid-cols-2">
+        <ActionDetail title="지금 할 일" body={item.do_now || item.action_line} tone="primary" />
+        <ActionDetail title="진입 금지 조건" body={item.avoid_if || item.risk_flags[0] || '리스크 신호가 정리될 때까지 대기'} tone="danger" />
+        <ActionDetail title="다시 볼 가격" body={item.review_price || item.next_trigger || '핵심 가격대 재정렬 시 재평가'} tone="sky" />
+        <ActionDetail title="오늘 안 봐도 되는 이유" body={item.skip_reason || '트리거가 아직 완성되지 않았습니다.'} tone="muted" />
+      </div>
+
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         <InfoList title="판단 근거" items={item.reasons} />
         <InfoList title="다음 확인" items={item.next_actions} />
       </div>
 
-      {item.risk_flags.length > 0 && (
+      {(item.risk_flags.length > 0 || item.overlap_risk) && (
         <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
-          <div className="mb-2 text-xs font-semibold text-amber-200">리스크</div>
+          <div className="mb-2 text-xs font-semibold text-amber-200">리스크 / 중복 노출</div>
           <div className="flex flex-wrap gap-1.5">
             {item.risk_flags.map(flag => (
               <span key={flag} className="rounded-md bg-amber-500/10 px-2 py-1 text-xs text-amber-100">
                 {flag}
               </span>
             ))}
+            {item.overlap_risk && (
+              <span className="rounded-md bg-amber-500/10 px-2 py-1 text-xs text-amber-100">{item.overlap_risk}</span>
+            )}
           </div>
         </div>
       )}
@@ -350,6 +373,22 @@ function Metric({ label, value }: { label: string; value: string }) {
     <div className="rounded-lg border border-border bg-background/60 p-3">
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className="mt-1 text-sm font-semibold">{value}</div>
+    </div>
+  )
+}
+
+function ActionDetail({ title, body, tone }: { title: string; body: string; tone: 'primary' | 'danger' | 'sky' | 'muted' }) {
+  const toneClass = {
+    primary: 'border-primary/20 bg-primary/8',
+    danger: 'border-red-500/20 bg-red-500/5',
+    sky: 'border-sky-500/20 bg-sky-500/5',
+    muted: 'border-border bg-background/60',
+  }[tone]
+
+  return (
+    <div className={cn('rounded-lg border p-3', toneClass)}>
+      <div className="mb-1 text-xs font-semibold text-muted-foreground">{title}</div>
+      <div className="text-sm leading-relaxed text-foreground">{body}</div>
     </div>
   )
 }

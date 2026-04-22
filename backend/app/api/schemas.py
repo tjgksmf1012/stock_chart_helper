@@ -501,8 +501,14 @@ class AiRecommendationItem(BaseModel):
     score: float
     confidence: float
     source_category: str
+    watchlist_priority: bool = False
     summary: str
     action_line: str = ""
+    do_now: str = ""
+    avoid_if: str = ""
+    review_price: str = ""
+    skip_reason: str = ""
+    overlap_risk: str = ""
     reasons: list[str]
     risk_flags: list[str]
     next_actions: list[str]
@@ -531,6 +537,7 @@ class AiRecommendationResponse(BaseModel):
     priority_items: list[AiRecommendationItem]
     watch_items: list[AiRecommendationItem]
     risk_items: list[AiRecommendationItem]
+    watchlist_focus_items: list[AiRecommendationItem] = Field(default_factory=list)
     disclaimer: str
     llm_enabled: bool = False
     llm_model: str | None = None

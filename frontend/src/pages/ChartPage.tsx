@@ -32,7 +32,7 @@ import {
 } from '@/lib/timeframes'
 import { cn, fmtDateTime, fmtNumber, fmtPct, fmtPrice, PATTERN_NAMES } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
-import type { AnalysisResult, OutcomeRecord, OutcomeStatus, PatternInfo, PatternStatsEntry, Timeframe } from '@/types/api'
+import type { AnalysisResult, OutcomeIntent, OutcomeRecord, OutcomeStatus, PatternInfo, PatternStatsEntry, Timeframe } from '@/types/api'
 
 export default function ChartPage() {
   const { symbol } = useParams<{ symbol: string }>()
@@ -43,6 +43,7 @@ export default function ChartPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<Array<{ code: string; name: string; market: string }>>([])
   const [savedId, setSavedId] = useState<number | null>(null)
+  const [selectedIntent, setSelectedIntent] = useState<OutcomeIntent>('breakout_wait')
   const searchRequestRef = useRef(0)
 
   const barsQ = useQuery({
@@ -164,7 +165,9 @@ export default function ChartPage() {
         entry_price: priceQ.data?.close ?? 0,
         target_price: bestPattern?.target_level ?? null,
         stop_price: bestPattern?.invalidation_level ?? null,
+        intent: selectedIntent,
         outcome: 'pending',
+        notes: `intent:${selectedIntent}`,
         p_up_at_signal: analysis.p_up,
         composite_score_at_signal: analysis.trade_readiness_score ?? 0,
         textbook_similarity_at_signal: analysis.textbook_similarity,
@@ -357,6 +360,40 @@ export default function ChartPage() {
               <HeroMetric label="신뢰도" value={fmtPct(analysis.confidence, 0)} />
               <HeroMetric label="거래 준비도" value={fmtPct(analysis.trade_readiness_score ?? 0, 0)} />
               <HeroMetric label="진입 구간" value={fmtPct(analysis.entry_window_score ?? 0, 0)} />
+            </div>
+
+            <div className="rounded-lg border border-border bg-background/55 p-3">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <div className="text-sm font-semibold">판단 저장 방식</div>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    저장할 때 의도를 남겨두면 나중에 어떤 상황에서 강했고 약했는지 더 정확히 쌓입니다.
+                  </p>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {savedRecord
+                    ? `저장된 분류: ${OUTCOME_INTENT_LABELS[(savedRecord.intent as OutcomeIntent) ?? 'breakout_wait'] ?? '돌파 대기'}`
+                    : OUTCOME_INTENT_DESCRIPTIONS[selectedIntent]}
+                </div>
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                {OUTCOME_INTENT_OPTIONS.map(option => (
+                  <button
+                    key={option.value}
+                    onClick={() => setSelectedIntent(option.value)}
+                    disabled={savedId != null || Boolean(savedRecord)}
+                    className={cn(
+                      'rounded-lg border px-3 py-2 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+                      selectedIntent === option.value
+                        ? 'border-primary/30 bg-primary/15 text-primary'
+                        : 'border-border bg-card/65 text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <PriceActionBar analysis={analysis} currentPrice={priceQ.data?.close ?? null} pattern={primaryPattern} stats={activePatternStats} />
@@ -656,6 +693,27 @@ const CHART_OUTCOME_TONES: Record<OutcomeStatus, string> = {
   cancelled: 'border-border bg-background/70 text-muted-foreground',
 }
 
+const OUTCOME_INTENT_OPTIONS: Array<{ value: OutcomeIntent; label: string }> = [
+  { value: 'observe', label: '관망' },
+  { value: 'breakout_wait', label: '돌파 대기' },
+  { value: 'pullback_candidate', label: '눌림 매수 후보' },
+  { value: 'invalidation_watch', label: '무효화 감시' },
+]
+
+const OUTCOME_INTENT_LABELS: Record<OutcomeIntent, string> = {
+  observe: '관망',
+  breakout_wait: '돌파 대기',
+  pullback_candidate: '눌림 매수 후보',
+  invalidation_watch: '무효화 감시',
+}
+
+const OUTCOME_INTENT_DESCRIPTIONS: Record<OutcomeIntent, string> = {
+  observe: '아직 진입보다 구조 관찰이 먼저인 경우에 남겨두는 기록입니다.',
+  breakout_wait: '트리거 돌파가 확인될 때 대응하려는 시나리오입니다.',
+  pullback_candidate: '돌파 후 눌림이나 구름대 지지 구간을 노리는 시나리오입니다.',
+  invalidation_watch: '무효화선 이탈 여부를 먼저 확인하려는 방어적 시나리오입니다.',
+}
+
 function PriceActionBar({
   analysis,
   currentPrice,
@@ -751,6 +809,7 @@ function DecisionJournalCard({
                     <span className="font-mono text-[11px] text-muted-foreground">{record.signal_date}</span>
                   </div>
                   <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-muted-foreground">
+                    <span>분류 {OUTCOME_INTENT_LABELS[(record.intent as OutcomeIntent) ?? 'breakout_wait'] ?? '돌파 대기'}</span>
                     <span>진입 {formatOutcomePrice(record.entry_price)}</span>
                     {record.target_price != null && <span>목표 {formatOutcomePrice(record.target_price)}</span>}
                     {record.stop_price != null && <span>무효화 {formatOutcomePrice(record.stop_price)}</span>}

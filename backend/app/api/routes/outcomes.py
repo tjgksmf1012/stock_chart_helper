@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 import logging
 
+import pandas as pd
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
@@ -17,6 +19,9 @@ from ...services.kis_client import get_kis_client
 router = APIRouter(prefix="/outcomes", tags=["outcomes"])
 logger = logging.getLogger(__name__)
 
+DEFAULT_INTENT = "breakout_wait"
+RECENT_INTRADAY_LOOKBACK_DAYS = 7
+
 
 class OutcomeRecord(BaseModel):
     symbol_code: str
@@ -27,6 +32,7 @@ class OutcomeRecord(BaseModel):
     entry_price: float
     target_price: float | None = None
     stop_price: float | None = None
+    intent: str | None = Field(default=DEFAULT_INTENT, description="observe | breakout_wait | pullback_candidate | invalidation_watch")
     outcome: str = Field(default="pending", description="win | loss | stopped_out | pending | cancelled")
     exit_price: float | None = None
     exit_date: str | None = None
@@ -50,6 +56,9 @@ class OutcomeEvaluationItem(BaseModel):
     symbol_name: str
     outcome: str
     close: float
+    high: float | None = None
+    low: float | None = None
+    evaluation_basis: str = "latest_close"
     target_price: float | None = None
     stop_price: float | None = None
     reason: str
@@ -63,6 +72,41 @@ class OutcomeEvaluationResponse(BaseModel):
     items: list[OutcomeEvaluationItem]
 
 
+@dataclass
+class PriceEvent:
+    when: datetime
+    high: float
+    low: float
+    close: float
+    basis: str
+
+
+@dataclass
+class PricePathSnapshot:
+    events: list[PriceEvent]
+    latest_close: float | None
+    highest_high: float | None
+    lowest_low: float | None
+    basis: str
+
+
+@dataclass
+class EvaluationDecision:
+    outcome: str
+    reason: str
+    exit_price: float
+    exit_date: str
+    evaluation_basis: str
+    observed_high: float | None
+    observed_low: float | None
+
+
+def _normalize_intent(intent: str | None) -> str:
+    value = (intent or DEFAULT_INTENT).strip().lower()
+    allowed = {"observe", "breakout_wait", "pullback_candidate", "invalidation_watch"}
+    return value if value in allowed else DEFAULT_INTENT
+
+
 def _serialize(record: SignalOutcome) -> dict:
     return {
         "id": record.id,
@@ -74,6 +118,7 @@ def _serialize(record: SignalOutcome) -> dict:
         "entry_price": record.entry_price,
         "target_price": record.target_price,
         "stop_price": record.stop_price,
+        "intent": _normalize_intent(record.intent),
         "outcome": record.outcome,
         "exit_price": record.exit_price,
         "exit_date": record.exit_date,
@@ -85,6 +130,53 @@ def _serialize(record: SignalOutcome) -> dict:
         "recorded_at": record.recorded_at.isoformat() if record.recorded_at else None,
         "updated_at": record.updated_at.isoformat() if record.updated_at else None,
     }
+
+
+def _parse_signal_date(value: str) -> date | None:
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value[:10])
+    except ValueError:
+        return None
+
+
+def _frame_events(frame: pd.DataFrame, *, timestamp_column: str, basis: str) -> list[PriceEvent]:
+    if frame.empty or timestamp_column not in frame.columns:
+        return []
+
+    ordered = frame.copy()
+    ordered[timestamp_column] = pd.to_datetime(ordered[timestamp_column], errors="coerce")
+    ordered = ordered.dropna(subset=[timestamp_column, "high", "low", "close"]).sort_values(timestamp_column)
+    events: list[PriceEvent] = []
+    for row in ordered.itertuples(index=False):
+        when = getattr(row, timestamp_column)
+        if when is None or pd.isna(when):
+            continue
+        if isinstance(when, pd.Timestamp):
+            when = when.to_pydatetime()
+        events.append(
+            PriceEvent(
+                when=when,
+                high=float(getattr(row, "high")),
+                low=float(getattr(row, "low")),
+                close=float(getattr(row, "close")),
+                basis=basis,
+            )
+        )
+    return events
+
+
+def _latest_close_from_events(events: list[PriceEvent]) -> float | None:
+    if not events:
+        return None
+    return float(events[-1].close)
+
+
+def _price_extremes(events: list[PriceEvent]) -> tuple[float | None, float | None]:
+    if not events:
+        return None, None
+    return max(event.high for event in events), min(event.low for event in events)
 
 
 async def _latest_close(symbol: str) -> float | None:
@@ -110,11 +202,132 @@ async def _latest_close(symbol: str) -> float | None:
     return None
 
 
+async def _load_price_path(symbol: str, signal_day: date, timeframe: str) -> PricePathSnapshot:
+    fetcher = get_data_fetcher()
+    today = date.today()
+    daily_df = await fetcher.get_stock_ohlcv(symbol, signal_day, today)
+    daily_events = _frame_events(daily_df, timestamp_column="date", basis="daily_high_low")
+
+    recent_start = max(signal_day, today - timedelta(days=RECENT_INTRADAY_LOOKBACK_DAYS - 1))
+    intraday_events: list[PriceEvent] = []
+    if recent_start <= today:
+        try:
+            intraday_df = await fetcher.get_stock_intraday_ohlcv(
+                symbol,
+                "1m",
+                days=max(1, (today - recent_start).days + 1),
+            )
+            if not intraday_df.empty and "datetime" in intraday_df.columns:
+                intraday_df = intraday_df.copy()
+                intraday_df["datetime"] = pd.to_datetime(intraday_df["datetime"], errors="coerce")
+                intraday_df = intraday_df.loc[intraday_df["datetime"].dt.date >= recent_start]
+                intraday_events = _frame_events(intraday_df, timestamp_column="datetime", basis="intraday_high_low")
+        except Exception:
+            intraday_events = []
+
+    if intraday_events:
+        daily_events = [event for event in daily_events if event.when.date() < recent_start]
+
+    events = sorted([*daily_events, *intraday_events], key=lambda event: event.when)
+    latest_close = _latest_close_from_events(events)
+    highest_high, lowest_low = _price_extremes(events)
+    basis = "intraday_high_low" if intraday_events else "daily_high_low"
+    return PricePathSnapshot(
+        events=events,
+        latest_close=latest_close,
+        highest_high=highest_high,
+        lowest_low=lowest_low,
+        basis=basis,
+    )
+
+
+def _decide_outcome_from_events(
+    *,
+    events: list[PriceEvent],
+    target_price: float | None,
+    stop_price: float | None,
+) -> EvaluationDecision | None:
+    if not events:
+        return None
+
+    highest_high, lowest_low = _price_extremes(events)
+    for event in events:
+        target_hit = target_price is not None and event.high >= target_price
+        stop_hit = stop_price is not None and event.low <= stop_price
+
+        if target_hit and stop_hit:
+            return EvaluationDecision(
+                outcome="stopped_out",
+                reason=f"같은 바에서 목표가와 무효화가를 모두 터치해 보수적으로 손절 처리 ({event.when.date().isoformat()})",
+                exit_price=float(stop_price or event.close),
+                exit_date=event.when.date().isoformat(),
+                evaluation_basis=event.basis,
+                observed_high=highest_high,
+                observed_low=lowest_low,
+            )
+        if target_hit:
+            return EvaluationDecision(
+                outcome="win",
+                reason=f"고가가 목표가에 먼저 닿음 ({event.when.date().isoformat()})",
+                exit_price=float(target_price or event.close),
+                exit_date=event.when.date().isoformat(),
+                evaluation_basis=event.basis,
+                observed_high=highest_high,
+                observed_low=lowest_low,
+            )
+        if stop_hit:
+            return EvaluationDecision(
+                outcome="stopped_out",
+                reason=f"저가가 무효화가에 먼저 닿음 ({event.when.date().isoformat()})",
+                exit_price=float(stop_price or event.close),
+                exit_date=event.when.date().isoformat(),
+                evaluation_basis=event.basis,
+                observed_high=highest_high,
+                observed_low=lowest_low,
+            )
+    return None
+
+
+def _fallback_close_decision(
+    *,
+    close: float | None,
+    target_price: float | None,
+    stop_price: float | None,
+) -> EvaluationDecision | None:
+    if close is None or close <= 0:
+        return None
+    if target_price is not None and close >= target_price:
+        return EvaluationDecision(
+            outcome="win",
+            reason="최신 종가가 목표가 이상",
+            exit_price=close,
+            exit_date=date.today().isoformat(),
+            evaluation_basis="latest_close",
+            observed_high=close,
+            observed_low=close,
+        )
+    if stop_price is not None and close <= stop_price:
+        return EvaluationDecision(
+            outcome="stopped_out",
+            reason="최신 종가가 무효화가 이하",
+            exit_price=close,
+            exit_date=date.today().isoformat(),
+            evaluation_basis="latest_close",
+            observed_high=close,
+            observed_low=close,
+        )
+    return None
+
+
 @router.post("", status_code=201)
 async def record_outcome(record: OutcomeRecord) -> dict:
     """Create a new outcome record in PostgreSQL."""
     async with AsyncSessionLocal() as session:
-        entry = SignalOutcome(**record.model_dump(), recorded_at=datetime.now())
+        entry = SignalOutcome(
+            **record.model_dump(),
+            intent=_normalize_intent(record.intent),
+            recorded_at=datetime.now(),
+        )
         session.add(entry)
         await session.flush()
         total_records = await session.scalar(select(func.count()).select_from(SignalOutcome))
@@ -134,7 +347,7 @@ async def list_outcomes() -> list[dict]:
 
 @router.post("/evaluate-pending")
 async def evaluate_pending_outcomes() -> OutcomeEvaluationResponse:
-    """Close pending records when the latest price has reached target or stop."""
+    """Close pending records when target or stop was touched after the signal date."""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(SignalOutcome).where(SignalOutcome.outcome == "pending").order_by(SignalOutcome.recorded_at.asc())
@@ -146,43 +359,49 @@ async def evaluate_pending_outcomes() -> OutcomeEvaluationResponse:
 
         for record in pending:
             symbol = record.symbol_code
-            if not symbol:
-                skipped += 1
-                continue
-
-            close = await _latest_close(symbol)
-            if close is None or close <= 0:
+            signal_day = _parse_signal_date(record.signal_date)
+            if not symbol or signal_day is None:
                 skipped += 1
                 continue
 
             checked += 1
-            next_outcome: str | None = None
-            reason = ""
-            if record.target_price is not None and close >= record.target_price:
-                next_outcome = "win"
-                reason = "latest price reached target"
-            elif record.stop_price is not None and close <= record.stop_price:
-                next_outcome = "stopped_out"
-                reason = "latest price reached stop"
+            snapshot = await _load_price_path(symbol, signal_day, record.timeframe)
+            decision = _decide_outcome_from_events(
+                events=snapshot.events,
+                target_price=record.target_price,
+                stop_price=record.stop_price,
+            )
+            if decision is None:
+                latest_close = snapshot.latest_close
+                if latest_close is None:
+                    latest_close = await _latest_close(symbol)
+                decision = _fallback_close_decision(
+                    close=latest_close,
+                    target_price=record.target_price,
+                    stop_price=record.stop_price,
+                )
 
-            if not next_outcome:
+            if decision is None:
                 continue
 
-            record.outcome = next_outcome
-            record.exit_price = close
-            record.exit_date = date.today().isoformat()
-            record.notes = "auto_evaluated"
+            record.outcome = decision.outcome
+            record.exit_price = decision.exit_price
+            record.exit_date = decision.exit_date
+            record.notes = f"auto_evaluated:{decision.evaluation_basis}"
             record.updated_at = datetime.now()
             items.append(
                 OutcomeEvaluationItem(
                     id=record.id,
                     symbol_code=symbol,
                     symbol_name=record.symbol_name,
-                    outcome=next_outcome,
-                    close=close,
+                    outcome=decision.outcome,
+                    close=snapshot.latest_close or decision.exit_price,
+                    high=decision.observed_high,
+                    low=decision.observed_low,
+                    evaluation_basis=decision.evaluation_basis,
                     target_price=record.target_price,
                     stop_price=record.stop_price,
-                    reason=reason,
+                    reason=decision.reason,
                 )
             )
 

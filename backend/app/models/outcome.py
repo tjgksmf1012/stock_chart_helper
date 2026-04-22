@@ -24,6 +24,7 @@ class SignalOutcome(Base):
     entry_price: Mapped[float] = mapped_column(Float, nullable=False)
     target_price: Mapped[float | None] = mapped_column(Float)
     stop_price: Mapped[float | None] = mapped_column(Float)
+    intent: Mapped[str | None] = mapped_column(String(40), default="breakout_wait")
     outcome: Mapped[str] = mapped_column(String(20), nullable=False, default="pending", index=True)
     exit_price: Mapped[float | None] = mapped_column(Float)
     exit_date: Mapped[str | None] = mapped_column(String(20))
@@ -34,4 +35,3 @@ class SignalOutcome(Base):
     trade_readiness_at_signal: Mapped[float | None] = mapped_column(Float)
     recorded_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime)
-

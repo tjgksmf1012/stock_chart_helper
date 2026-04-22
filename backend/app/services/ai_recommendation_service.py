@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import Counter
 from datetime import datetime
 
 from ..api.schemas import AiRecommendationItem, AiRecommendationResponse, SymbolInfo
@@ -12,7 +13,8 @@ from .scanner import get_scan_results
 from .timeframe_service import DEFAULT_TIMEFRAME, timeframe_label
 
 
-DISCLAIMER = "투자 권유가 아닌 기술적 분석 보조 의견입니다. 실제 매매 전 재무, 뉴스, 수급, 손절 기준을 직접 확인하세요."
+DISCLAIMER = "투자 권유가 아닌 기술적 분석 보조 정보입니다. 실제 매매 여부, 비중, 손절, 현금 관리는 직접 확인하세요."
+WATCHLIST_CACHE_KEY = "watchlist:v1:default"
 
 STANCE_LABELS = {
     "priority_watch": "우선 검토",
@@ -21,7 +23,7 @@ STANCE_LABELS = {
     "risk_review": "리스크 점검",
 }
 
-_RECOMMENDATION_CACHE_PREFIX = "ai:recommendations:v1"
+_RECOMMENDATION_CACHE_PREFIX = "ai:recommendations:v2"
 _IN_FLIGHT_RECOMMENDATIONS: set[str] = set()
 
 
@@ -40,9 +42,18 @@ async def build_ai_recommendations(timeframe: str = DEFAULT_TIMEFRAME, limit: in
 
     _IN_FLIGHT_RECOMMENDATIONS.add(cache_key)
     try:
-        rows = await get_scan_results(timeframe)
-        ranked = [_make_recommendation(row, timeframe) for row in rows]
-        ranked.sort(key=lambda item: (item.score, item.confidence, item.p_up - item.p_down), reverse=True)
+        rows, watch_codes = await asyncio.gather(get_scan_results(timeframe), _load_watchlist_codes())
+        ranked = [_make_recommendation(row, timeframe, watch_codes) for row in rows]
+        _apply_overlap_risk(ranked)
+        ranked.sort(
+            key=lambda item: (
+                item.watchlist_priority,
+                item.score,
+                item.confidence,
+                item.p_up - item.p_down,
+            ),
+            reverse=True,
+        )
 
         items = _rerank(ranked[:limit])
         priority_items = _rerank([item for item in ranked if item.stance == "priority_watch"][:limit])
@@ -50,21 +61,23 @@ async def build_ai_recommendations(timeframe: str = DEFAULT_TIMEFRAME, limit: in
         risk_items = _rerank(
             sorted(
                 [item for item in ranked if item.stance == "risk_review"],
-                key=lambda item: (len(item.risk_flags), 1 - item.data_quality, item.p_down),
+                key=lambda item: (item.watchlist_priority, len(item.risk_flags), 1 - item.data_quality, item.p_down),
                 reverse=True,
             )[:limit]
         )
+        watchlist_focus_items = _rerank([item for item in ranked if item.watchlist_priority][:limit])
 
         response = AiRecommendationResponse(
             generated_at=datetime.utcnow().isoformat(),
             timeframe=timeframe,
             timeframe_label=timeframe_label(timeframe),
-            market_brief=_market_brief(ranked, timeframe),
-            portfolio_guidance=_portfolio_guidance(priority_items, watch_items, risk_items),
+            market_brief=_market_brief(ranked, timeframe, watchlist_focus_items),
+            portfolio_guidance=_portfolio_guidance(priority_items, watch_items, risk_items, watchlist_focus_items),
             items=items,
             priority_items=priority_items,
             watch_items=watch_items,
             risk_items=risk_items,
+            watchlist_focus_items=watchlist_focus_items,
             disclaimer=DISCLAIMER,
         )
         response = await apply_openai_recommendation_overlay(response)
@@ -74,13 +87,19 @@ async def build_ai_recommendations(timeframe: str = DEFAULT_TIMEFRAME, limit: in
         _IN_FLIGHT_RECOMMENDATIONS.discard(cache_key)
 
 
-def _make_recommendation(row: dict, timeframe: str) -> AiRecommendationItem:
+async def _load_watchlist_codes() -> set[str]:
+    stored = await cache_get(WATCHLIST_CACHE_KEY)
+    if not isinstance(stored, list):
+        return set()
+    return {str(item.get("code", "")).strip() for item in stored if isinstance(item, dict) and item.get("code")}
+
+
+def _make_recommendation(row: dict, timeframe: str, watch_codes: set[str]) -> AiRecommendationItem:
     score = _recommendation_score(row)
     confidence = _confidence(row)
     stance = _stance(row, score)
     symbol_code = row["code"]
-    reasons = _reasons(row, score)
-    next_actions = _next_actions(row, stance)
+    watched = symbol_code in watch_codes
 
     return AiRecommendationItem(
         rank=0,
@@ -99,12 +118,18 @@ def _make_recommendation(row: dict, timeframe: str) -> AiRecommendationItem:
         score=round(score, 1),
         confidence=round(confidence, 3),
         source_category=_source_category(row),
-        summary=_summary(row, stance, score),
+        watchlist_priority=watched,
+        summary=_summary(row, stance),
         action_line=_action_line(row, stance),
-        reasons=reasons,
+        do_now=_do_now(row, stance),
+        avoid_if=_avoid_if(row),
+        review_price=_review_price(row),
+        skip_reason=_skip_reason(row, stance),
+        overlap_risk="",
+        reasons=_reasons(row),
         risk_flags=_risk_flags(row),
-        next_actions=next_actions,
-        position_hint=_position_hint(row, stance, score),
+        next_actions=_next_actions(row, stance),
+        position_hint=_position_hint(row, stance, watched),
         pattern_type=row.get("pattern_type"),
         state=row.get("state"),
         p_up=round(float(row.get("p_up", 0.0)), 4),
@@ -115,9 +140,25 @@ def _make_recommendation(row: dict, timeframe: str) -> AiRecommendationItem:
         reward_risk_ratio=round(float(row.get("reward_risk_ratio", 0.0)), 3),
         data_quality=round(float(row.get("data_quality", 0.0)), 4),
         confluence_score=round(float(row.get("confluence_score", 0.0)), 4),
-        next_trigger=row.get("next_trigger", ""),
+        next_trigger=str(row.get("next_trigger", "") or ""),
         chart_path=f"/chart/{symbol_code}",
     )
+
+
+def _apply_overlap_risk(items: list[AiRecommendationItem]) -> None:
+    pattern_counts = Counter(item.pattern_type or "none" for item in items)
+    stance_counts = Counter(item.stance for item in items)
+    watched_count = sum(1 for item in items if item.watchlist_priority)
+
+    for item in items:
+        messages: list[str] = []
+        if item.pattern_type and pattern_counts[item.pattern_type] >= 3:
+            messages.append(f"{item.pattern_type} 패턴 후보가 많아 같은 구조 노출이 겹칩니다.")
+        if stance_counts[item.stance] >= 4:
+            messages.append(f"{item.stance_label} 후보가 많아 비슷한 의사결정이 반복될 수 있습니다.")
+        if item.watchlist_priority and watched_count >= 3:
+            messages.append("관심종목이 여러 개라 동일한 방향으로 포지션이 몰릴 수 있습니다.")
+        item.overlap_risk = " ".join(messages[:2])
 
 
 def _recommendation_score(row: dict) -> float:
@@ -168,23 +209,23 @@ def _stance(row: dict, score: float) -> str:
     return "risk_review"
 
 
-def _summary(row: dict, stance: str, score: float) -> str:
+def _summary(row: dict, stance: str) -> str:
     name = row.get("name", row.get("code", "종목"))
-    pattern = row.get("pattern_type") or "명확한 패턴 없음"
+    pattern = row.get("pattern_type") or "구조 미확인"
     readiness = row.get("trade_readiness_label") or "준비도 확인 필요"
     if stance == "priority_watch":
-        return f"{name}은 {pattern} 구조와 {readiness}가 함께 들어와 우선 관찰 후보입니다."
+        return f"{name}은 {pattern} 구조가 살아 있고 {readiness} 구간이라 오늘 바로 체크할 후보입니다."
     if stance == "wait_for_trigger":
-        return f"{name}은 점수 {score:.0f}점으로 구조는 살아 있지만 확인 트리거를 기다리는 편이 좋습니다."
+        return f"{name}은 구조는 유지되지만 아직 트리거 확인이 먼저인 대기 후보입니다."
     if stance == "avoid_chase":
-        return f"{name}은 방향성은 보이나 진입 구간 점수가 낮아 추격보다 눌림 확인이 우선입니다."
-    return f"{name}은 현재 데이터 품질, 손익비, 리스크 플래그를 먼저 점검해야 합니다."
+        return f"{name}은 방향성은 좋지만 이미 앞서가 있어 추격 대신 눌림 확인이 더 중요합니다."
+    return f"{name}은 지금은 방어적으로 봐야 하는 후보입니다. 리스크와 데이터 상태를 먼저 점검해야 합니다."
 
 
-def _reasons(row: dict, score: float) -> list[str]:
+def _reasons(row: dict) -> list[str]:
     reasons = [
-        f"상승확률 {float(row.get('p_up', 0.0)) * 100:.1f}%, 하락확률 {float(row.get('p_down', 0.0)) * 100:.1f}%",
-        f"거래준비도 {float(row.get('trade_readiness_score', 0.0)) * 100:.0f}%, 진입구간 {float(row.get('entry_window_score', 0.0)) * 100:.0f}%",
+        f"상승 확률 {float(row.get('p_up', 0.0)) * 100:.1f}%, 하락 확률 {float(row.get('p_down', 0.0)) * 100:.1f}%",
+        f"거래 준비도 {float(row.get('trade_readiness_score', 0.0)) * 100:.0f}%, 진입 구간 {float(row.get('entry_window_score', 0.0)) * 100:.0f}%",
         f"데이터 품질 {float(row.get('data_quality', 0.0)) * 100:.0f}%, 신뢰도 {float(row.get('confidence', 0.0)) * 100:.0f}%",
     ]
     if row.get("reason_summary"):
@@ -194,36 +235,59 @@ def _reasons(row: dict, score: float) -> list[str]:
     return reasons[:4]
 
 
-def _action_line(row: dict, stance: str) -> str:
+def _do_now(row: dict, stance: str) -> str:
     trigger = str(row.get("next_trigger") or "").strip()
-    risk_flags = [str(flag) for flag in (row.get("risk_flags") or []) if flag]
-    no_signal_reason = str(row.get("no_signal_reason") or "").strip()
-
-    if stance == "risk_review":
-        if risk_flags:
-            return f"지금 할 일: 매수/추격 보류 -> 그 이후 {risk_flags[0]} 해소 여부 확인"
-        if no_signal_reason:
-            return f"지금 할 일: 관망 유지 -> 그 이후 {no_signal_reason}"
-        return "지금 할 일: 방어적으로 관망 -> 그 이후 점수와 트리거가 다시 정렬될 때 재평가"
-
-    if stance == "avoid_chase":
-        return "지금 할 일: 추격 대신 눌림 구간 대기 -> 그 이후 지지 확인 시 재평가"
-
     if trigger:
-        follow_up = (
-            "그 이후 종가 기준 유지 여부를 다시 확인"
-            if "종가" in trigger or "확인" in trigger
-            else "그 이후 거래량과 지지 지속 여부를 재평가"
-        )
-        return f"지금 할 일: {trigger} -> {follow_up}"
-
+        return f"{trigger} 확인 후 다시 평가"
     if stance == "priority_watch":
-        return "지금 할 일: 핵심 트리거 전까지 시나리오 유지 -> 그 이후 목표가와 무효화 기준 재확인"
-    if no_signal_reason:
-        return f"지금 할 일: 관망 유지 -> 그 이후 {no_signal_reason}"
+        return "핵심 가격대와 거래량 반응 확인"
+    if stance == "avoid_chase":
+        return "눌림 또는 지지 확인 전까지 대기"
+    if stance == "risk_review":
+        return "신규 진입보다 리스크 정리 우선"
+    return "트리거 형성 전까지 관찰 유지"
+
+
+def _avoid_if(row: dict) -> str:
+    risk_flags = [str(flag) for flag in (row.get("risk_flags") or []) if flag]
     if risk_flags:
-        return f"지금 할 일: 리스크 요인 먼저 해소 확인 -> 그 이후 재진입 가능성 재평가"
-    return "지금 할 일: 현재 구조 유지 여부 관찰 -> 그 이후 다음 트리거가 생기면 재평가"
+        return risk_flags[0]
+    no_signal_reason = str(row.get("no_signal_reason") or "").strip()
+    if no_signal_reason:
+        return no_signal_reason
+    if float(row.get("reward_risk_ratio", 0.0)) < 1.2:
+        return "손익비가 낮아 비중 확대를 피해야 함"
+    return "핵심 가격대 지지 확인 전 추격 금지"
+
+
+def _review_price(row: dict) -> str:
+    trigger = str(row.get("next_trigger") or "").strip()
+    if trigger:
+        return trigger
+    entry_window = str(row.get("entry_window_summary") or "").strip()
+    if entry_window:
+        return entry_window
+    reentry_trigger = str(row.get("reentry_trigger") or "").strip()
+    if reentry_trigger:
+        return reentry_trigger
+    return "핵심 가격대가 다시 정렬될 때 재검토"
+
+
+def _skip_reason(row: dict, stance: str) -> str:
+    if stance == "priority_watch":
+        return "이미 상위 우선 후보라 오늘 안 보낼 이유가 크지 않습니다."
+    no_signal_reason = str(row.get("no_signal_reason") or "").strip()
+    if no_signal_reason:
+        return no_signal_reason
+    if float(row.get("data_quality", 0.0)) < 0.45:
+        return "데이터 품질이 낮아 오늘은 강하게 해석하지 않는 편이 낫습니다."
+    if stance == "avoid_chase":
+        return "가격이 먼저 달려서 눌림 없이 접근하면 기대값이 떨어집니다."
+    return "트리거가 아직 완성되지 않아 서둘러 볼 이유가 약합니다."
+
+
+def _action_line(row: dict, stance: str) -> str:
+    return f"지금 할 일: {_do_now(row, stance)}"
 
 
 def _risk_flags(row: dict) -> list[str]:
@@ -231,7 +295,7 @@ def _risk_flags(row: dict) -> list[str]:
     if row.get("trend_warning"):
         flags.append(str(row["trend_warning"]))
     if float(row.get("reward_risk_ratio", 0.0)) < 1.2:
-        flags.append("손익비가 낮아 포지션 크기 축소 필요")
+        flags.append("손익비가 낮아 포지션 크기 축소가 필요합니다.")
     if row.get("no_signal_flag") and row.get("no_signal_reason"):
         flags.append(str(row["no_signal_reason"]))
     return flags[:5]
@@ -239,30 +303,22 @@ def _risk_flags(row: dict) -> list[str]:
 
 def _next_actions(row: dict, stance: str) -> list[str]:
     actions: list[str] = []
-    if row.get("next_trigger"):
-        actions.append(str(row["next_trigger"]))
-    actions.extend(str(item) for item in (row.get("confirmation_checklist") or [])[:3] if item)
-    if stance == "priority_watch":
-        actions.append("돌파 확인 전에는 분할 관찰, 확인 후에도 손절 기준을 먼저 고정")
-    elif stance == "avoid_chase":
-        actions.append("현재가 추격보다 재테스트, 거래량 회복, 지지 확인을 기다림")
-    elif stance == "risk_review":
-        actions.append("신호가 다시 정렬될 때까지 관망 후보로 분류")
-    else:
-        actions.append("트리거 충족 전에는 관심종목에만 보관")
-    return actions[:5]
+    actions.append(f"지금 할 일: {_do_now(row, stance)}")
+    actions.append(f"진입 금지 조건: {_avoid_if(row)}")
+    actions.append(f"다시 볼 가격: {_review_price(row)}")
+    actions.append(f"오늘 안 봐도 되는 이유: {_skip_reason(row, stance)}")
+    return actions[:4]
 
 
-def _position_hint(row: dict, stance: str, score: float) -> str:
-    if stance == "priority_watch" and score >= 76:
-        return "강한 후보지만 확정 신호와 손절선을 동시에 확인하세요."
+def _position_hint(row: dict, stance: str, watched: bool) -> str:
+    head = "관심종목 우선 후보입니다. " if watched else ""
     if stance == "priority_watch":
-        return "우선 관찰 후보입니다. 진입은 확인 트리거 이후가 적합합니다."
+        return f"{head}확인 신호가 나오면 대응하고, 무효화 기준은 미리 정해두는 쪽이 적절합니다."
     if stance == "wait_for_trigger":
-        return "관심종목에 두고 트리거가 맞을 때만 다시 평가하세요."
+        return f"{head}지금은 자리 선점보다 트리거 확인을 기다리는 단계입니다."
     if stance == "avoid_chase":
-        return "가격이 앞서간 구간입니다. 눌림이나 재테스트 전에는 보수적으로 보세요."
-    return "현재는 방어적 판단이 우선입니다."
+        return f"{head}가격이 앞서가 있으니 눌림이나 재지지 전까지는 보수적으로 보세요."
+    return f"{head}지금은 방어적 판단이 우선입니다."
 
 
 def _source_category(row: dict) -> str:
@@ -277,30 +333,40 @@ def _source_category(row: dict) -> str:
     return "scan_result"
 
 
-def _market_brief(items: list[AiRecommendationItem], timeframe: str) -> str:
+def _market_brief(items: list[AiRecommendationItem], timeframe: str, watchlist_focus_items: list[AiRecommendationItem]) -> str:
     if not items:
-        return f"{timeframe_label(timeframe)} 기준으로 평가할 스캔 결과가 아직 없습니다."
+        return f"{timeframe_label(timeframe)} 기준으로 아직 정리된 추천 후보가 없습니다."
     priority = sum(1 for item in items if item.stance == "priority_watch")
     watch = sum(1 for item in items if item.stance in {"wait_for_trigger", "avoid_chase"})
     risk = sum(1 for item in items if item.stance == "risk_review")
-    avg_score = sum(item.score for item in items) / len(items)
-    return f"{timeframe_label(timeframe)} 스캔에서 우선 검토 {priority}개, 트리거 대기 {watch}개, 리스크 점검 {risk}개가 잡혔고 평균 운용 점수는 {avg_score:.0f}점입니다."
+    watchlist_count = len(watchlist_focus_items)
+    return (
+        f"{timeframe_label(timeframe)} 기준으로 우선 검토 {priority}개, 대기 {watch}개, 리스크 점검 {risk}개입니다. "
+        f"관심종목 우선 후보는 {watchlist_count}개입니다."
+    )
 
 
 def _portfolio_guidance(
     priority_items: list[AiRecommendationItem],
     watch_items: list[AiRecommendationItem],
     risk_items: list[AiRecommendationItem],
+    watchlist_focus_items: list[AiRecommendationItem],
 ) -> str:
+    if watchlist_focus_items:
+        lead = watchlist_focus_items[0]
+        return (
+            f"관심종목에서는 {lead.symbol.name}을 먼저 보세요. "
+            "이미 들고 있거나 계속 추적하는 종목과 신규 후보가 같은 방향으로 겹치면 비중이 몰릴 수 있습니다."
+        )
     if priority_items:
-        top = priority_items[0]
-        return f"오늘은 {top.symbol.name}처럼 준비도와 데이터 품질이 같이 맞는 후보를 먼저 보되, 같은 업종/동일 방향 후보를 과하게 겹치지 않는 구성이 좋습니다."
+        lead = priority_items[0]
+        return f"오늘은 {lead.symbol.name}처럼 준비도와 데이터 품질이 함께 맞는 후보부터 보는 편이 효율적입니다."
     if watch_items:
-        top = watch_items[0]
-        return f"즉시 매수 후보보다 {top.symbol.name} 같은 트리거 대기 후보가 많습니다. 돌파, 거래량, 재테스트가 맞기 전까지는 현금 비중을 남겨두는 쪽이 낫습니다."
+        lead = watch_items[0]
+        return f"즉시 진입보다 {lead.symbol.name}처럼 트리거 확인이 필요한 후보가 많습니다. 기다리는 쪽이 낫습니다."
     if risk_items:
-        return "리스크 점검 후보 비중이 높습니다. 지금은 공격보다 관망, 손절 기준 재정리, 데이터 품질 확인이 우선입니다."
-    return "충분한 후보가 아직 없습니다. 스캔이 끝난 뒤 다시 평가하세요."
+        return "리스크 점검 후보 비중이 높습니다. 신규 진입보다 무효화 기준과 데이터 상태를 먼저 정리하세요."
+    return "추천 후보가 충분히 쌓이면 이 영역이 운용 가이드를 보여줍니다."
 
 
 def _rerank(items: list[AiRecommendationItem]) -> list[AiRecommendationItem]:
