@@ -389,6 +389,27 @@ export interface AiRecommendationItem {
   confluence_score: number
   next_trigger: string
   chart_path: string
+  personal_fit_score?: number
+  personal_fit_label?: string
+  personal_fit_reasons?: string[]
+}
+
+export interface PersonalStyleProfile {
+  style_key: string
+  style_label: string
+  summary: string
+  confidence: number
+  sample_count: number
+  primary_intent: string
+  primary_intent_label: string
+  secondary_intent?: string | null
+  secondary_intent_label?: string | null
+  best_pattern?: string | null
+  best_pattern_win_rate?: number
+  best_timeframe?: string | null
+  best_timeframe_label?: string | null
+  best_timeframe_win_rate?: number
+  focus_points: string[]
 }
 
 export interface AiRecommendationResponse {
@@ -402,6 +423,8 @@ export interface AiRecommendationResponse {
   watch_items: AiRecommendationItem[]
   risk_items: AiRecommendationItem[]
   watchlist_focus_items?: AiRecommendationItem[]
+  personalized_items?: AiRecommendationItem[]
+  personal_style?: PersonalStyleProfile
   disclaimer: string
   llm_enabled?: boolean
   llm_model?: string | null
@@ -747,6 +770,8 @@ export interface OutcomesSummary {
   cancelled: number
   by_pattern: Record<string, { wins: number; total: number; win_rate: number }>
   by_intent?: Record<string, { wins: number; total: number; win_rate: number }>
+  by_timeframe?: Record<string, { wins: number; total: number; win_rate: number }>
+  style_profile?: PersonalStyleProfile
 }
 
 export interface OutcomeEvaluationItem {

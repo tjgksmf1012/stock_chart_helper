@@ -9,6 +9,7 @@ from datetime import datetime
 from ..api.schemas import AiRecommendationItem, AiRecommendationResponse, SymbolInfo
 from ..core.redis import cache_get, cache_set
 from .openai_recommendation_service import apply_openai_recommendation_overlay
+from .personalization_service import load_personalization_snapshot, score_personal_fit
 from .scanner import get_scan_results
 from .timeframe_service import DEFAULT_TIMEFRAME, timeframe_label
 
@@ -23,7 +24,7 @@ STANCE_LABELS = {
     "risk_review": "리스크 점검",
 }
 
-_RECOMMENDATION_CACHE_PREFIX = "ai:recommendations:v2"
+_RECOMMENDATION_CACHE_PREFIX = "ai:recommendations:v3"
 _IN_FLIGHT_RECOMMENDATIONS: set[str] = set()
 
 
@@ -42,12 +43,17 @@ async def build_ai_recommendations(timeframe: str = DEFAULT_TIMEFRAME, limit: in
 
     _IN_FLIGHT_RECOMMENDATIONS.add(cache_key)
     try:
-        rows, watch_codes = await asyncio.gather(get_scan_results(timeframe), _load_watchlist_codes())
-        ranked = [_make_recommendation(row, timeframe, watch_codes) for row in rows]
+        rows, watch_codes, personalization = await asyncio.gather(
+            get_scan_results(timeframe),
+            _load_watchlist_codes(),
+            load_personalization_snapshot(),
+        )
+        ranked = [_make_recommendation(row, timeframe, watch_codes, personalization) for row in rows]
         _apply_overlap_risk(ranked)
         ranked.sort(
             key=lambda item: (
                 item.watchlist_priority,
+                item.personal_fit_score,
                 item.score,
                 item.confidence,
                 item.p_up - item.p_down,
@@ -61,23 +67,45 @@ async def build_ai_recommendations(timeframe: str = DEFAULT_TIMEFRAME, limit: in
         risk_items = _rerank(
             sorted(
                 [item for item in ranked if item.stance == "risk_review"],
-                key=lambda item: (item.watchlist_priority, len(item.risk_flags), 1 - item.data_quality, item.p_down),
+                key=lambda item: (
+                    item.watchlist_priority,
+                    item.personal_fit_score,
+                    len(item.risk_flags),
+                    1 - item.data_quality,
+                    item.p_down,
+                ),
                 reverse=True,
             )[:limit]
         )
         watchlist_focus_items = _rerank([item for item in ranked if item.watchlist_priority][:limit])
+        personalized_items = _rerank(
+            sorted(
+                [item for item in ranked if item.personal_fit_score > 0],
+                key=lambda item: (item.watchlist_priority, item.personal_fit_score, item.score, item.confidence),
+                reverse=True,
+            )[:limit]
+        )
 
         response = AiRecommendationResponse(
             generated_at=datetime.utcnow().isoformat(),
             timeframe=timeframe,
             timeframe_label=timeframe_label(timeframe),
             market_brief=_market_brief(ranked, timeframe, watchlist_focus_items),
-            portfolio_guidance=_portfolio_guidance(priority_items, watch_items, risk_items, watchlist_focus_items),
+            portfolio_guidance=_portfolio_guidance(
+                priority_items,
+                watch_items,
+                risk_items,
+                watchlist_focus_items,
+                personalized_items,
+                personalization,
+            ),
             items=items,
             priority_items=priority_items,
             watch_items=watch_items,
             risk_items=risk_items,
             watchlist_focus_items=watchlist_focus_items,
+            personalized_items=personalized_items,
+            personal_style=personalization.get("style_profile") or {},
             disclaimer=DISCLAIMER,
         )
         response = await apply_openai_recommendation_overlay(response)
@@ -94,12 +122,13 @@ async def _load_watchlist_codes() -> set[str]:
     return {str(item.get("code", "")).strip() for item in stored if isinstance(item, dict) and item.get("code")}
 
 
-def _make_recommendation(row: dict, timeframe: str, watch_codes: set[str]) -> AiRecommendationItem:
+def _make_recommendation(row: dict, timeframe: str, watch_codes: set[str], personalization: dict | None) -> AiRecommendationItem:
     score = _recommendation_score(row)
     confidence = _confidence(row)
     stance = _stance(row, score)
     symbol_code = row["code"]
     watched = symbol_code in watch_codes
+    personal_fit_score, personal_fit_label, personal_fit_reasons = score_personal_fit(row, personalization)
 
     return AiRecommendationItem(
         rank=0,
@@ -142,6 +171,9 @@ def _make_recommendation(row: dict, timeframe: str, watch_codes: set[str]) -> Ai
         confluence_score=round(float(row.get("confluence_score", 0.0)), 4),
         next_trigger=str(row.get("next_trigger", "") or ""),
         chart_path=f"/chart/{symbol_code}",
+        personal_fit_score=personal_fit_score,
+        personal_fit_label=personal_fit_label,
+        personal_fit_reasons=personal_fit_reasons,
     )
 
 
@@ -351,7 +383,17 @@ def _portfolio_guidance(
     watch_items: list[AiRecommendationItem],
     risk_items: list[AiRecommendationItem],
     watchlist_focus_items: list[AiRecommendationItem],
+    personalized_items: list[AiRecommendationItem],
+    personalization: dict | None,
 ) -> str:
+    style = (personalization or {}).get("style_profile") or {}
+    style_label = style.get("style_label")
+    if personalized_items and style_label:
+        lead = personalized_items[0]
+        return (
+            f"내 기록 기준 현재 운용 스타일은 {style_label}에 가깝습니다. "
+            f"오늘은 {lead.symbol.name}처럼 내 스타일 적합도가 높은 후보부터 보는 편이 피로도가 낮습니다."
+        )
     if watchlist_focus_items:
         lead = watchlist_focus_items[0]
         return (

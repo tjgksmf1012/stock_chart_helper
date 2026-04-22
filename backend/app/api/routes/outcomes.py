@@ -15,6 +15,7 @@ from ...core.database import AsyncSessionLocal
 from ...models.outcome import SignalOutcome
 from ...services.data_fetcher import get_data_fetcher
 from ...services.kis_client import get_kis_client
+from ...services.personalization_service import build_personalization_snapshot
 
 router = APIRouter(prefix="/outcomes", tags=["outcomes"])
 logger = logging.getLogger(__name__)
@@ -491,40 +492,7 @@ async def outcomes_summary() -> dict:
     async with AsyncSessionLocal() as session:
         result = await session.execute(select(SignalOutcome))
         records = result.scalars().all()
-
-    completed = [record for record in records if record.outcome not in ("pending", "cancelled")]
-    wins = [record for record in completed if record.outcome == "win"]
-    hold_days = [days for record in completed if (days := _days_between(record.signal_date, record.exit_date)) is not None]
-
-    by_pattern: dict[str, dict[str, int]] = {}
-    by_intent: dict[str, dict[str, int]] = {}
-    for record in completed:
-        bucket = by_pattern.setdefault(record.pattern_type or "unknown", {"wins": 0, "total": 0})
-        bucket["total"] += 1
-        if record.outcome == "win":
-            bucket["wins"] += 1
-        intent_bucket = by_intent.setdefault(_normalize_intent(record.intent), {"wins": 0, "total": 0})
-        intent_bucket["total"] += 1
-        if record.outcome == "win":
-            intent_bucket["wins"] += 1
-
-    return {
-        "total_records": len(records),
-        "completed": len(completed),
-        "wins": len(wins),
-        "win_rate": round(len(wins) / max(len(completed), 1), 3),
-        "avg_hold_days": round(sum(hold_days) / len(hold_days), 2) if hold_days else 0.0,
-        "pending": len([record for record in records if record.outcome == "pending"]),
-        "cancelled": len([record for record in records if record.outcome == "cancelled"]),
-        "by_pattern": {
-            key: {**value, "win_rate": round(value["wins"] / max(value["total"], 1), 3)}
-            for key, value in sorted(by_pattern.items(), key=lambda item: -item[1]["total"])
-        },
-        "by_intent": {
-            key: {**value, "win_rate": round(value["wins"] / max(value["total"], 1), 3)}
-            for key, value in sorted(by_intent.items(), key=lambda item: -item[1]["total"])
-        },
-    }
+    return build_personalization_snapshot(records)
 
 
 @router.patch("/{outcome_id}")

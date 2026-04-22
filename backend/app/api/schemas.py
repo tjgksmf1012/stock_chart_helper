@@ -703,6 +703,27 @@ class AiRecommendationItem(BaseModel):
     confluence_score: float
     next_trigger: str
     chart_path: str
+    personal_fit_score: float = 0.0
+    personal_fit_label: str = "학습 전"
+    personal_fit_reasons: list[str] = Field(default_factory=list)
+
+
+class PersonalStyleProfile(BaseModel):
+    style_key: str = "developing"
+    style_label: str = "학습 중"
+    summary: str = ""
+    confidence: float = 0.0
+    sample_count: int = 0
+    primary_intent: str = "breakout_wait"
+    primary_intent_label: str = "돌파 대기"
+    secondary_intent: str | None = None
+    secondary_intent_label: str | None = None
+    best_pattern: str | None = None
+    best_pattern_win_rate: float = 0.0
+    best_timeframe: str | None = None
+    best_timeframe_label: str | None = None
+    best_timeframe_win_rate: float = 0.0
+    focus_points: list[str] = Field(default_factory=list)
 
 
 class AiRecommendationResponse(BaseModel):
@@ -716,6 +737,8 @@ class AiRecommendationResponse(BaseModel):
     watch_items: list[AiRecommendationItem]
     risk_items: list[AiRecommendationItem]
     watchlist_focus_items: list[AiRecommendationItem] = Field(default_factory=list)
+    personalized_items: list[AiRecommendationItem] = Field(default_factory=list)
+    personal_style: PersonalStyleProfile = Field(default_factory=PersonalStyleProfile)
     disclaimer: str
     llm_enabled: bool = False
     llm_model: str | None = None
