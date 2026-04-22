@@ -18,6 +18,7 @@ SCAN_QUALITY_CACHE_PREFIX = "scan-quality-report:v1"
 SCAN_HISTORY_RECENT_LIMIT = 10
 QUALITY_FORWARD_BARS = 20
 QUALITY_LOOKBACK_DAYS = 180
+_schema_ready = False
 
 
 @dataclass
@@ -28,6 +29,19 @@ class CandidateForwardStats:
     positive_close: bool
     hit_3pct: bool
     hit_5pct: bool
+
+
+async def ensure_scan_history_schema() -> None:
+    global _schema_ready
+    if _schema_ready:
+        return
+
+    from ..core.database import engine
+
+    async with engine.begin() as conn:
+        await conn.run_sync(lambda sync_conn: ScanRun.__table__.create(sync_conn, checkfirst=True))
+        await conn.run_sync(lambda sync_conn: ScanCandidateSnapshot.__table__.create(sync_conn, checkfirst=True))
+    _schema_ready = True
 
 
 def _parse_iso_date(value: str | None) -> date | None:
@@ -107,6 +121,7 @@ async def persist_scan_history(
 ) -> int | None:
     from ..core.database import AsyncSessionLocal
 
+    await ensure_scan_history_schema()
     async with AsyncSessionLocal() as session:
         run = ScanRun(
             timeframe=timeframe,
@@ -179,6 +194,7 @@ async def persist_scan_history(
 async def list_recent_scan_runs(limit: int = SCAN_HISTORY_RECENT_LIMIT, timeframe: str | None = None) -> list[dict[str, Any]]:
     from ..core.database import AsyncSessionLocal
 
+    await ensure_scan_history_schema()
     async with AsyncSessionLocal() as session:
         stmt = select(ScanRun).order_by(desc(ScanRun.finished_at), desc(ScanRun.id)).limit(limit)
         if timeframe:
@@ -209,6 +225,7 @@ async def list_recent_scan_runs(limit: int = SCAN_HISTORY_RECENT_LIMIT, timefram
 async def prune_scan_history(keep_days: int = 400) -> int:
     from ..core.database import AsyncSessionLocal
 
+    await ensure_scan_history_schema()
     cutoff = datetime.utcnow() - timedelta(days=keep_days)
     async with AsyncSessionLocal() as session:
         stmt = delete(ScanRun).where(ScanRun.finished_at.is_not(None), ScanRun.finished_at < cutoff)
@@ -230,6 +247,7 @@ async def build_scan_quality_report(
 
     from ..core.database import AsyncSessionLocal
 
+    await ensure_scan_history_schema()
     reference_day, _ = resolve_daily_reference_date()
     earliest_day = reference_day - timedelta(days=lookback_days)
     async with AsyncSessionLocal() as session:

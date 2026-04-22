@@ -75,6 +75,8 @@ async def get_db():
 
 
 async def init_db():
+    from .. import models  # noqa: F401
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await conn.run_sync(_run_runtime_migrations)
