@@ -34,11 +34,11 @@ export function fmtDateTime(value: string | null | undefined): string {
 }
 
 export const STATE_LABELS: Record<string, string> = {
-  forming: '형성 중',
-  armed: '활성 임박',
-  confirmed: '확인 완료',
-  invalidated: '무효화',
-  played_out: '목표 달성',
+  forming: '진행 중',
+  armed: '돌파 직전',
+  confirmed: '돌파 완료',
+  invalidated: '패턴 실패',
+  played_out: '목표가 도달',
 }
 
 export const STATE_COLORS: Record<string, string> = {
