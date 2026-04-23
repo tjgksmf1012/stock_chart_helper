@@ -79,6 +79,12 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
   const redrawFrameRef = useRef<number | null>(null)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
 
+  // Ordinal time mapping — built once per bars update
+  const indexToDateRef = useRef<string[]>([])
+  const dateToIndexRef = useRef<Map<string, number>>(new Map())
+  const lastBarIndexRef = useRef<number>(0)
+  const isIntradayRef = useRef<boolean>(false)
+
   const syncCloudCanvas = () => {
     const host = chartHostRef.current
     const canvas = cloudCanvasRef.current
@@ -253,16 +259,52 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
     if (!candleRef.current || !volumeRef.current || bars.length === 0) return
 
     const sortedBars = [...bars].sort((left, right) => compareBarDates(left.date, right.date))
-    const isIntraday = sortedBars.some(bar => bar.date.includes('T'))
+    const isIntraday = sortedBars.some(bar => bar.date.includes('T') || bar.date.includes(' '))
+    isIntradayRef.current = isIntraday
+
+    // Build ordinal index maps for daily bars
+    const dateToIndex = new Map<string, number>()
+    const indexToDate: string[] = []
+
+    if (!isIntraday) {
+      sortedBars.forEach((bar, i) => {
+        const key = bar.date.slice(0, 10)
+        dateToIndex.set(key, i)
+        indexToDate.push(key)
+      })
+      dateToIndexRef.current = dateToIndex
+      indexToDateRef.current = indexToDate
+      lastBarIndexRef.current = sortedBars.length - 1
+    }
+
     chartRef.current?.applyOptions({
-      timeScale: {
-        timeVisible: isIntraday,
-        secondsVisible: false,
-      },
+      timeScale: { timeVisible: isIntraday, secondsVisible: false },
     })
 
+    // Apply custom tick formatter for daily ordinal mode
+    if (!isIntraday) {
+      chartRef.current?.timeScale().applyOptions({
+        tickMarkFormatter: (time: Time, tickMarkType: number) => {
+          const dateStr = indexToDateRef.current[time as number]
+          if (!dateStr) return ''
+          return formatDateTick(dateStr, tickMarkType)
+        },
+      })
+    } else {
+      // Reset to default formatter for intraday
+      chartRef.current?.timeScale().applyOptions({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        tickMarkFormatter: undefined as any,
+      })
+    }
+
+    const toTime = (date: string): Time => {
+      if (isIntraday) return Math.floor(toTimestamp(date) / 1000) as Time
+      return (dateToIndex.get(date.slice(0, 10)) ?? 0) as Time
+    }
+
     const candleData: CandlestickData[] = sortedBars.map(bar => ({
-      time: toChartTime(bar.date),
+      time: toTime(bar.date),
       open: bar.open,
       high: bar.high,
       low: bar.low,
@@ -270,12 +312,12 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
     }))
 
     const volumeData: HistogramData[] = sortedBars.map(bar => ({
-      time: toChartTime(bar.date),
+      time: toTime(bar.date),
       value: bar.volume,
       color: bar.close >= bar.open ? 'rgba(38,166,154,0.4)' : 'rgba(239,83,80,0.4)',
     }))
 
-    const ichimoku = buildIchimoku(sortedBars)
+    const ichimoku = buildIchimoku(sortedBars, dateToIndex, isIntraday)
 
     candleRef.current.setData(candleData)
     volumeRef.current.setData(volumeData)
@@ -310,10 +352,39 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
     }
 
     const sortedBars = [...bars].sort((left, right) => compareBarDates(left.date, right.date))
-    const firstTime = toChartTime(sortedBars[0].date)
+    const isIntraday = isIntradayRef.current
+    const dateToIndex = dateToIndexRef.current
+    const lastIndex = lastBarIndexRef.current
     const lastBar = sortedBars[sortedBars.length - 1]
-    const lastTime = toChartTime(lastBar.date)
     const lastClose = lastBar.close
+
+    // Convert any date string → chart Time, including future dates
+    const toTime = (date: string): Time => {
+      if (isIntraday) return Math.floor(toTimestamp(date) / 1000) as Time
+      const key = date.slice(0, 10)
+      const existing = dateToIndex.get(key)
+      if (existing !== undefined) return existing as Time
+      // Future date: estimate trading days ahead from last bar
+      const lastDateStr = indexToDateRef.current[lastIndex] ?? lastBar.date.slice(0, 10)
+      const lastTs = new Date(lastDateStr + 'T00:00:00Z').getTime()
+      const thisTs = new Date(key + 'T00:00:00Z').getTime()
+      const calDays = (thisTs - lastTs) / (24 * 60 * 60 * 1000)
+      const tradingDays = Math.max(1, Math.round(calDays * 5 / 7))
+      return (lastIndex + tradingDays) as Time
+    }
+
+    // Time range helpers
+    const firstTime: Time = isIntraday
+      ? (Math.floor(toTimestamp(sortedBars[0].date) / 1000) as Time)
+      : (0 as Time)
+    const lastTime: Time = isIntraday
+      ? (Math.floor(toTimestamp(lastBar.date) / 1000) as Time)
+      : (lastIndex as Time)
+    // Extend horizontal lines 30 "bars" beyond last candle to cover projection area
+    const horizonTime: Time = isIntraday
+      ? (Math.floor(toTimestamp(lastBar.date) / 1000 + 30 * 86400) as Time)
+      : ((lastIndex + 30) as Time)
+
     const best = getChartPattern(analysis)
     const projectionScenarios = getProjectionScenarios(analysis, best)
     if (!best && projectionScenarios.length === 0) {
@@ -333,7 +404,7 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
 
       const data: LineData[] = [
         { time: firstTime, value: price },
-        { time: lastTime, value: price },
+        { time: horizonTime, value: price },
       ]
 
       series.setData(data)
@@ -349,7 +420,7 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
         .filter((point): point is { dt: string; price: number; type: string } => Boolean(point.dt))
         .sort((left, right) => compareBarDates(left.dt, right.dt))
         .map(point => ({
-          time: toChartTime(point.dt),
+          time: toTime(point.dt),
           position: point.type.includes('low') || point.type === 'head' ? 'belowBar' : 'aboveBar',
           color: point.type.includes('neckline')
             ? OVERLAY_COLORS.neckline
@@ -376,7 +447,7 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
       const projectionData: LineData[] = [
         { time: lastTime, value: lastClose },
         ...scenario.path.map(point => ({
-          time: toChartTime(point.dt),
+          time: toTime(point.dt),
           value: point.price,
         })),
       ]
@@ -458,28 +529,42 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
   )
 }
 
-function buildIchimoku(sortedBars: OHLCVBar[]): IchimokuData {
+// Build Ichimoku lines using ordinal indices for daily bars (no holiday gaps)
+function buildIchimoku(
+  sortedBars: OHLCVBar[],
+  dateToIndex: Map<string, number>,
+  isIntraday: boolean,
+): IchimokuData {
   const conversion: LineData[] = []
   const base: LineData[] = []
   const spanA: LineData[] = []
   const spanB: LineData[] = []
   const cloud: CloudPoint[] = []
-  const stepMs = inferStepMs(sortedBars)
+  const stepMs = isIntraday ? inferStepMs(sortedBars) : 0
 
   for (let index = 0; index < sortedBars.length; index += 1) {
+    const time: Time = isIntraday
+      ? (Math.floor(toTimestamp(sortedBars[index].date) / 1000) as Time)
+      : ((dateToIndex.get(sortedBars[index].date.slice(0, 10)) ?? index) as Time)
+
     const conversionValue = midpoint(sortedBars, index, 9)
     const baseValue = midpoint(sortedBars, index, 26)
 
     if (conversionValue != null) {
-      conversion.push({ time: toChartTime(sortedBars[index].date), value: conversionValue })
+      conversion.push({ time, value: conversionValue })
     }
 
     if (baseValue != null) {
-      base.push({ time: toChartTime(sortedBars[index].date), value: baseValue })
+      base.push({ time, value: baseValue })
     }
 
     if (conversionValue != null && baseValue != null) {
-      const leadingTime = shiftChartTime(sortedBars[index].date, stepMs * 26)
+      // Lead span: shift 26 periods forward
+      // For ordinal mode, this is simply index + 26 (exact bar count, no calendar math)
+      const leadingTime: Time = isIntraday
+        ? (Math.floor((toTimestamp(sortedBars[index].date) + stepMs * 26) / 1000) as Time)
+        : ((index + 26) as Time)
+
       const leadingA = (conversionValue + baseValue) / 2
       spanA.push({ time: leadingTime, value: leadingA })
 
@@ -521,13 +606,13 @@ function inferStepMs(bars: OHLCVBar[]) {
   return diffs[Math.floor(diffs.length / 2)]
 }
 
-function shiftChartTime(value: string, diffMs: number): Time {
-  if (!value.includes('T') && !value.includes(' ')) {
-    // Daily mode: shift by business days so lead span lands on a trading day
-    const days = Math.round(diffMs / (24 * 60 * 60 * 1000))
-    return addBusinessDays(value, days) as Time
-  }
-  return Math.floor((toTimestamp(value) + diffMs) / 1000) as Time
+// Format a YYYY-MM-DD string for a given lightweight-charts TickMarkType:
+// 0 = Year, 1 = Month, 2 = DayOfMonth, 3 = Time, 4 = TimeWithSeconds
+function formatDateTick(dateStr: string, tickMarkType: number): string {
+  const [year, month, day] = dateStr.split('-')
+  if (tickMarkType === 0) return year
+  if (tickMarkType === 1) return `${year}.${month}`
+  return `${month}/${day}`
 }
 
 function getChartPattern(analysis: AnalysisResult): PatternInfo | null {
@@ -573,29 +658,6 @@ function scenarioColor(scenario: ProjectionScenario): string {
   if (scenario.bias === 'bullish') return OVERLAY_COLORS.projectionBull
   if (scenario.bias === 'bearish') return OVERLAY_COLORS.projectionBear
   return OVERLAY_COLORS.projectionNeutral
-}
-
-// Add N business days (Mon–Fri) to a YYYY-MM-DD date string
-function addBusinessDays(dateStr: string, days: number): string {
-  const date = new Date(dateStr + 'T00:00:00Z')
-  let remaining = Math.abs(days)
-  const step = days >= 0 ? 1 : -1
-  while (remaining > 0) {
-    date.setUTCDate(date.getUTCDate() + step)
-    const dow = date.getUTCDay() // 0 = Sun, 6 = Sat
-    if (dow !== 0 && dow !== 6) remaining--
-  }
-  return date.toISOString().slice(0, 10)
-}
-
-function toChartTime(value: string): Time {
-  // Daily bars: return YYYY-MM-DD string so lightweight-charts uses BusinessDay
-  // mode and automatically skips weekend gaps on the time axis.
-  if (!value.includes('T') && !value.includes(' ')) {
-    return value as Time
-  }
-  // Intraday: use Unix timestamp in seconds (calendar time is fine here)
-  return Math.floor(toTimestamp(value) / 1000) as Time
 }
 
 function markerLabel(type: string): string {
