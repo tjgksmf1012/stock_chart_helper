@@ -466,27 +466,27 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
       <div className="space-y-2 px-2 text-xs text-muted-foreground">
         <div className="flex flex-wrap items-center gap-4">
           <span className="flex items-center gap-1">
-            <span className="inline-block h-px w-3 bg-blue-400" /> 전환선
+            <span className="inline-block h-px w-3 bg-blue-400" /> 단기선
           </span>
           <span className="flex items-center gap-1">
-            <span className="inline-block h-px w-3 bg-amber-400" /> 기준선
+            <span className="inline-block h-px w-3 bg-amber-400" /> 중기선
           </span>
           <span className="flex items-center gap-1">
-            <span className="inline-block h-2.5 w-3 rounded-sm bg-emerald-400/25 ring-1 ring-emerald-400/30" /> 상승 구름
+            <span className="inline-block h-2.5 w-3 rounded-sm bg-emerald-400/25 ring-1 ring-emerald-400/30" /> 지지 구름
           </span>
           <span className="flex items-center gap-1">
-            <span className="inline-block h-2.5 w-3 rounded-sm bg-red-400/20 ring-1 ring-red-400/30" /> 하락 구름
+            <span className="inline-block h-2.5 w-3 rounded-sm bg-red-400/20 ring-1 ring-red-400/30" /> 저항 구름
           </span>
           {chartPattern && (
             <>
               <span className="flex items-center gap-1">
-                <span className="inline-block h-px w-3 bg-amber-400" style={{ borderTop: '1px dashed' }} /> 목선
+                <span className="inline-block h-px w-3 bg-amber-400" style={{ borderTop: '1px dashed' }} /> 돌파선
               </span>
               <span className="flex items-center gap-1">
-                <span className="inline-block h-px w-3 bg-green-400" style={{ borderTop: '1px dotted' }} /> 목표가
+                <span className="inline-block h-px w-3 bg-green-400" style={{ borderTop: '1px dotted' }} /> 익절 기준가
               </span>
               <span className="flex items-center gap-1">
-                <span className="inline-block h-px w-3 bg-red-400" style={{ borderTop: '1px dotted' }} /> 무효화
+                <span className="inline-block h-px w-3 bg-red-400" style={{ borderTop: '1px dotted' }} /> 손절 기준가
               </span>
             </>
           )}
@@ -512,7 +512,7 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
           )}
         </div>
         <p className="leading-relaxed text-muted-foreground/90">
-          일목 구름은 가격이 바로 돌파를 못할 때 어디에서 쉬고 다시 힘을 받는지 보기 좋게 얹어둔 보조선입니다. 구름 상단을 딛는지, 기준선 아래로 다시 밀리는지를 패턴 목선과 함께 보시면 됩니다.
+          구름대 위에서 버티면 지지, 아래로 밀리면 주의 — 단기선·중기선과 함께 보세요.
         </p>
         {projectionScenarios.length > 0 && (
           <p className="leading-relaxed text-muted-foreground/90">
