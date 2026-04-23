@@ -308,17 +308,17 @@ export default function DashboardPage() {
 
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <HeroMetric
-              label="전체 후보"
+              label="오늘 주목할 종목"
               value={overviewQ.isLoading ? '-' : `${summary.totalCount}개`}
-              hint={overviewQ.isLoading ? '스캔 결과 불러오는 중...' : `${summary.readyCount}개 즉시 검토, ${summary.watchCount}개 관찰`}
+              hint={overviewQ.isLoading ? '스캔 결과 불러오는 중...' : `지금 바로 ${summary.readyCount}개 · 대기 중 ${summary.watchCount}개`}
             />
             <HeroMetric
-              label="평균 상승 확률"
+              label="평균 오를 확률"
               value={summary.totalCount > 0 ? fmtPct(summary.avgUp, 0) : '-'}
               hint={summary.bestAction}
             />
             <HeroMetric
-              label="평균 준비도"
+              label="평균 진입 준비도"
               value={summary.totalCount > 0 ? fmtPct(summary.avgReadiness, 0) : '-'}
               hint={`데이터 품질 ${summary.totalCount > 0 ? fmtPct(summary.avgQuality, 0) : '-'}`}
             />
@@ -1416,7 +1416,7 @@ function buildDashboardSummary(sections: Array<DashboardResponse | undefined>) {
     avgQuality: average(items.map(item => item.data_quality)),
     bestAction:
       readyCount > 0
-        ? `즉시 검토 후보 ${readyCount}개가 먼저 보입니다.`
+        ? `지금 바로 볼 후보 ${readyCount}개가 있습니다.`
         : watchCount > 0
           ? `트리거 확인이 필요한 후보 ${watchCount}개가 중심입니다.`
           : '관망 또는 데이터 보강이 필요한 종목 비중이 높습니다.',
