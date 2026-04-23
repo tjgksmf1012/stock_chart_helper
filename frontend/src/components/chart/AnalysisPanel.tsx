@@ -33,10 +33,10 @@ interface AnalysisPanelProps {
 type AnalysisTab = 'overview' | 'setup' | 'pattern' | 'data'
 
 const ANALYSIS_TABS: Array<{ key: AnalysisTab; label: string }> = [
-  { key: 'overview', label: '핵심 판단' },
-  { key: 'setup', label: '셋업 점수' },
-  { key: 'pattern', label: '패턴 상세' },
-  { key: 'data', label: '데이터 메모' },
+  { key: 'overview', label: '핵심 요약' },
+  { key: 'setup', label: '진입 준비도' },
+  { key: 'pattern', label: '패턴 분석' },
+  { key: 'data', label: '참고사항' },
 ]
 
 export function AnalysisPanel({ analysis, symbol, timeframe }: AnalysisPanelProps) {
@@ -224,8 +224,8 @@ function IchimokuCard({ analysis }: { analysis: AnalysisResult }) {
 
 function ScoreOverviewCard({ analysis }: { analysis: AnalysisResult }) {
   const metrics = [
-    { label: '상승 확률', value: fmtPct(analysis.p_up, 0), tone: 'text-emerald-300' },
-    { label: '하락 확률', value: fmtPct(analysis.p_down, 0), tone: 'text-red-300' },
+    { label: '오를 확률', value: fmtPct(analysis.p_up, 0), tone: 'text-emerald-300' },
+    { label: '내릴 확률', value: fmtPct(analysis.p_down, 0), tone: 'text-red-300' },
     { label: '신뢰도', value: fmtPct(analysis.confidence, 0) },
     { label: '손익비', value: analysis.reward_risk_ratio.toFixed(2) },
     { label: 'Edge', value: fmtPct(analysis.historical_edge_score, 0) },
@@ -324,8 +324,7 @@ function CautionCard() {
         해석 주의
       </div>
       <p className="text-xs leading-relaxed text-muted-foreground">
-        이 화면은 패턴 기반 보조 분석 도구입니다. 이미 목표가에 도달했거나 무효화된 패턴은 신선도와 거래 준비도에서 강하게
-        감점되며, 실전 판단 전에는 추세와 거래대금, 리스크 기준을 함께 보는 편이 안전합니다.
+        이 화면은 패턴 기반 보조 분석 도구입니다. 이미 목표가에 도달했거나 패턴이 실패한 경우 신선도와 진입 준비도에서 강하게 감점되며, 실전 판단 전에는 추세와 거래대금, 손절 기준가를 함께 보는 편이 안전합니다.
       </p>
     </Card>
   )
@@ -350,15 +349,15 @@ function BestPatternCard({ pattern, analysis }: { pattern: PatternInfo; analysis
         {pattern.candlestick_note && <p className="mt-2 text-xs text-sky-200">{pattern.candlestick_note}</p>}
       </div>
       <div className="space-y-2">
-        {pattern.neckline !== null && <StatRow label="목선" value={fmtPrice(pattern.neckline)} />}
+        {pattern.neckline !== null && <StatRow label="돌파선" value={fmtPrice(pattern.neckline)} />}
         {pattern.target_level !== null && (
-          <StatRow label="목표가" value={<span className="text-emerald-300">{fmtPrice(pattern.target_level)}</span>} />
+          <StatRow label="익절 기준가" value={<span className="text-emerald-300">{fmtPrice(pattern.target_level)}</span>} />
         )}
         {pattern.invalidation_level !== null && (
-          <StatRow label="무효화 기준" value={<span className="text-red-300">{fmtPrice(pattern.invalidation_level)}</span>} />
+          <StatRow label="손절 기준가" value={<span className="text-red-300">{fmtPrice(pattern.invalidation_level)}</span>} />
         )}
         {pattern.target_hit_at && <StatRow label="목표가 도달" value={fmtDateTime(pattern.target_hit_at)} />}
-        {pattern.invalidated_at && <StatRow label="무효화 시점" value={fmtDateTime(pattern.invalidated_at)} />}
+        {pattern.invalidated_at && <StatRow label="패턴 실패 시점" value={fmtDateTime(pattern.invalidated_at)} />}
       </div>
     </Card>
   )
@@ -401,7 +400,7 @@ function ActionPlanCard({ analysis }: { analysis: AnalysisResult }) {
       </div>
       <p className="text-sm leading-relaxed text-foreground/95">{analysis.action_plan_summary}</p>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <CompactMetric label="준비도" value={fmtPct(analysis.trade_readiness_score ?? 0, 0)} />
+        <CompactMetric label="진입 준비도" value={fmtPct(analysis.trade_readiness_score ?? 0, 0)} />
         <CompactMetric label="진입 구간" value={fmtPct(analysis.entry_window_score ?? 0, 0)} />
         <CompactMetric label="신선도" value={fmtPct(analysis.freshness_score ?? 0, 0)} />
         <CompactMetric label="행동 우선순위" value={fmtPct(analysis.action_priority_score, 0)} />
