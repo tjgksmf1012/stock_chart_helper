@@ -277,26 +277,21 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
       lastBarIndexRef.current = sortedBars.length - 1
     }
 
+    // chart.applyOptions() accepts TimeChartOptions → timeScale: TimeScaleOptions
+    // which includes tickMarkFormatter (unlike timeScale().applyOptions() which uses HorzScaleOptions)
     chartRef.current?.applyOptions({
-      timeScale: { timeVisible: isIntraday, secondsVisible: false },
+      timeScale: {
+        timeVisible: isIntraday,
+        secondsVisible: false,
+        tickMarkFormatter: isIntraday
+          ? undefined
+          : (time: Time, tickMarkType: number) => {
+              const dateStr = indexToDateRef.current[time as number]
+              if (!dateStr) return ''
+              return formatDateTick(dateStr, tickMarkType)
+            },
+      },
     })
-
-    // Apply custom tick formatter for daily ordinal mode
-    if (!isIntraday) {
-      chartRef.current?.timeScale().applyOptions({
-        tickMarkFormatter: (time: Time, tickMarkType: number) => {
-          const dateStr = indexToDateRef.current[time as number]
-          if (!dateStr) return ''
-          return formatDateTick(dateStr, tickMarkType)
-        },
-      })
-    } else {
-      // Reset to default formatter for intraday
-      chartRef.current?.timeScale().applyOptions({
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        tickMarkFormatter: undefined as any,
-      })
-    }
 
     const toTime = (date: string): Time => {
       if (isIntraday) return Math.floor(toTimestamp(date) / 1000) as Time
