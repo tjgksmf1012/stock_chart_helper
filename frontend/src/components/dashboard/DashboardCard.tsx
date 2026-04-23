@@ -127,7 +127,7 @@ export function DashboardCard({ item }: DashboardCardProps) {
       <ProbBar p_up={item.p_up} p_down={item.p_down} />
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <KeyMetric label="준비도" value={fmtPct(item.trade_readiness_score ?? 0, 0)} tone={scoreTone(item.trade_readiness_score ?? 0)} />
+        <KeyMetric label="진입 준비도" value={fmtPct(item.trade_readiness_score ?? 0, 0)} tone={scoreTone(item.trade_readiness_score ?? 0)} />
         <KeyMetric label="진입 구간" value={fmtPct(item.entry_window_score ?? 0, 0)} tone={scoreTone(item.entry_window_score ?? 0)} />
         <KeyMetric label="신선도" value={fmtPct(item.freshness_score ?? 0, 0)} tone={scoreTone(item.freshness_score ?? 0)} />
         <KeyMetric label="데이터 품질" value={fmtPct(item.data_quality, 0)} tone={scoreTone(item.data_quality)} />
@@ -304,12 +304,12 @@ const OUTCOME_INTENT_OPTIONS: Array<{ value: OutcomeIntent; label: string }> = [
   { value: 'observe', label: '관망' },
   { value: 'breakout_wait', label: '돌파 대기' },
   { value: 'pullback_candidate', label: '눌림 매수 후보' },
-  { value: 'invalidation_watch', label: '무효화 감시' },
+  { value: 'invalidation_watch', label: '손절 구간 감시' },
 ]
 
 const OUTCOME_INTENT_DESCRIPTIONS: Record<OutcomeIntent, string> = {
   observe: '아직 진입보다 구조 관찰이 더 중요한 후보입니다.',
   breakout_wait: '트리거 돌파와 거래 반응이 확인될 때 대응할 후보입니다.',
   pullback_candidate: '돌파 뒤 눌림이나 지지 확인을 기다리는 후보입니다.',
-  invalidation_watch: '신규 진입보다 무효화 여부를 먼저 체크해야 하는 후보입니다.',
+  invalidation_watch: '신규 진입보다 손절 기준가 이탈 여부를 먼저 체크해야 하는 후보입니다.',
 }
