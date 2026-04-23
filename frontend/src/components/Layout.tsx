@@ -10,10 +10,10 @@ const NAV_ITEMS = [
   { to: '/ai', label: 'AI 추천', icon: Sparkles, end: true },
   { to: '/chart', label: '차트 분석', icon: BarChart2, end: false },
   { to: '/watchlist', label: '관심종목', icon: Star, end: true },
-  { to: '/library', label: '패턴 라이브러리', icon: BookOpen, end: true },
-  { to: '/reports/patterns', label: '패턴 성과', icon: TrendingUp, end: true },
-  { to: '/screener', label: '스크리너', icon: SlidersHorizontal, end: true },
-  { to: '/system', label: '운영 상태', icon: ServerCog, end: true },
+  { to: '/library', label: '패턴 사전', icon: BookOpen, end: true },
+  { to: '/reports/patterns', label: '패턴 적중률', icon: TrendingUp, end: true },
+  { to: '/screener', label: '종목 필터', icon: SlidersHorizontal, end: true },
+  { to: '/system', label: '시스템 상태', icon: ServerCog, end: true },
 ]
 
 export function Layout() {
