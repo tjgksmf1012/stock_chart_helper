@@ -72,10 +72,10 @@ export default function AiRecommendationsPage() {
         <div>
           <div className="flex items-center gap-2 text-xl font-bold">
             <Sparkles size={20} className="text-primary" />
-            AI 추천
+            AI 종목 추천
           </div>
           <p className="mt-1 max-w-3xl text-sm leading-relaxed text-muted-foreground">
-            점수, 준비도, 데이터 품질, 내 과거 성과를 함께 묶어서 오늘 먼저 볼 후보와 기다릴 후보를 나눠서 보여줍니다.
+            점수, 진입 준비도, 데이터 품질, 내 과거 성과를 묶어서 오늘 먼저 볼 종목과 기다릴 종목을 구분해 보여줍니다.
           </p>
         </div>
 
@@ -102,7 +102,7 @@ export default function AiRecommendationsPage() {
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-sm font-semibold">
               <ShieldCheck size={16} className="text-primary" />
-              오늘의 운용 브리핑
+              오늘의 AI 의견
             </div>
             <button
               onClick={() => recommendationsQ.refetch()}
@@ -135,9 +135,9 @@ export default function AiRecommendationsPage() {
               <p className="text-sm leading-relaxed text-muted-foreground">{data?.portfolio_guidance}</p>
 
               <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                <Metric label="우선 검토" value={`${data?.priority_items.length ?? 0}개`} />
-                <Metric label="트리거 대기" value={`${data?.watch_items.length ?? 0}개`} />
-                <Metric label="리스크 점검" value={`${data?.risk_items.length ?? 0}개`} />
+                <Metric label="주목 종목" value={`${data?.priority_items.length ?? 0}개`} />
+                <Metric label="대기 종목" value={`${data?.watch_items.length ?? 0}개`} />
+                <Metric label="주의 종목" value={`${data?.risk_items.length ?? 0}개`} />
                 <Metric label="업데이트" value={fmtDateTime(data?.generated_at)} />
               </div>
             </>
