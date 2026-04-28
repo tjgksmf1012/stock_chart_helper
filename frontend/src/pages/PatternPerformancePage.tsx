@@ -145,7 +145,7 @@ export default function PatternPerformancePage() {
 
             {summary && (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <SummaryCell icon={<ShieldCheck size={14} className="text-primary" />} label="평균 edge" value={fmtPct(summary.avgEdge, 0)} />
+                <SummaryCell icon={<ShieldCheck size={14} className="text-primary" />} label="평균 우위" value={fmtPct(summary.avgEdge, 0)} />
                 <SummaryCell icon={<Target size={14} className="text-primary" />} label="평균 승률" value={fmtPct(summary.avgWinRate, 0)} />
                 <SummaryCell icon={<Activity size={14} className="text-primary" />} label="총 표본 수" value={`${summary.totalSamples.toLocaleString('ko-KR')}건`} />
                 <SummaryCell icon={<ShieldAlert size={14} className="text-primary" />} label="참고 강한 패턴 수" value={`${summary.robustCount}개`} />
@@ -292,7 +292,7 @@ function PatternStatCard({ item, rank }: { item: PatternStatsEntry; rank: number
           평균 결과 도달 {item.avg_bars_to_outcome.toFixed(1)}바
         </span>
         <span className="text-right">
-          wins / total {item.wins}/{item.total}
+          {item.wins}승 / 전체 {item.total}건
         </span>
       </div>
 

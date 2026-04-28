@@ -492,7 +492,7 @@ export default function DashboardPage() {
             <MovementStat label="약화" value={focusDeck.movementCounts.weakening} className="text-amber-300" />
           </div>
           <div className="rounded-lg border border-border bg-background/60 p-3 text-xs leading-relaxed text-muted-foreground">
-            관심종목은 같은 점수라면 위로 끌어올리고, 무효화/관망 신호는 자동으로 보류 쪽에 모읍니다.
+            관심종목은 같은 점수라면 위로 끌어올리고, 패턴 실패/관망 신호는 자동으로 보류 쪽에 모읍니다.
           </div>
         </Card>
       </section>
@@ -521,15 +521,15 @@ export default function DashboardPage() {
 
           <Card className="space-y-4 border-red-500/20 bg-red-500/5">
             <div>
-              <div className="text-sm font-semibold">내 관심종목 중 무효화 위험</div>
+              <div className="text-sm font-semibold">내 관심종목 중 손절 위험</div>
               <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                관심종목인데 구조가 약해졌거나 무효화 확인이 필요한 후보를 따로 모아뒀습니다.
+                관심종목인데 구조가 약해졌거나 손절 기준가 확인이 필요한 후보를 따로 모아뒀습니다.
               </p>
             </div>
             <div className="space-y-2">
               {watchlistDeck.riskClose.length === 0 ? (
                 <div className="rounded-lg border border-border bg-background/60 p-3 text-xs text-muted-foreground">
-                  지금은 무효화 위험이 크게 올라온 관심종목이 없습니다.
+                  지금은 손절 위험이 크게 올라온 관심종목이 없습니다.
                 </div>
               ) : (
                 watchlistDeck.riskClose.map(item => (
@@ -848,7 +848,7 @@ function RoutineDesk({
     {
       mode: 'afterMarket',
       title: '장후 정리',
-      subtitle: '보류·무효화·기록 대상 정리',
+      subtitle: '보류·손절 여부·기록 대상 정리',
       tone: 'amber',
       items: deck.afterMarket,
       empty: '장후 정리할 후보가 아직 없습니다.',
@@ -865,7 +865,7 @@ function RoutineDesk({
         <div>
           <div className="text-sm font-semibold">오늘 운용 루틴</div>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            장전에는 후보를 압축하고, 장중에는 현재가와 트리거를 확인하고, 장후에는 무효화와 기록 대상을 정리합니다.
+            장전에는 후보를 압축하고, 장중에는 현재가와 트리거를 확인하고, 장후에는 손절 여부와 기록 대상을 정리합니다.
           </p>
         </div>
         <div className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -989,13 +989,13 @@ function getRoutineModeMeta(mode: RoutineMode) {
     return {
       label: '장전',
       title: '오늘의 5선과 핵심 가격대만 먼저 압축',
-      summary: '장 시작 전에는 종목 수를 줄이고 트리거, 무효화, 관심종목 여부를 먼저 확인합니다. 새 후보와 재확인 후보를 섞어 오늘 볼 순서를 정합니다.',
-      primaryAction: '상위 후보 5개만 열어 트리거와 무효화 가격을 확인하세요.',
+      summary: '장 시작 전에는 종목 수를 줄이고 트리거, 손절 기준가, 관심종목 여부를 먼저 확인합니다. 새 후보와 재확인 후보를 섞어 오늘 볼 순서를 정합니다.',
+      primaryAction: '상위 후보 5개만 열어 트리거와 손절 기준가를 확인하세요.',
       badgeVariant: 'default' as const,
       panelClass: 'border-primary/20 bg-primary/5',
       checkpoints: [
         { title: '후보 압축', body: '우선 후보와 재확인 후보를 합쳐 오늘 볼 5개만 남깁니다.' },
-        { title: '가격대 확인', body: '트리거, 무효화, 목표가가 너무 가까운지 먼저 봅니다.' },
+        { title: '가격대 확인', body: '트리거, 손절 기준가, 익절 기준가가 너무 가까운지 먼저 봅니다.' },
         { title: '관심종목 우선', body: '내 관심종목이면 같은 점수에서도 위로 올려 확인합니다.' },
       ],
     }
@@ -1017,13 +1017,13 @@ function getRoutineModeMeta(mode: RoutineMode) {
   }
   return {
     label: '장후',
-    title: '미정리 판단과 무효화 후보를 닫는 시간',
+    title: '미정리 판단과 손절 여부를 확인하는 시간',
     summary: '장후에는 새로운 매수 후보를 더 늘리기보다 오늘의 판단 기록을 닫고, 실패/손절/취소를 정리해 내 성과 데이터가 쌓이게 만듭니다.',
     primaryAction: '미정리 판단을 자동 점검하고 성공, 실패, 손절, 취소 중 하나로 닫으세요.',
     badgeVariant: 'warning' as const,
     panelClass: 'border-amber-400/20 bg-amber-400/5',
     checkpoints: [
-      { title: '자동 점검', body: '현재가 기준으로 목표가와 무효화 터치 여부를 먼저 확인합니다.' },
+      { title: '자동 점검', body: '현재가 기준으로 익절 기준가와 손절 기준가 터치 여부를 먼저 확인합니다.' },
       { title: '수동 정리', body: '자동 판정이 애매하면 성공, 실패, 손절, 취소를 직접 닫습니다.' },
       { title: '내 성과 반영', body: '정리된 기록이 패턴별 내 성과와 다음 개인화의 재료가 됩니다.' },
     ],
@@ -1572,7 +1572,7 @@ function afterMarketPriority(item: DashboardItem) {
 
 function routineActionText(item: DashboardItem, mode: 'premarket' | 'intraday' | 'afterMarket') {
   if (mode === 'premarket') {
-    return item.next_trigger || item.action_plan_summary || '장전에는 가격대와 무효화 기준을 먼저 확인합니다.'
+    return item.next_trigger || item.action_plan_summary || '장전에는 가격대와 손절 기준가를 먼저 확인합니다.'
   }
   if (mode === 'intraday') {
     if (item.live_intraday_candidate) return item.live_intraday_reason || item.next_trigger || '현재가가 핵심 가격대에 붙는지 확인합니다.'
@@ -1580,7 +1580,7 @@ function routineActionText(item: DashboardItem, mode: 'premarket' | 'intraday' |
   }
   if (item.no_signal_flag) return item.reason_summary || '신호가 약하므로 내일 후보에서 제외할지 확인합니다.'
   if (item.risk_flags.length > 0) return item.risk_flags[0]
-  if (item.action_plan === 'recheck') return '무효화 또는 재확인 기준에 닿았는지 장후에 정리합니다.'
+  if (item.action_plan === 'recheck') return '손절 기준가 이탈 또는 재확인이 필요한지 장후에 정리합니다.'
   return '오늘 판단을 기록하고 다음 스캔에서 유지 여부를 확인합니다.'
 }
 
@@ -1605,7 +1605,7 @@ function bestPersonalIntents(summary: OutcomesSummary | undefined) {
     observe: '관망',
     breakout_wait: '돌파 대기',
     pullback_candidate: '눌림 매수',
-    invalidation_watch: '무효화 감시',
+    invalidation_watch: '손절 구간 감시',
   }
 
   return Object.entries(summary.by_intent)

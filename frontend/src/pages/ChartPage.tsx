@@ -747,21 +747,21 @@ const OUTCOME_INTENT_OPTIONS: Array<{ value: OutcomeIntent; label: string }> = [
   { value: 'observe', label: '관망' },
   { value: 'breakout_wait', label: '돌파 대기' },
   { value: 'pullback_candidate', label: '눌림 매수 후보' },
-  { value: 'invalidation_watch', label: '무효화 감시' },
+  { value: 'invalidation_watch', label: '손절 구간 감시' },
 ]
 
 const OUTCOME_INTENT_LABELS: Record<OutcomeIntent, string> = {
   observe: '관망',
   breakout_wait: '돌파 대기',
   pullback_candidate: '눌림 매수 후보',
-  invalidation_watch: '무효화 감시',
+  invalidation_watch: '손절 구간 감시',
 }
 
 const OUTCOME_INTENT_DESCRIPTIONS: Record<OutcomeIntent, string> = {
   observe: '아직 진입보다 구조 관찰이 먼저인 경우에 남겨두는 기록입니다.',
   breakout_wait: '트리거 돌파가 확인될 때 대응하려는 시나리오입니다.',
   pullback_candidate: '돌파 후 눌림이나 구름대 지지 구간을 노리는 시나리오입니다.',
-  invalidation_watch: '무효화선 이탈 여부를 먼저 확인하려는 방어적 시나리오입니다.',
+  invalidation_watch: '손절 기준가 이탈 여부를 먼저 확인하려는 방어적 시나리오입니다.',
 }
 
 function PriceActionBar({
@@ -789,8 +789,8 @@ function PriceActionBar({
       <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
         <PriceLevel label="현재가" value={currentPrice} hint={pricePositionHint(currentPrice, trigger, invalidation)} tone="primary" />
         <PriceLevel label="트리거" value={trigger} hint={analysis.next_trigger || analysis.entry_window_summary} tone="sky" />
-        <PriceLevel label="무효화" value={invalidation} hint={invalidation ? '이 가격 하회 시 시나리오 재검토' : analysis.risk_flags?.[0]} tone="amber" />
-        <PriceLevel label="목표가" value={target} hint={target ? '도달 시 분할 대응 기준' : analysis.projection_label} tone="emerald" />
+        <PriceLevel label="손절 기준가" value={invalidation} hint={invalidation ? '이 가격 하회 시 시나리오 재검토' : analysis.risk_flags?.[0]} tone="amber" />
+        <PriceLevel label="익절 기준가" value={target} hint={target ? '도달 시 분할 대응 기준' : analysis.projection_label} tone="emerald" />
         <div className="rounded-lg border border-border bg-card/65 p-3">
           <div className="text-xs text-muted-foreground">과거 성과</div>
           <div className="mt-1 text-sm font-semibold text-foreground">{stats ? fmtPct(stats.win_rate, 0) : fmtPct(analysis.empirical_win_rate ?? 0, 0)}</div>
@@ -862,7 +862,7 @@ function DecisionJournalCard({
                     <span>분류 {OUTCOME_INTENT_LABELS[(record.intent as OutcomeIntent) ?? 'breakout_wait'] ?? '돌파 대기'}</span>
                     <span>진입 {formatOutcomePrice(record.entry_price)}</span>
                     {record.target_price != null && <span>목표 {formatOutcomePrice(record.target_price)}</span>}
-                    {record.stop_price != null && <span>무효화 {formatOutcomePrice(record.stop_price)}</span>}
+                    {record.stop_price != null && <span>손절가 {formatOutcomePrice(record.stop_price)}</span>}
                     {record.p_up_at_signal != null && <span>상승 {fmtPct(record.p_up_at_signal, 0)}</span>}
                   </div>
                 </div>
@@ -1014,7 +1014,7 @@ function pricePositionHint(currentPrice: number | null, trigger: number | null, 
     const gap = (trigger - currentPrice) / currentPrice
     return `트리거까지 ${fmtPct(gap, 1)} 남았습니다.`
   }
-  if (invalidation && currentPrice <= invalidation) return '무효화 구간 근처라 보수적으로 봅니다.'
+  if (invalidation && currentPrice <= invalidation) return '손절 기준가 근처라 보수적으로 봅니다.'
   return '핵심 가격대 안에서 위치를 확인 중입니다.'
 }
 

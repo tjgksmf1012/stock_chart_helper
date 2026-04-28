@@ -40,7 +40,7 @@ function PatternCard({ entry }: { entry: PatternLibraryEntry }) {
           <Section title="구조 조건" items={entry.structure_conditions} color="text-blue-400" />
           <Section title="거래량 조건" items={entry.volume_conditions} color="text-violet-400" />
           <Section title="확인 조건" items={entry.confirmation_conditions} color="text-green-400" />
-          <Section title="무효화 조건" items={entry.invalidation_conditions} color="text-red-400" />
+          <Section title="손절 기준" items={entry.invalidation_conditions} color="text-red-400" />
           <Section title="주의사항" items={entry.cautions} color="text-yellow-400" />
         </div>
       )}
@@ -121,7 +121,7 @@ export default function PatternLibraryPage() {
         <div>
           <h1 className="text-xl font-bold">차트 패턴 라이브러리</h1>
           <p className="text-xs text-muted-foreground">
-            교과서형 패턴의 정의, 구조 조건, 확인 조건, 무효화 기준을 한 번에 정리한 참고 화면입니다.
+            교과서형 패턴의 정의, 구조 조건, 확인 조건, 손절 기준을 한 번에 정리한 참고 화면입니다.
           </p>
         </div>
       </div>

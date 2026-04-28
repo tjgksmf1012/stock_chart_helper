@@ -167,11 +167,11 @@ export default function AiRecommendationsPage() {
       />
 
       <RecommendationBand
-        title="내 관심종목 중 무효화 위험"
+        title="내 관심종목 중 손절 위험"
         icon={<AlertTriangle size={16} className="text-rose-300" />}
         items={watchlistRiskItems}
         loading={recommendationsQ.isLoading}
-        empty="관심종목 중 지금 당장 무효화 위험이 크게 올라온 후보는 없습니다."
+        empty="관심종목 중 지금 당장 손절 위험이 크게 올라온 후보는 없습니다."
       />
 
       <RecommendationBand
