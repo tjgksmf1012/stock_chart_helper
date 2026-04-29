@@ -7,7 +7,6 @@ import {
   Bookmark,
   BookOpen,
   CheckCircle2,
-  Database,
   Layers3,
   Loader2,
   Search,
@@ -370,10 +369,6 @@ export default function ChartPage() {
 
                 <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                   <span>분석 업데이트 {fmtDateTime(analysis.updated_at)}</span>
-                  <span className="inline-flex items-center gap-1">
-                    <Database size={12} />
-                    {analysis.data_source}
-                  </span>
                 </div>
               </div>
 

@@ -1782,10 +1782,7 @@ function candidateSourceLabel(source: string | null | undefined): string {
 
 function candidateSourceWarning(source: string | null | undefined): string | null {
   if (source === 'static_fallback') {
-    return 'pykrx와 FDR 유니버스 로드가 모두 실패해 하드코딩된 15개 종목만 스캔됐습니다. 백엔드 로그를 확인하세요.'
-  }
-  if (source === 'krx_universe_fdr') {
-    return 'pykrx 시가총액 기준 스캔 실패 — FDR 대체 유니버스로 스캔됐습니다.'
+    return '스캔 유니버스 로드에 실패해 일부 종목만 스캔됐습니다. 잠시 후 새로고침해 주세요.'
   }
   return null
 }

@@ -274,8 +274,6 @@ function DataMemoCard({ analysis }: { analysis: AnalysisResult }) {
         데이터 메모
       </div>
       <div className="space-y-2">
-        <StatRow label="데이터 출처" value={analysis.data_source} />
-        <StatRow label="데이터 상태" value={analysis.fetch_status_label} />
         <StatRow label="데이터 품질" value={fmtPct(analysis.data_quality)} />
         <StatRow label="유동성" value={fmtPct(analysis.liquidity_score)} />
         <StatRow label="평균 거래대금" value={fmtTurnoverBillion(analysis.avg_turnover_billion)} />
