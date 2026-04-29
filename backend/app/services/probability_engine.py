@@ -45,6 +45,28 @@ _STATE_CONFIRMATION_SCORE = {
     "played_out": 0.0,
 }
 
+_STATE_LABELS_KR: dict[str, str] = {
+    "forming": "진행 중",
+    "armed": "돌파 직전",
+    "confirmed": "돌파 완료",
+    "invalidated": "패턴 실패",
+    "played_out": "익절 기준가 도달",
+}
+
+_PATTERN_NAMES_KR: dict[str, str] = {
+    "double_bottom": "이중 바닥",
+    "double_top": "이중 천장",
+    "head_and_shoulders": "헤드앤숄더",
+    "inverse_head_and_shoulders": "역 헤드앤숄더",
+    "ascending_triangle": "상승 삼각형",
+    "descending_triangle": "하강 삼각형",
+    "symmetric_triangle": "대칭 삼각형",
+    "rectangle": "직사각형 박스",
+    "vcp": "VCP",
+    "cup_and_handle": "컵앤핸들",
+    "rounding_bottom": "원형 바닥",
+}
+
 _BULLISH_PATTERNS = {
     "double_bottom",
     "inverse_head_and_shoulders",
@@ -175,7 +197,7 @@ def _summary(
         f"신호 신선도 {recency_score:.0%} / 표본 {sample_text} / "
         f"기대 손익비 {reward_risk_ratio:.2f} / 목표까지 여지 {target_distance_pct:.1%} / "
         f"평균 MFE {avg_mfe_pct:.1%} / 평균 MAE {avg_mae_pct:.1%} / "
-        f"평균 결과 바 수 {avg_bars_to_outcome:.1f} / 백테스트 edge {edge_score:.0%} / "
+        f"평균 결과 바 수 {avg_bars_to_outcome:.1f} / 백테스트 우위 {edge_score:.0%} / "
         f"보정 승률 {posterior_success_rate:.0%} / 표본 신뢰도 {sample_reliability:.0%} / "
         f"신뢰도 {confidence:.0%}"
     )
@@ -241,15 +263,17 @@ def _readable_summary(
     sample_reliability: float,
     confidence: float,
 ) -> str:
+    pattern_name = _PATTERN_NAMES_KR.get(pattern.pattern_type, pattern.pattern_type)
+    state_kr = _STATE_LABELS_KR.get(pattern.state, pattern.state)
     return (
-        f"{pattern.pattern_type} pattern / textbook similarity {pattern.textbook_similarity:.0%} / "
-        f"state {pattern.state} / completion {completion_proximity:.0%} / "
-        f"signal freshness {recency_score:.0%} / sample {sample_text} / "
-        f"reward-risk {reward_risk_ratio:.2f} / target distance {target_distance_pct:.1%} / "
-        f"avg MFE {avg_mfe_pct:.1%} / avg MAE {avg_mae_pct:.1%} / "
-        f"avg bars to outcome {avg_bars_to_outcome:.1f} / backtest edge {edge_score:.0%} / "
-        f"calibrated win rate {posterior_success_rate:.0%} / sample reliability {sample_reliability:.0%} / "
-        f"confidence {confidence:.0%}"
+        f"{pattern_name} 패턴 / 교과서 유사도 {pattern.textbook_similarity:.0%} / "
+        f"상태 {state_kr} / 완성 임박도 {completion_proximity:.0%} / "
+        f"신호 신선도 {recency_score:.0%} / 표본 {sample_text} / "
+        f"기대 손익비 {reward_risk_ratio:.2f} / 목표까지 여지 {target_distance_pct:.1%} / "
+        f"평균 MFE {avg_mfe_pct:.1%} / 평균 MAE {avg_mae_pct:.1%} / "
+        f"평균 결과 바 수 {avg_bars_to_outcome:.1f} / 백테스트 우위 {edge_score:.0%} / "
+        f"보정 승률 {posterior_success_rate:.0%} / 표본 신뢰도 {sample_reliability:.0%} / "
+        f"신뢰도 {confidence:.0%}"
     )
 
 
@@ -310,8 +334,8 @@ def compute_probability(
             completion_proximity=0.0,
             recency_score=0.0,
             no_signal_flag=True,
-            no_signal_reason=f"패턴 상태가 이미 {pattern.state}로 판정되었습니다.",
-            reason_summary=f"{pattern.pattern_type} 패턴은 이미 {pattern.state} 상태라 현재 활성 진입 신호로 보지 않습니다.",
+            no_signal_reason=f"패턴 상태가 이미 {_STATE_LABELS_KR.get(pattern.state, pattern.state)}로 판정되었습니다.",
+            reason_summary=f"{_PATTERN_NAMES_KR.get(pattern.pattern_type, pattern.pattern_type)} 패턴은 이미 {_STATE_LABELS_KR.get(pattern.state, pattern.state)} 상태라 현재 활성 진입 신호로 보지 않습니다.",
             **base_kwargs,
         )
 
