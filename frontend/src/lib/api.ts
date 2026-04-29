@@ -221,7 +221,7 @@ function makeFallbackRecommendation(item: DashboardItem): AiRecommendationItem {
     ].filter(Boolean),
     position_hint:
       stance === 'priority_watch'
-        ? '우선 검토 후보입니다. 확인 신호가 나오면 대응하고 무효화 기준은 미리 정해두는 편이 낫습니다.'
+        ? '우선 검토 후보입니다. 확인 신호가 나오면 대응하고 손절 기준가는 미리 정해두는 편이 낫습니다.'
         : stance === 'risk_review'
           ? '지금은 방어적 판단이 우선입니다.'
           : '트리거가 맞을 때만 다시 평가하는 편이 낫습니다.',

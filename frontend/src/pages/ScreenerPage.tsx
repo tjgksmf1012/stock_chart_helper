@@ -101,7 +101,7 @@ const SORT_OPTIONS: Array<{ value: NonNullable<ScreenerRequest['sort_by']>; labe
   { value: 'active_setup_score', label: '활성 셋업' },
   { value: 'entry_score', label: '진입 적합도' },
   { value: 'sample_reliability', label: '표본 신뢰도' },
-  { value: 'historical_edge_score', label: '백테스트 edge' },
+  { value: 'historical_edge_score', label: '백테스트 우위' },
   { value: 'confluence_score', label: '멀티 타임프레임 정렬' },
   { value: 'data_quality', label: '데이터 품질' },
   { value: 'p_up', label: '상승 확률' },
@@ -665,7 +665,7 @@ export default function ScreenerPage() {
           onChange={value => updateReq(setReq, setActiveQuickPreset, { min_confluence_score: value })}
         />
         <SliderGroup
-          label="최소 백테스트 edge"
+          label="최소 백테스트 우위"
           value={req.min_historical_edge_score ?? 0}
           onChange={value => updateReq(setReq, setActiveQuickPreset, { min_historical_edge_score: value })}
         />
@@ -1021,7 +1021,7 @@ function buildScreenerGuidance(items: DashboardItem[]): string {
     return `거래 준비도와 패턴 신선도가 함께 괜찮은 후보가 모여 있습니다. 상위 카드에서 리스크 기준, 재진입 구조, 다음 트리거를 먼저 확인하는 흐름이 좋습니다${dominantReentryCase ? `. 자주 보이는 유형은 ${dominantReentryCase}입니다.` : '.'}`
   }
 
-  return `아직은 형성 중이거나 재확인이 필요한 후보가 더 많습니다. 바로 진입하기보다 목표가 여유, 기준선 유지 여부, 재축적 여부를 먼저 체크해 보세요${dominantReentryCase ? `. 현재 주된 유형은 ${dominantReentryCase}입니다.` : '.'}`
+  return `아직은 형성 중이거나 재확인이 필요한 후보가 더 많습니다. 바로 진입하기보다 익절 기준가 여유, 중기선 유지 여부, 재축적 여부를 먼저 체크해 보세요${dominantReentryCase ? `. 현재 주된 유형은 ${dominantReentryCase}입니다.` : '.'}`
 }
 
 function countActiveFilters(req: ScreenerRequest): number {

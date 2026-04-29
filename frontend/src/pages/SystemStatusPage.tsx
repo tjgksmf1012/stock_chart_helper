@@ -567,7 +567,7 @@ function ScanQualitySection({ report }: { report: ScanQualityReportResponse }) {
         <QualityMetric label="스캔 런 수" value={`${report.run_count}회`} />
         <QualityMetric label="평균 종가 수익" value={fmtPct(report.summary.avg_close_return_pct, 1)} />
         <QualityMetric label="양봉 마감 비율" value={fmtPct(report.summary.positive_close_rate, 0)} />
-        <QualityMetric label="목표가 터치율" value={fmtPct(report.summary.target_touch_rate, 0)} />
+        <QualityMetric label="익절 기준가 터치율" value={fmtPct(report.summary.target_touch_rate, 0)} />
         <QualityMetric label="손절가 터치율" value={fmtPct(report.summary.stop_touch_rate, 0)} />
         <QualityMetric label="최대 상승 평균" value={fmtPct(report.summary.avg_max_runup_pct, 1)} />
         <QualityMetric label="최대 낙폭 평균" value={fmtPct(report.summary.avg_max_drawdown_pct, 1)} />

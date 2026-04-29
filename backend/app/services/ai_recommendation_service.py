@@ -384,7 +384,7 @@ def _next_actions(row: dict, stance: str) -> list[str]:
 def _position_hint(row: dict, stance: str, watched: bool) -> str:
     head = "관심종목 우선 후보입니다. " if watched else ""
     if stance == "priority_watch":
-        return f"{head}확인 신호가 나오면 대응하고, 무효화 기준은 미리 정해두는 쪽이 적절합니다."
+        return f"{head}확인 신호가 나오면 대응하고, 손절 기준가는 미리 정해두는 쪽이 적절합니다."
     if stance == "wait_for_trigger":
         return f"{head}지금은 자리 선점보다 트리거 확인을 기다리는 단계입니다."
     if stance == "avoid_chase":
@@ -446,7 +446,7 @@ def _portfolio_guidance(
         lead = watch_items[0]
         return f"즉시 진입보다 {lead.symbol.name}처럼 트리거 확인이 필요한 후보가 많습니다. 기다리는 쪽이 낫습니다."
     if risk_items:
-        return "리스크 점검 후보 비중이 높습니다. 신규 진입보다 무효화 기준과 데이터 상태를 먼저 정리하세요."
+        return "리스크 점검 후보 비중이 높습니다. 신규 진입보다 손절 기준가와 데이터 상태를 먼저 정리하세요."
     return "추천 후보가 충분히 쌓이면 이 영역이 운용 가이드를 보여줍니다."
 
 

@@ -135,7 +135,7 @@ SCHEDULED_DAILY_SCAN_PLANS: list[dict[str, str]] = [
         "label": "장마감 신호 결과 점검",
         "timeframe": "1d",
         "schedule": "평일 16:20 KST",
-        "purpose": "저장된 pending 신호를 목표가/무효화가 터치 여부로 자동 정리합니다.",
+        "purpose": "저장된 pending 신호를 익절·손절 기준가 터치 여부로 자동 정리합니다.",
     },
 ]
 

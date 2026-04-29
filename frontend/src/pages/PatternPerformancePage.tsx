@@ -161,7 +161,7 @@ export default function PatternPerformancePage() {
                 item={summary.top}
                 description={
                   summary.top
-                    ? `${PATTERN_NAMES[summary.top.pattern_type] ?? summary.top.pattern_type}은 현재 ${timeframeLabel(timeframe)} 기준으로 edge와 승률이 모두 상위권입니다. 다만 현재 차트의 신선도와 진입 구간까지 함께 봐야 실제 매매 품질이 맞춰집니다.`
+                    ? `${PATTERN_NAMES[summary.top.pattern_type] ?? summary.top.pattern_type}은 현재 ${timeframeLabel(timeframe)} 기준으로 우위와 승률이 모두 상위권입니다. 다만 현재 차트의 신선도와 진입 구간까지 함께 봐야 실제 매매 품질이 맞춰집니다.`
                     : '아직 상위 패턴을 계산할 데이터가 부족합니다.'
                 }
               />
@@ -171,7 +171,7 @@ export default function PatternPerformancePage() {
                 item={summary.caution}
                 description={
                   summary.caution
-                    ? `${PATTERN_NAMES[summary.caution.pattern_type] ?? summary.caution.pattern_type}은 표본이 어느 정도 있지만 상대적 edge가 낮은 편입니다. 차트가 좋아 보여도 추가 확인 신호 없이 바로 추격하는 건 보수적으로 보는 편이 안전합니다.`
+                    ? `${PATTERN_NAMES[summary.caution.pattern_type] ?? summary.caution.pattern_type}은 표본이 어느 정도 있지만 상대적 우위가 낮은 편입니다. 차트가 좋아 보여도 추가 확인 신호 없이 바로 추격하는 건 보수적으로 보는 편이 안전합니다.`
                     : '아직 경고 패턴을 분리할 만큼 표본이 충분하지 않습니다.'
                 }
               />
@@ -181,7 +181,7 @@ export default function PatternPerformancePage() {
           <Card className="space-y-2 border-primary/20 bg-primary/5">
             <div className="text-sm font-semibold">읽는 법</div>
             <p className="text-xs leading-relaxed text-muted-foreground">
-              edge와 승률은 패턴군 전체의 평균적인 우세를 보여주는 참고값입니다. 실전에서는 현재 차트의 신선도, 거래 준비도, 진입 구간,
+              우위와 승률은 패턴군 전체의 평균적인 우세를 보여주는 참고값입니다. 실전에서는 현재 차트의 신선도, 거래 준비도, 진입 구간,
               데이터 품질까지 함께 봐야 하고, 표본이 작거나 최근 시장 환경이 많이 바뀐 패턴은 숫자를 더 보수적으로 해석하는 편이 좋습니다.
             </p>
           </Card>
@@ -248,7 +248,7 @@ function InsightCard({
         <>
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant={item.historical_edge_score >= 0.6 ? 'bullish' : item.historical_edge_score >= 0.45 ? 'neutral' : 'warning'}>
-              edge {fmtPct(item.historical_edge_score, 0)}
+              우위 {fmtPct(item.historical_edge_score, 0)}
             </Badge>
             <span className="text-sm font-semibold">{PATTERN_NAMES[item.pattern_type] ?? item.pattern_type}</span>
             <span className="text-xs text-muted-foreground">
@@ -275,7 +275,7 @@ function PatternStatCard({ item, rank }: { item: PatternStatsEntry; rank: number
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-mono text-xs text-muted-foreground">#{rank}</span>
             <span className="text-sm font-semibold">{PATTERN_NAMES[item.pattern_type] ?? item.pattern_type}</span>
-            <Badge variant={badgeVariant}>edge {fmtPct(item.historical_edge_score, 0)}</Badge>
+            <Badge variant={badgeVariant}>우위 {fmtPct(item.historical_edge_score, 0)}</Badge>
             <Badge variant="muted">{item.timeframe_label}</Badge>
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
@@ -314,7 +314,7 @@ function patternInterpretation(item: PatternStatsEntry): string {
   if (item.historical_edge_score >= 0.5) {
     return `${name}은 중립 이상 패턴입니다. 숫자만 믿기보다 현재 거래대금과 위치를 함께 확인하면 해석이 더 안정적입니다.`
   }
-  return `${name}은 상대적으로 edge가 약한 편입니다. 현재 차트가 좋아 보여도 추가 확인 신호 없이 바로 추격하는 것은 보수적으로 볼 필요가 있습니다.`
+  return `${name}은 상대적으로 우위가 약한 편입니다. 현재 차트가 좋아 보여도 추가 확인 신호 없이 바로 추격하는 것은 보수적으로 볼 필요가 있습니다.`
 }
 
 function timeframeLabel(timeframe: ReportTimeframe): string {
@@ -438,7 +438,7 @@ function OutcomeRecordCard({
           </div>
           <div className="mt-0.5 flex flex-wrap gap-3 text-xs text-muted-foreground">
             <span>진입가 {record.entry_price.toLocaleString('ko-KR')}원</span>
-            {record.target_price != null && <span>목표 {record.target_price.toLocaleString('ko-KR')}원</span>}
+            {record.target_price != null && <span>익절 {record.target_price.toLocaleString('ko-KR')}원</span>}
             {record.stop_price != null && <span>손절 {record.stop_price.toLocaleString('ko-KR')}원</span>}
             {record.p_up_at_signal != null && <span>당시 상승확률 {Math.round(record.p_up_at_signal * 100)}%</span>}
             <span>저장일 {record.signal_date}</span>

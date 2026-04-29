@@ -135,7 +135,7 @@ export default function AiRecommendationsPage() {
               <p className="text-sm leading-relaxed text-muted-foreground">{data?.portfolio_guidance}</p>
 
               <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                <Metric label="주목 종목" value={`${data?.priority_items.length ?? 0}개`} />
+                <Metric label="우선 검토" value={`${data?.priority_items.length ?? 0}개`} />
                 <Metric label="대기 종목" value={`${data?.watch_items.length ?? 0}개`} />
                 <Metric label="주의 종목" value={`${data?.risk_items.length ?? 0}개`} />
                 <Metric label="업데이트" value={fmtDateTime(data?.generated_at)} />

@@ -201,10 +201,10 @@ def _ichimoku_profile(df: pd.DataFrame) -> dict[str, Any]:
 
     if current_conversion >= current_base:
         score += 0.08
-        signals.append("전환선이 기준선 위에 있어 단기 힘이 유지됩니다.")
+        signals.append("단기선이 중기선 위에 있어 단기 힘이 유지됩니다.")
     else:
         score -= 0.08
-        signals.append("전환선이 기준선 아래라 단기 힘이 약합니다.")
+        signals.append("단기선이 중기선 아래라 단기 힘이 약합니다.")
 
     if current_lagging >= lag_reference:
         score += 0.05
@@ -315,7 +315,7 @@ def _outcome_from_future(pattern: PatternResult, window_df: pd.DataFrame, future
             if target is not None and high >= target:
                 return {
                     "outcome_label": "성공",
-                    "outcome_summary": "목표가를 먼저 찍고 진행된 실제 과거 사례입니다.",
+                    "outcome_summary": "익절 기준가를 먼저 찍고 진행된 실제 과거 사례입니다.",
                     "resolution_date": resolved,
                     "outcome_return_pct": round((high - entry) / max(entry, 1.0), 4),
                     "max_favorable_pct": round(max_favorable_pct, 4),
@@ -325,7 +325,7 @@ def _outcome_from_future(pattern: PatternResult, window_df: pd.DataFrame, future
             if invalidation is not None and low <= invalidation:
                 return {
                     "outcome_label": "실패",
-                    "outcome_summary": "무효화 가격을 먼저 이탈한 실제 과거 사례입니다.",
+                    "outcome_summary": "손절 기준가를 먼저 이탈한 실제 과거 사례입니다.",
                     "resolution_date": resolved,
                     "outcome_return_pct": round((low - entry) / max(entry, 1.0), 4),
                     "max_favorable_pct": round(max_favorable_pct, 4),
@@ -338,7 +338,7 @@ def _outcome_from_future(pattern: PatternResult, window_df: pd.DataFrame, future
             if target is not None and low <= target:
                 return {
                     "outcome_label": "성공",
-                    "outcome_summary": "목표가를 먼저 달성한 실제 과거 사례입니다.",
+                    "outcome_summary": "익절 기준가를 먼저 달성한 실제 과거 사례입니다.",
                     "resolution_date": resolved,
                     "outcome_return_pct": round((entry - low) / max(entry, 1.0), 4),
                     "max_favorable_pct": round(max_favorable_pct, 4),
@@ -348,7 +348,7 @@ def _outcome_from_future(pattern: PatternResult, window_df: pd.DataFrame, future
             if invalidation is not None and high >= invalidation:
                 return {
                     "outcome_label": "실패",
-                    "outcome_summary": "무효화 가격을 먼저 건드린 실제 과거 사례입니다.",
+                    "outcome_summary": "손절 기준가를 먼저 건드린 실제 과거 사례입니다.",
                     "resolution_date": resolved,
                     "outcome_return_pct": round((entry - high) / max(entry, 1.0), 4),
                     "max_favorable_pct": round(max_favorable_pct, 4),
@@ -363,10 +363,10 @@ def _outcome_from_future(pattern: PatternResult, window_df: pd.DataFrame, future
     )
     if max_favorable_pct >= 0.035:
         label = "부분 성공"
-        summary = "목표가까지는 못 갔지만 유의미한 유리한 움직임이 나온 사례입니다."
+        summary = "익절 기준가까지는 못 갔지만 유의미한 유리한 움직임이 나온 사례입니다."
     else:
         label = "관찰 진행"
-        summary = "뚜렷한 목표 달성도 무효화도 없이 정리된 사례입니다."
+        summary = "뚜렷한 목표 달성도 패턴 실패도 없이 정리된 사례입니다."
     return {
         "outcome_label": label,
         "outcome_summary": summary,

@@ -310,7 +310,7 @@ def _decide_outcome_from_events(
         if target_hit and stop_hit:
             return EvaluationDecision(
                 outcome="stopped_out",
-                reason=f"같은 바에서 목표가와 무효화가를 모두 터치해 보수적으로 손절 처리 ({event.when.date().isoformat()})",
+                reason=f"같은 바에서 익절·손절 기준가를 모두 터치해 보수적으로 손절 처리 ({event.when.date().isoformat()})",
                 exit_price=float(stop_price or event.close),
                 exit_date=event.when.date().isoformat(),
                 evaluation_basis=event.basis,
@@ -320,7 +320,7 @@ def _decide_outcome_from_events(
         if target_hit:
             return EvaluationDecision(
                 outcome="win",
-                reason=f"고가가 목표가에 먼저 닿음 ({event.when.date().isoformat()})",
+                reason=f"고가가 익절 기준가에 먼저 닿음 ({event.when.date().isoformat()})",
                 exit_price=float(target_price or event.close),
                 exit_date=event.when.date().isoformat(),
                 evaluation_basis=event.basis,
@@ -330,7 +330,7 @@ def _decide_outcome_from_events(
         if stop_hit:
             return EvaluationDecision(
                 outcome="stopped_out",
-                reason=f"저가가 무효화가에 먼저 닿음 ({event.when.date().isoformat()})",
+                reason=f"저가가 손절 기준가에 먼저 닿음 ({event.when.date().isoformat()})",
                 exit_price=float(stop_price or event.close),
                 exit_date=event.when.date().isoformat(),
                 evaluation_basis=event.basis,
@@ -351,7 +351,7 @@ def _fallback_close_decision(
     if target_price is not None and close >= target_price:
         return EvaluationDecision(
             outcome="win",
-            reason="최신 종가가 목표가 이상",
+            reason="최신 종가가 익절 기준가 이상",
             exit_price=close,
             exit_date=date.today().isoformat(),
             evaluation_basis="latest_close",
@@ -361,7 +361,7 @@ def _fallback_close_decision(
     if stop_price is not None and close <= stop_price:
         return EvaluationDecision(
             outcome="stopped_out",
-            reason="최신 종가가 무효화가 이하",
+            reason="최신 종가가 손절 기준가 이하",
             exit_price=close,
             exit_date=date.today().isoformat(),
             evaluation_basis="latest_close",

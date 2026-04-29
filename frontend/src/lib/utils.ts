@@ -38,7 +38,7 @@ export const STATE_LABELS: Record<string, string> = {
   armed: '돌파 직전',
   confirmed: '돌파 완료',
   invalidated: '패턴 실패',
-  played_out: '목표가 도달',
+  played_out: '익절 기준가 도달',
 }
 
 export const STATE_COLORS: Record<string, string> = {

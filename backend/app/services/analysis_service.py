@@ -106,8 +106,8 @@ def _reentry_pattern_profile(pattern_type: str) -> dict[str, Any]:
             },
             "notes": {
                 "compression": "반전형은 급한 확장보다 바닥권 진폭이 차분히 줄어드는지를 먼저 봅니다.",
-                "volume_recovery": "목선 재도전 구간에서 거래량이 다시 붙어야 반전 신뢰도가 올라갑니다.",
-                "trigger_hold": "W/헤드앤숄더 계열은 목선 재장악 여부가 재진입 해석의 핵심입니다.",
+                "volume_recovery": "돌파선 재도전 구간에서 거래량이 다시 붙어야 반전 신뢰도가 올라갑니다.",
+                "trigger_hold": "W/헤드앤숄더 계열은 돌파선 재장악 여부가 재진입 해석의 핵심입니다.",
                 "wick_absorption": "되밀림 꼬리를 빠르게 흡수할수록 매물 소화가 잘 되는 반전형으로 봅니다.",
                 "failure_burden": "반전형은 직전 실패 돌파가 누적될수록 다시 실패할 확률도 같이 봅니다.",
             },
@@ -223,7 +223,7 @@ def _reentry_pattern_profile(pattern_type: str) -> dict[str, Any]:
         "notes": {
             "compression": "최근 변동폭이 직전 구간보다 줄수록 재축적 구조로 해석합니다.",
             "volume_recovery": "최근 2~3개 바에서 거래량이 다시 붙는지 확인합니다.",
-            "trigger_hold": "목선 또는 기준선 위/아래를 얼마나 안정적으로 지키는지 반영합니다.",
+            "trigger_hold": "돌파선 또는 중기선 위/아래를 얼마나 안정적으로 지키는지 반영합니다.",
             "wick_absorption": "윗꼬리 또는 아랫꼬리를 얼마나 잘 소화하는지 봅니다.",
             "failure_burden": "최근 재돌파 실패 횟수가 적을수록 높은 점수를 줍니다.",
         },
@@ -896,10 +896,10 @@ def _ichimoku_profile(df: pd.DataFrame) -> dict[str, Any]:
 
     if current_conversion >= current_base:
         score += 0.08
-        signals.append("전환선이 기준선 위라 단기 탄력이 유지됩니다.")
+        signals.append("단기선이 중기선 위라 단기 탄력이 유지됩니다.")
     else:
         score -= 0.08
-        signals.append("전환선이 기준선 아래라 단기 힘이 약합니다.")
+        signals.append("단기선이 중기선 아래라 단기 힘이 약합니다.")
 
     lag_reference = float(close.iloc[-27]) if len(close) >= 27 else current_close
     lagging_bullish = current_close >= lag_reference
@@ -985,7 +985,7 @@ def _entry_window_profile(
         }
 
     if pattern.state in {"played_out", "invalidated"} or target_hit_at or invalidated_at:
-        reason = "이미 목표 달성 또는 무효화가 확인되어 지금은 신규 진입보다 패턴 종료로 보는 편이 안전합니다."
+        reason = "이미 익절 기준가 달성 또는 패턴 실패가 확인되어 지금은 신규 진입보다 패턴 종료로 보는 편이 안전합니다."
         return {
             "entry_window_score": 0.08,
             "entry_window_label": "관망",
@@ -1027,7 +1027,7 @@ def _entry_window_profile(
         return {
             "entry_window_score": round(max(0.0, min(1.0, score)), 3),
             "entry_window_label": "목표 근접",
-            "entry_window_summary": f"{label} 기준 목표가가 가까워 추가 기대수익이 작아졌습니다. 신규 진입보다 익절·관망에 가깝습니다.",
+            "entry_window_summary": f"{label} 기준 익절 기준가가 가까워 추가 기대수익이 작아졌습니다. 신규 진입보다 익절·관망에 가깝습니다.",
         }
 
     if stop_distance_pct <= 0.004:
@@ -1042,7 +1042,7 @@ def _entry_window_profile(
         if breakout_extension_pct <= (0.012 if is_intraday_timeframe(timeframe) else 0.025) and reward_risk_ratio >= 1.15:
             score = max(score, 0.74)
             entry_label = "초기 돌파"
-            summary = "돌파 직후 구간으로 해석할 수 있어 추격 부담이 아직 크지 않습니다. 다만 무효화 기준과 거래대금은 함께 확인해야 합니다."
+            summary = "돌파 직후 구간으로 해석할 수 있어 추격 부담이 아직 크지 않습니다. 다만 손절 기준가와 거래대금은 함께 확인해야 합니다."
         elif breakout_extension_pct <= (0.024 if is_intraday_timeframe(timeframe) else 0.045) and reward_risk_ratio >= 1.0:
             score = max(min(score, 0.64), 0.52)
             entry_label = "확장 추격"
@@ -1055,7 +1055,7 @@ def _entry_window_profile(
         if distance_to_trigger_pct <= (0.008 if is_intraday_timeframe(timeframe) else 0.015) and reward_risk_ratio >= 1.1:
             score = max(score, 0.72)
             entry_label = "트리거 임박"
-            summary = "목선 또는 트리거 가격대 근처로, 확인만 붙으면 실전 진입 후보가 될 수 있습니다."
+            summary = "돌파선 또는 트리거 가격대 근처로, 확인만 붙으면 실전 진입 후보가 될 수 있습니다."
         elif distance_to_trigger_pct <= (0.02 if is_intraday_timeframe(timeframe) else 0.035):
             score = max(min(score, 0.58), 0.46)
             entry_label = "트리거 대기"
@@ -1122,7 +1122,7 @@ def _freshness_profile(
         return {
             "freshness_score": 0.05,
             "freshness_label": "무효 만료",
-            "freshness_summary": f"{label} 기준 무효화가 확인된 패턴이라 현재 시점의 신규 후보로 보기 어렵습니다.",
+            "freshness_summary": f"{label} 기준 패턴이 실패한 케이스라 현재 시점의 신규 후보로 보기 어렵습니다.",
         }
 
     if target_hit_at or pattern.state == "played_out":
@@ -1137,12 +1137,12 @@ def _freshness_profile(
             return {
                 "freshness_score": score,
                 "freshness_label": "재기초 관찰",
-                "freshness_summary": f"{label} 기준 과거 목표 달성 이후 다시 기준선 근처로 식어 들어왔습니다. 재형성 여부를 관찰하는 단계입니다.",
+                "freshness_summary": f"{label} 기준 과거 익절 기준가 달성 이후 다시 중기선 근처로 식어 들어왔습니다. 재형성 여부를 관찰하는 단계입니다.",
             }
         return {
             "freshness_score": 0.08,
             "freshness_label": "종료 패턴",
-            "freshness_summary": f"{label} 기준 이미 목표가를 소화한 패턴이라 지금은 신선한 신규 셋업으로 보기 어렵습니다.",
+            "freshness_summary": f"{label} 기준 이미 익절 기준가를 소화한 패턴이라 지금은 신선한 신규 셋업으로 보기 어렵습니다.",
         }
 
     if bars_since_signal is not None:
@@ -1437,16 +1437,16 @@ def _reentry_profile(
             return {
                 "reentry_score": score,
                 "reentry_label": "실패 후 복구 관찰",
-                "reentry_summary": f"{label} 기준 한 차례 무효화된 뒤 구조를 다시 회복하는 중입니다. 즉시 진입보다 복구 지속 여부를 먼저 확인하는 편이 좋습니다.",
+                "reentry_summary": f"{label} 기준 한 차례 패턴 실패 후 구조를 다시 회복하는 중입니다. 즉시 진입보다 복구 지속 여부를 먼저 확인하는 편이 좋습니다.",
                 "reentry_case": "failed_breakout_recovery",
                 "reentry_case_label": "실패 돌파 복구형",
-                "reentry_trigger": f"무효화 구간 회복 유지와 {trigger_price:,.0f} 재돌파가 함께 확인되는지 보세요.",
+                "reentry_trigger": f"손절 기준가 구간 회복 유지와 {trigger_price:,.0f} 재돌파가 함께 확인되는지 보세요.",
                 **detail_fields,
             }
         return {
             "reentry_score": 0.06,
             "reentry_label": "재진입 비선호",
-            "reentry_summary": f"{label} 기준 무효화 이후 구조 복구가 충분하지 않아 재진입 후보로 보기 어렵습니다.",
+            "reentry_summary": f"{label} 기준 패턴 실패 이후 구조 복구가 충분하지 않아 재진입 후보로 보기 어렵습니다.",
             "reentry_case": "avoid",
             "reentry_case_label": "재진입 비선호",
             "reentry_trigger": "추가 복구 없이 재진입을 서두르지 않는 편이 좋습니다.",
@@ -1474,7 +1474,7 @@ def _reentry_profile(
                 "reentry_summary": f"{label} 기준 과거 목표 소화 후 다시 기준선 근처에서 구조를 재정비하고 있습니다. 재돌파가 붙는지 보는 단계입니다.",
                 "reentry_case": "box_reaccumulation",
                 "reentry_case_label": "박스 재축적형",
-                "reentry_trigger": f"목선 {trigger_price:,.0f} 부근 박스 유지 후 거래대금 동반 재돌파를 기다리세요.",
+                "reentry_trigger": f"돌파선 {trigger_price:,.0f} 부근 박스 유지 후 거래대금 동반 재돌파를 기다리세요.",
                 **detail_fields,
             }
         if (
@@ -1492,7 +1492,7 @@ def _reentry_profile(
                 "reentry_summary": f"{label} 기준 목표 소화 후 깊지 않은 눌림만 거치며 다시 위쪽으로 힘을 모으는 중입니다. 눌림 후 재가속 여부가 중요합니다.",
                 "reentry_case": "pullback_relaunch",
                 "reentry_case_label": "눌림 후 재가속형",
-                "reentry_trigger": f"목선 위 안착 유지와 최근 고점 재돌파가 함께 나오는지 보세요.",
+                "reentry_trigger": f"돌파선 위 안착 유지와 최근 고점 재돌파가 함께 나오는지 보세요.",
                 **detail_fields,
             }
         if reset_ready:
@@ -1509,7 +1509,7 @@ def _reentry_profile(
         return {
             "reentry_score": 0.12,
             "reentry_label": "재진입 비선호",
-            "reentry_summary": f"{label} 기준 이미 목표가를 소화했고 재축적도 아직 약해 당장 재진입할 자리는 아닙니다.",
+            "reentry_summary": f"{label} 기준 이미 익절 기준가를 소화했고 재축적도 아직 약해 당장 재진입할 자리는 아닙니다.",
             "reentry_case": "avoid",
             "reentry_case_label": "재진입 비선호",
             "reentry_trigger": "목표 소화 직후라 구조가 다시 쌓일 때까지 기다리는 편이 좋습니다.",
@@ -1719,7 +1719,7 @@ def _pattern_lifecycle_profile(
     if terminal:
         score = min(score, 0.22)
         label = "종료 패턴" if target_hit_at or pattern.state == "played_out" else "무효 만료"
-        note = "이미 목표 달성 또는 무효화가 확인된 패턴이라 현재 시점의 활성 셋업으로 보기 어렵습니다."
+        note = "이미 익절 기준가 달성 또는 패턴 실패가 확인된 패턴이라 현재 시점의 활성 셋업으로 보기 어렵습니다."
     elif pattern.state == "confirmed":
         score = max(score, 0.62)
         label = "확인 완료"
@@ -1773,7 +1773,7 @@ def _active_setup_profile(
     score = max((float(row["lifecycle_score"]) for row in active_rows), default=0.0)
     if active_count == 0:
         label = "종료 패턴 위주"
-        summary = "현재 잡힌 패턴은 대부분 이미 끝났거나 무효화된 상태입니다. 신규 진입보다 과거 패턴 정리에 가깝습니다."
+        summary = "현재 잡힌 패턴은 대부분 이미 끝났거나 실패한 상태입니다. 신규 진입보다 과거 패턴 정리에 가깝습니다."
     elif score >= 0.72:
         label = "활성 셋업 강함"
         summary = f"지금 살아 있는 패턴이 {active_count}개이며, 그중 적어도 하나는 실전 후보로 바로 볼 만한 강도를 보입니다."
@@ -1915,13 +1915,13 @@ def _action_plan_profile(
             return {
                 "action_plan": "recheck",
                 "action_plan_label": "복구 관찰",
-                "action_plan_summary": f"{label} 기준 무효화 이후 구조 복구를 시도하고 있어 즉시 {direction} 대응보다 복구 확인이 우선입니다.",
+                "action_plan_summary": f"{label} 기준 패턴 실패 이후 구조 복구를 시도하고 있어 즉시 {direction} 대응보다 복구 확인이 우선입니다.",
                 "action_priority_score": priority,
             }
         return {
             "action_plan": "cooling",
             "action_plan_label": "무효 만료",
-            "action_plan_summary": f"{label} 기준 패턴이 무효화되어 현재는 신규 {direction} 대응보다 관망이 우선입니다.",
+            "action_plan_summary": f"{label} 기준 패턴이 실패하여 현재는 신규 {direction} 대응보다 관망이 우선입니다.",
             "action_priority_score": priority,
         }
 
@@ -1937,13 +1937,13 @@ def _action_plan_profile(
             return {
                 "action_plan": "watch",
                 "action_plan_label": "재기초 관찰",
-                "action_plan_summary": f"{label} 기준 목표 달성 이후 다시 기준선 근처로 식고 있어 재형성 여부를 관찰할 구간입니다.",
+                "action_plan_summary": f"{label} 기준 익절 기준가 달성 이후 다시 중기선 근처로 식고 있어 재형성 여부를 관찰할 구간입니다.",
                 "action_priority_score": priority,
             }
         return {
             "action_plan": "cooling",
             "action_plan_label": "목표 소진",
-            "action_plan_summary": f"{label} 기준 기존 패턴은 이미 목표가를 소화했습니다. 지금은 과거 패턴 종료로 보는 편이 안전합니다.",
+            "action_plan_summary": f"{label} 기준 기존 패턴은 이미 익절 기준가를 소화했습니다. 지금은 과거 패턴 종료로 보는 편이 안전합니다.",
             "action_priority_score": priority,
         }
 
@@ -1994,7 +1994,7 @@ def _action_plan_profile(
         return {
             "action_plan": "watch",
             "action_plan_label": "관찰 후보",
-            "action_plan_summary": f"{label} 기준 아직 확인 전이거나 트리거 직전 단계입니다. 돌파·거래대금·무효화 기준을 함께 체크하세요.",
+            "action_plan_summary": f"{label} 기준 아직 확인 전이거나 트리거 직전 단계입니다. 돌파·거래대금·손절 기준가를 함께 체크하세요.",
             "action_priority_score": priority,
         }
 
@@ -2040,7 +2040,7 @@ def _no_signal_decision_support(timeframe: str, data_quality: float, available_b
             [
                 "주봉/월봉 추세와 현재 일봉 구조가 충돌하지 않는지 확인하기",
                 "거래대금과 종가 위치가 함께 좋아지는지 확인하기",
-                "최근 고점 또는 목선 재돌파 가능성을 체크하기",
+                "최근 고점 또는 돌파선 재돌파 가능성을 체크하기",
             ]
         )
 
@@ -2082,7 +2082,7 @@ def _decision_support_profile(
     pattern_name = pattern.pattern_type.replace("_", " ")
 
     if invalidated_at or pattern.state == "invalidated":
-        flags.append("패턴이 이미 무효화되어 신규 대응 근거가 약합니다.")
+        flags.append("패턴이 이미 실패하여 신규 대응 근거가 약합니다.")
     if target_hit_at or pattern.state == "played_out":
         flags.append("패턴이 이미 목표 구간을 소화해 신규 진입 메리트가 낮습니다.")
     if headroom_score < 0.25 or target_distance_pct < 0.025:
@@ -2111,23 +2111,23 @@ def _decision_support_profile(
         flags.append("실시간 수집이 제한되어 저장 또는 공개 데이터 비중이 높습니다.")
 
     if pattern.state == "forming":
-        checklist.append("패턴이 완성되는지와 목선 형성 여부를 확인하기")
+        checklist.append("패턴이 완성되는지와 돌파선 형성 여부를 확인하기")
     elif pattern.state == "armed":
         checklist.append("트리거 근처에서 거래대금과 캔들 확인이 붙는지 보기")
     elif pattern.state == "confirmed":
-        checklist.append("확인 직후 되돌림과 무효화 기준이 유지되는지 보기")
+        checklist.append("확인 직후 되돌림과 손절 기준가가 유지되는지 보기")
     else:
         checklist.append("이미 종료된 패턴인지 먼저 확인하기")
 
     if pattern.neckline:
         relation = "돌파" if direction == "상승" else "이탈"
-        checklist.append(f"목선 {pattern.neckline:,.0f} 부근에서 {relation} 여부 확인하기")
+        checklist.append(f"돌파선 {pattern.neckline:,.0f} 부근에서 {relation} 여부 확인하기")
     for signal in list(ichimoku.get("signals") or [])[:2]:
         checklist.append(signal)
     if pattern.invalidation_level:
-        checklist.append(f"무효화 기준 {pattern.invalidation_level:,.0f} 이탈 여부 확인하기")
+        checklist.append(f"손절 기준가 {pattern.invalidation_level:,.0f} 이탈 여부 확인하기")
     if pattern.target_level and action_plan.get("action_plan") != "cooling":
-        checklist.append(f"1차 목표가 {pattern.target_level:,.0f}까지 남은 공간 확인하기")
+        checklist.append(f"1차 익절 기준가 {pattern.target_level:,.0f}까지 남은 공간 확인하기")
     if stop_distance_pct > 0.0:
         checklist.append(f"손절 거리 {stop_distance_pct:.1%}가 감당 가능한지 점검하기")
     if bars_since_signal is not None and bars_since_signal > 0:
@@ -2144,13 +2144,13 @@ def _decision_support_profile(
     elif action_plan.get("action_plan") == "recheck":
         next_trigger = "데이터 품질 또는 패턴 완성도가 좋아진 뒤 다시 평가하는 것이 좋습니다."
     else:
-        next_trigger = "현재는 목표 소진·무효화 여부와 같은 종료 신호를 우선 확인하는 편이 좋습니다."
+        next_trigger = "현재는 목표 소진·패턴 실패 여부와 같은 종료 신호를 우선 확인하는 편이 좋습니다."
 
     if ichimoku.get("summary"):
         next_trigger = f"{next_trigger} {ichimoku['summary']}"
 
     if not flags:
-        flags.append("크게 치명적인 리스크는 보이지 않지만 무효화 기준 확인은 여전히 필요합니다.")
+        flags.append("크게 치명적인 리스크는 보이지 않지만 손절 기준가 확인은 여전히 필요합니다.")
 
     return {
         "risk_flags": flags[:6],
@@ -2330,7 +2330,7 @@ def _trade_readiness_profile(
             "label": "일목 구조",
             "score": round(ichimoku_score, 3),
             "weight": 0.06,
-            "note": "구름대 위치, 전환선/기준선 배열, 전고점 구조를 함께 반영합니다.",
+            "note": "구름대 위치, 단기선/중기선 배열, 전고점 구조를 함께 반영합니다.",
         },
         {
             "label": "실전 액션",
@@ -2375,7 +2375,7 @@ def _trade_readiness_profile(
     elif label == "재확인 필요":
         summary = "시그널은 있으나 데이터·타이밍·신선도 중 약한 구간이 있어 다시 확인하는 편이 좋습니다."
     else:
-        summary = "목표 소진, 무효화, 낮은 신선도, 추격 구간 같은 감점 요인이 커 현재는 보류에 가깝습니다."
+        summary = "목표 소진, 패턴 실패, 낮은 신선도, 추격 구간 같은 감점 요인이 커 현재는 보류에 가깝습니다."
 
     return {
         "trade_readiness_score": score,
@@ -2716,7 +2716,7 @@ def _build_projection(
             ]
             summary = (
                 f"{pattern_name} 패턴은 {reentry_case_label}으로 해석됩니다. "
-                "다만 목표가까지 직선으로 가정하지 않고, 목선 근처 재축적과 재돌파 확인을 먼저 반영했습니다."
+                "다만 익절 기준가까지 직선으로 가정하지 않고, 돌파선 근처 재축적과 재돌파 확인을 먼저 반영했습니다."
             )
             label = "박스 재축적 후 재돌파"
             raw_prices = prices
@@ -2768,10 +2768,10 @@ def _build_projection(
                 (steps[3], drift, "range"),
             ]
             summary = (
-                f"{pattern_name} 패턴은 무효화 이후 새 균형점을 찾는 흐름으로 가정했습니다. "
+                f"{pattern_name} 패턴은 패턴 실패 후 새 균형점을 찾는 흐름으로 가정했습니다. "
                 "기존 패턴 재개보다 손실 정리와 새 구조 형성 확인이 먼저라는 의미입니다."
             )
-            label = "무효화 이후 재균형"
+            label = "패턴 실패 후 재균형"
     elif bullish:
         if pattern.state == "forming":
             raw_prices = [
@@ -2780,7 +2780,7 @@ def _build_projection(
                 (steps[2], neckline * 1.02, "breakout"),
                 (steps[3], target, "target"),
             ]
-            summary = f"{pattern_name} 패턴이 아직 형성 중이라 눌림과 기준선 접근 뒤 돌파를 시도하는 기본 시나리오입니다."
+            summary = f"{pattern_name} 패턴이 아직 형성 중이라 눌림과 중기선 접근 뒤 돌파를 시도하는 기본 시나리오입니다."
             label = "형성 후 돌파"
         elif pattern.state == "armed":
             raw_prices = [
@@ -2789,7 +2789,7 @@ def _build_projection(
                 (steps[2], max(neckline, current_close - span * 0.08), "retest"),
                 (steps[3], target, "target"),
             ]
-            summary = f"{pattern_name} 패턴이 활성 직전이라 목선 확인과 리테스트 이후 상방을 보는 기본 시나리오입니다."
+            summary = f"{pattern_name} 패턴이 활성 직전이라 돌파선 확인과 리테스트 이후 상방을 보는 기본 시나리오입니다."
             label = "돌파 임박"
         else:
             raw_prices = [
@@ -2928,7 +2928,7 @@ def _build_projection(
             label=f"리스크 시나리오 · {risk_label}",
             weight=risk_weight,
             bias="bearish" if bullish else "bullish",
-            summary="트리거 실패나 재돌파 실패가 나오면 기준선 또는 무효화 구간 재시험이 먼저 나올 수 있다는 뜻입니다.",
+            summary="트리거 실패나 재돌파 실패가 나오면 중기선 또는 손절 기준가 구간 재시험이 먼저 나올 수 있다는 뜻입니다.",
             path=_projected_points(last_ts, timeframe, risk_prices),
         ),
     ]

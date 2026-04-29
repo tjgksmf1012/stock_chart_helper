@@ -28,7 +28,7 @@ INTENT_META: dict[str, dict[str, str]] = {
         "style_label": "관망형",
     },
     "invalidation_watch": {
-        "label": "무효화 감시",
+        "label": "손절 구간 감시",
         "style_key": "risk_manager",
         "style_label": "리스크 관리형",
     },

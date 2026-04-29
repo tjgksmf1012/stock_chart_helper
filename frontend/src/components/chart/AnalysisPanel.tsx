@@ -324,7 +324,7 @@ function CautionCard() {
         해석 주의
       </div>
       <p className="text-xs leading-relaxed text-muted-foreground">
-        이 화면은 패턴 기반 보조 분석 도구입니다. 이미 목표가에 도달했거나 패턴이 실패한 경우 신선도와 진입 준비도에서 강하게 감점되며, 실전 판단 전에는 추세와 거래대금, 손절 기준가를 함께 보는 편이 안전합니다.
+        이 화면은 패턴 기반 보조 분석 도구입니다. 이미 익절 기준가에 도달했거나 패턴이 실패한 경우 신선도와 진입 준비도에서 강하게 감점되며, 실전 판단 전에는 추세와 거래대금, 손절 기준가를 함께 보는 편이 안전합니다.
       </p>
     </Card>
   )
@@ -356,7 +356,7 @@ function BestPatternCard({ pattern, analysis }: { pattern: PatternInfo; analysis
         {pattern.invalidation_level !== null && (
           <StatRow label="손절 기준가" value={<span className="text-red-300">{fmtPrice(pattern.invalidation_level)}</span>} />
         )}
-        {pattern.target_hit_at && <StatRow label="목표가 도달" value={fmtDateTime(pattern.target_hit_at)} />}
+        {pattern.target_hit_at && <StatRow label="익절 기준가 도달" value={fmtDateTime(pattern.target_hit_at)} />}
         {pattern.invalidated_at && <StatRow label="패턴 실패 시점" value={fmtDateTime(pattern.invalidated_at)} />}
       </div>
     </Card>

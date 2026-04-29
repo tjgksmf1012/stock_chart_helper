@@ -746,7 +746,7 @@ async def _build_confluence(
         )
     elif confluence_score >= 0.56:
         scenario_text = (
-            f"{timeframe_label(timeframe)} 신호는 유지되지만 상위 축 정렬은 절반 정도입니다. 무효화 기준을 우선 보는 편이 좋습니다."
+            f"{timeframe_label(timeframe)} 신호는 유지되지만 상위 축 정렬은 절반 정도입니다. 손절 기준가를 우선 보는 편이 좋습니다."
         )
     else:
         scenario_text = (
