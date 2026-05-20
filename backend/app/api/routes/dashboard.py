@@ -301,8 +301,22 @@ async def dashboard_scan_status(timeframe: str = Query(default=DEFAULT_TIMEFRAME
 
 
 @router.post("/scan-refresh", response_model=ScanStatusResponse)
-async def dashboard_scan_refresh(timeframe: str = Query(default=DEFAULT_TIMEFRAME)) -> ScanStatusResponse:
-    return ScanStatusResponse(**(await trigger_scan(timeframe=_timeframe_query(timeframe), force_refresh=True, source="manual")))
+async def dashboard_scan_refresh(
+    timeframe: str = Query(default=DEFAULT_TIMEFRAME),
+    limit: int = Query(default=40, ge=10, le=100),
+    batch_size: int = Query(default=3, ge=1, le=10),
+) -> ScanStatusResponse:
+    return ScanStatusResponse(
+        **(
+            await trigger_scan(
+                timeframe=_timeframe_query(timeframe),
+                limit=limit,
+                batch_size=batch_size,
+                force_refresh=True,
+                source="manual",
+            )
+        )
+    )
 
 
 @router.get("/long-high-probability")

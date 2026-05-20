@@ -420,7 +420,7 @@ export default function DashboardPage() {
             className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isScanActive ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-            {isScanActive ? `${timeframeLabel(timeframe)} 스캔 중 · 보통 2~3분` : `${timeframeLabel(timeframe)} 다시 스캔`}
+            {isScanActive ? `${timeframeLabel(timeframe)} 갱신 중 · 기존 결과 유지` : `${timeframeLabel(timeframe)} 빠른 갱신`}
           </button>
 
           <button
@@ -1718,8 +1718,8 @@ function statusSubline(status: ScanStatusResponse | undefined, timeframe: Timefr
   if (status.is_running) {
     const cachedCount = status.cached_result_count ?? 0
     return cachedCount > 0
-      ? `재스캔 진행 중입니다 (보통 2~3분). 기존 ${cachedCount}개 결과는 그대로 보입니다.`
-      : `${timeframeLabel(timeframe)} 스캔 진행 중입니다. 보통 2~3분 소요됩니다.`
+      ? `백그라운드 갱신 중입니다. 기존 ${cachedCount}개 결과는 그대로 보입니다.`
+      : `${timeframeLabel(timeframe)} 갱신을 시작했습니다. 완료 전까지 기존 결과를 우선 표시합니다.`
   }
   if (status.status === 'warming' && (status.cached_result_count ?? 0) === 0) {
     return `${timeframeLabel(timeframe)} 결과를 백그라운드에서 준비 중입니다. 임시 후보가 먼저 보일 수 있습니다.`

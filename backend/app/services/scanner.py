@@ -14,7 +14,7 @@ import pandas as pd
 
 from ..api.schemas import SymbolInfo
 from ..core.config import get_settings
-from ..core.redis import cache_delete, cache_get, cache_set
+from ..core.redis import cache_get, cache_set
 from .analysis_service import analyze_symbol_dataframe, build_no_signal_snapshot
 from .data_fetcher import get_data_fetcher
 from .scan_history_service import persist_scan_history
@@ -1125,10 +1125,11 @@ async def run_scan(
             duration_ms=None,
         )
 
-        if force_refresh:
-            await cache_delete(cache_key)
+        previous_cached = await cache_get(cache_key)
+        if force_refresh and isinstance(previous_cached, list):
+            _update_scan_status(timeframe, cached_result_count=len(previous_cached))
 
-        cached = None if force_refresh else await cache_get(cache_key)
+        cached = None if force_refresh else previous_cached
         if cached:
             _update_scan_status(
                 timeframe,

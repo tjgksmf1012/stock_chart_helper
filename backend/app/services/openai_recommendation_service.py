@@ -22,7 +22,7 @@ from ..core.redis import cache_get, cache_set
 
 logger = structlog.get_logger()
 
-_OVERLAY_CACHE_PREFIX = "ai:recommendation-overlay:v4"
+_OVERLAY_CACHE_PREFIX = "ai:recommendation-overlay:v5"
 _IN_FLIGHT_REFRESHES: set[str] = set()
 
 
@@ -69,7 +69,8 @@ async def apply_openai_recommendation_overlay(response: AiRecommendationResponse
             }
         )
 
-    should_retry = _is_stale(cached.get("last_attempt_at"), refresh_after)
+    retry_after = 60 if cached.get("last_error") in {"openai_output_parse_error", "openai_timeout", "openai_provider_error"} else refresh_after
+    should_retry = _is_stale(cached.get("last_attempt_at"), retry_after)
     scheduled = False
     if should_retry:
         scheduled = await _schedule_overlay_refresh(cache_key=cache_key, payload=payload, cache_ttl=cache_ttl)
@@ -169,7 +170,7 @@ async def _request_overlay(payload: dict[str, Any]) -> dict[str, Any]:
                 "strict": True,
             }
         },
-        "max_output_tokens": settings.openai_max_output_tokens,
+        "max_output_tokens": max(int(settings.openai_max_output_tokens), 1600),
     }
 
     async with httpx.AsyncClient(timeout=settings.openai_timeout_seconds) as client:
