@@ -114,27 +114,28 @@ def _start_scheduler() -> None:
             id="weekly_scan_history_prune",
             replace_existing=True,
         )
-        scheduler.add_job(
-            run_scheduled_intraday_warmup,
-            CronTrigger(day_of_week="mon-fri", hour=9, minute=20, timezone="Asia/Seoul"),
-            kwargs={"plan_id": "open_candidate_cache"},
-            id="open_intraday_warmup",
-            replace_existing=True,
-        )
-        scheduler.add_job(
-            run_scheduled_intraday_warmup,
-            CronTrigger(day_of_week="mon-fri", hour=12, minute=40, timezone="Asia/Seoul"),
-            kwargs={"plan_id": "midday_candidate_cache"},
-            id="midday_intraday_warmup",
-            replace_existing=True,
-        )
-        scheduler.add_job(
-            run_scheduled_intraday_warmup,
-            CronTrigger(day_of_week="mon-fri", hour=14, minute=50, timezone="Asia/Seoul"),
-            kwargs={"plan_id": "closing_candidate_cache"},
-            id="closing_intraday_warmup",
-            replace_existing=True,
-        )
+        if settings.enable_scheduled_intraday_warmup:
+            scheduler.add_job(
+                run_scheduled_intraday_warmup,
+                CronTrigger(day_of_week="mon-fri", hour=9, minute=20, timezone="Asia/Seoul"),
+                kwargs={"plan_id": "open_candidate_cache"},
+                id="open_intraday_warmup",
+                replace_existing=True,
+            )
+            scheduler.add_job(
+                run_scheduled_intraday_warmup,
+                CronTrigger(day_of_week="mon-fri", hour=12, minute=40, timezone="Asia/Seoul"),
+                kwargs={"plan_id": "midday_candidate_cache"},
+                id="midday_intraday_warmup",
+                replace_existing=True,
+            )
+            scheduler.add_job(
+                run_scheduled_intraday_warmup,
+                CronTrigger(day_of_week="mon-fri", hour=14, minute=50, timezone="Asia/Seoul"),
+                kwargs={"plan_id": "closing_candidate_cache"},
+                id="closing_intraday_warmup",
+                replace_existing=True,
+            )
 
         keep_alive_enabled = settings.enable_platform_keepalive and bool(settings.self_healthcheck_url.strip())
         if keep_alive_enabled:
@@ -162,10 +163,15 @@ def _start_scheduler() -> None:
             "close_outcome_evaluation",
             "weekly_backtest",
             "weekly_scan_history_prune",
-            "open_intraday_warmup",
-            "midday_intraday_warmup",
-            "closing_intraday_warmup",
         ]
+        if settings.enable_scheduled_intraday_warmup:
+            jobs.extend(
+                [
+                    "open_intraday_warmup",
+                    "midday_intraday_warmup",
+                    "closing_intraday_warmup",
+                ]
+            )
         if keep_alive_enabled:
             jobs.append("keep_alive")
 

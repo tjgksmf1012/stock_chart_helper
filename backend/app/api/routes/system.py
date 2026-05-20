@@ -732,6 +732,9 @@ def _scheduled_warmup_plan(plan_id: str) -> dict[str, Any] | None:
 
 
 async def run_scheduled_intraday_warmup(plan_id: str) -> IntradayWarmupJobStatus | None:
+    if not settings.enable_scheduled_intraday_warmup:
+        return None
+
     plan = _scheduled_warmup_plan(plan_id)
     if not plan:
         return None

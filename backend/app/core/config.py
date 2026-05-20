@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     manual_scan_batch_size: int = 3
     scheduled_scan_limit: int = 60
     scheduled_scan_batch_size: int = 3
+    enable_scheduled_intraday_warmup: bool = False
 
     # KIS API (optional, for real-time data)
     kis_app_key: str = ""
