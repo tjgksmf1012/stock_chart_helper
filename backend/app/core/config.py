@@ -17,9 +17,9 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_model: str = "gpt-5-mini"
     openai_timeout_seconds: int = 45
-    openai_max_output_tokens: int = 1800
+    openai_max_output_tokens: int = 3000
     openai_enable_recommendations: bool = True
-    openai_overlay_item_limit: int = 3
+    openai_overlay_item_limit: int = 2
     openai_overlay_cache_ttl_seconds: int = 1800
     openai_overlay_refresh_after_seconds: int = 600
 
