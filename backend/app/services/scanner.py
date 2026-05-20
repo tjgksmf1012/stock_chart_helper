@@ -1530,21 +1530,18 @@ async def get_scan_results(timeframe: str = DEFAULT_TIMEFRAME) -> list[dict[str,
         quick_cached = await cache_get(cache_key)
         return quick_cached or []
 
-    _update_scan_status(timeframe, status="warming", is_running=False, source="fallback")
-    results, fallback, intraday_live_limit, intraday_live_phase = await _build_quick_scan_results(timeframe)
-    await cache_set(cache_key, results, ttl=300)
+    fallback = _placeholder_fallback_codes(timeframe)
+    results = _build_placeholder_scan_results(timeframe, fallback)
+    await cache_set(cache_key, results, ttl=180)
     _update_scan_status(
         timeframe,
         status="ready",
         cached_result_count=len(results),
         universe_size=len(fallback),
-        candidate_source="fallback",
+        candidate_source="placeholder_seed",
         candidate_count=len(fallback),
-        intraday_live_candidate_limit=(intraday_live_limit if timeframe in {"1m", "15m", "30m", "60m"} else None),
-        intraday_live_candidate_count=(intraday_live_limit if timeframe in {"1m", "15m", "30m", "60m"} else None),
-        intraday_live_phase=(intraday_live_phase if timeframe in {"1m", "15m", "30m", "60m"} else None),
         last_finished_at=_utc_now_iso(),
-        source="fallback",
+        source="placeholder",
     )
 
     return results
