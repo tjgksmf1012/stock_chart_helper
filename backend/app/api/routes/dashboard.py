@@ -7,10 +7,12 @@ from datetime import datetime
 from fastapi import APIRouter, Query
 
 from ..schemas import DashboardItem, DashboardOverviewResponse, DashboardResponse, ScanStatusResponse, SymbolInfo
+from ...core.config import get_settings
 from ...services.scanner import get_scan_results, get_scan_status, trigger_scan
 from ...services.timeframe_service import DEFAULT_TIMEFRAME, timeframe_label
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
+settings = get_settings()
 
 
 def _make_item(rank: int, row: dict) -> DashboardItem:
@@ -303,15 +305,15 @@ async def dashboard_scan_status(timeframe: str = Query(default=DEFAULT_TIMEFRAME
 @router.post("/scan-refresh", response_model=ScanStatusResponse)
 async def dashboard_scan_refresh(
     timeframe: str = Query(default=DEFAULT_TIMEFRAME),
-    limit: int = Query(default=40, ge=10, le=100),
-    batch_size: int = Query(default=3, ge=1, le=10),
+    limit: int | None = Query(default=None, ge=10, le=100),
+    batch_size: int | None = Query(default=None, ge=1, le=10),
 ) -> ScanStatusResponse:
     return ScanStatusResponse(
         **(
             await trigger_scan(
                 timeframe=_timeframe_query(timeframe),
-                limit=limit,
-                batch_size=batch_size,
+                limit=limit or settings.manual_scan_limit,
+                batch_size=batch_size or settings.manual_scan_batch_size,
                 force_refresh=True,
                 source="manual",
             )

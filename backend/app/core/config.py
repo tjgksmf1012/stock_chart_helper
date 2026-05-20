@@ -23,6 +23,16 @@ class Settings(BaseSettings):
     openai_overlay_cache_ttl_seconds: int = 1800
     openai_overlay_refresh_after_seconds: int = 600
 
+    # Scan workload controls. Keep defaults modest so the web process remains
+    # responsive on small Render instances while scans run in the background.
+    startup_daily_scan_enabled: bool = False
+    background_scan_limit: int = 30
+    background_scan_batch_size: int = 3
+    manual_scan_limit: int = 30
+    manual_scan_batch_size: int = 3
+    scheduled_scan_limit: int = 60
+    scheduled_scan_batch_size: int = 3
+
     # KIS API (optional, for real-time data)
     kis_app_key: str = ""
     kis_app_secret: str = ""

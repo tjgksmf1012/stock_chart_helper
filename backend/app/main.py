@@ -66,21 +66,33 @@ def _start_scheduler() -> None:
         scheduler.add_job(
             run_scan,
             CronTrigger(day_of_week="mon-fri", hour=9, minute=10, timezone="Asia/Seoul"),
-            kwargs={"timeframe": "1d"},
+            kwargs={
+                "timeframe": "1d",
+                "limit": settings.scheduled_scan_limit,
+                "batch_size": settings.scheduled_scan_batch_size,
+            },
             id="morning_scan",
             replace_existing=True,
         )
         scheduler.add_job(
             run_scan,
             CronTrigger(day_of_week="mon-fri", hour=13, minute=30, timezone="Asia/Seoul"),
-            kwargs={"timeframe": "1d"},
+            kwargs={
+                "timeframe": "1d",
+                "limit": settings.scheduled_scan_limit,
+                "batch_size": settings.scheduled_scan_batch_size,
+            },
             id="midday_scan",
             replace_existing=True,
         )
         scheduler.add_job(
             run_scan,
             CronTrigger(day_of_week="mon-fri", hour=16, minute=0, timezone="Asia/Seoul"),
-            kwargs={"timeframe": "1d"},
+            kwargs={
+                "timeframe": "1d",
+                "limit": settings.scheduled_scan_limit,
+                "batch_size": settings.scheduled_scan_batch_size,
+            },
             id="close_scan",
             replace_existing=True,
         )
@@ -181,11 +193,23 @@ async def on_startup():
     from .api.routes.system import trigger_background_kis_prime
     from .services.backtest_engine import get_pattern_stats_map
     from .services.data_fetcher import get_data_fetcher
-    from .services.scanner import get_scan_results
+    from .services.scanner import run_scan
 
-    asyncio.create_task(get_scan_results("1d"))
+    if settings.startup_daily_scan_enabled:
+        asyncio.create_task(
+            run_scan(
+                timeframe="1d",
+                limit=settings.background_scan_limit,
+                batch_size=settings.background_scan_batch_size,
+                force_refresh=False,
+                source="startup",
+            )
+        )
     asyncio.create_task(get_pattern_stats_map())
     asyncio.create_task(get_data_fetcher().get_universe())
     if settings.kis_app_key and settings.kis_app_secret:
         trigger_background_kis_prime(triggered_by="startup")
-    logger.info("Background scan, backtest, and universe warmup queued")
+    logger.info(
+        "Background warmup queued",
+        startup_daily_scan_enabled=settings.startup_daily_scan_enabled,
+    )

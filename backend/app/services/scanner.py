@@ -932,6 +932,14 @@ def _effective_batch_size(timeframe: str, requested: int, *, quick: bool = False
     return max(1, min(requested, limit))
 
 
+def _scan_workload_defaults(source: str) -> tuple[int, int]:
+    if source == "scheduled":
+        return settings.scheduled_scan_limit, settings.scheduled_scan_batch_size
+    if source == "manual":
+        return settings.manual_scan_limit, settings.manual_scan_batch_size
+    return settings.background_scan_limit, settings.background_scan_batch_size
+
+
 def _decorate_intraday_result(
     item: dict[str, Any],
     timeframe: str,
@@ -1106,13 +1114,16 @@ def _build_placeholder_scan_results(timeframe: str, fallback: list[tuple[str, st
 
 async def run_scan(
     timeframe: str = DEFAULT_TIMEFRAME,
-    limit: int = 100,
-    batch_size: int = 10,
+    limit: int | None = None,
+    batch_size: int | None = None,
     force_refresh: bool = False,
     source: str = "scheduled",
 ) -> list[dict[str, Any]]:
     started_at = datetime.utcnow()
     cache_key = _full_scan_cache_key(timeframe)
+    default_limit, default_batch_size = _scan_workload_defaults(source)
+    scan_limit = max(1, int(limit or default_limit))
+    scan_batch_size = max(1, int(batch_size or default_batch_size))
 
     async with _scan_lock:
         _update_scan_status(
@@ -1142,7 +1153,7 @@ async def run_scan(
             return cached
 
         try:
-            universe, candidate_source, live_codes, live_phase = await _select_candidates(limit, timeframe)
+            universe, candidate_source, live_codes, live_phase = await _select_candidates(scan_limit, timeframe)
             # Capture locally so concurrent cold-start calls cannot overwrite these
             # values in _scan_status before we reach the final status update.
             _universe_size = len(universe)
@@ -1158,7 +1169,7 @@ async def run_scan(
                 intraday_live_phase=(live_phase if timeframe in {"1m", "15m", "30m", "60m"} else None),
             )
 
-            effective_batch_size = _effective_batch_size(timeframe, batch_size)
+            effective_batch_size = _effective_batch_size(timeframe, scan_batch_size)
             results: list[dict[str, Any]] = []
             for index in range(0, len(universe), effective_batch_size):
                 batch = universe[index:index + effective_batch_size]
@@ -1258,8 +1269,8 @@ async def run_scan(
 
 async def trigger_scan(
     timeframe: str = DEFAULT_TIMEFRAME,
-    limit: int = 100,
-    batch_size: int = 10,
+    limit: int | None = None,
+    batch_size: int | None = None,
     force_refresh: bool = True,
     source: str = "manual",
 ) -> dict[str, Any]:
@@ -1269,8 +1280,18 @@ async def trigger_scan(
         status["trigger_accepted"] = False
         return status
 
+    default_limit, default_batch_size = _scan_workload_defaults(source)
+    scan_limit = max(1, int(limit or default_limit))
+    scan_batch_size = max(1, int(batch_size or default_batch_size))
+
     _scan_tasks[timeframe] = asyncio.create_task(
-        run_scan(timeframe=timeframe, limit=limit, batch_size=batch_size, force_refresh=force_refresh, source=source)
+        run_scan(
+            timeframe=timeframe,
+            limit=scan_limit,
+            batch_size=scan_batch_size,
+            force_refresh=force_refresh,
+            source=source,
+        )
     )
     _update_scan_status(
         timeframe,
@@ -1366,7 +1387,13 @@ async def _bootstrap_intraday_quick_scan(timeframe: str, cache_key: str) -> list
             last_finished_at=_utc_now_iso(),
             source="fallback",
         )
-        await trigger_scan(timeframe=timeframe, force_refresh=True, source="background")
+        await trigger_scan(
+            timeframe=timeframe,
+            limit=settings.background_scan_limit,
+            batch_size=settings.background_scan_batch_size,
+            force_refresh=True,
+            source="background",
+        )
         return results
     except Exception as exc:
         logger.warning("Quick scan bootstrap failed for %s: %s", timeframe, exc)
@@ -1505,9 +1532,5 @@ async def get_scan_results(timeframe: str = DEFAULT_TIMEFRAME) -> list[dict[str,
         last_finished_at=_utc_now_iso(),
         source="fallback",
     )
-
-    task = _scan_tasks.get(timeframe)
-    if not task or task.done():
-        await trigger_scan(timeframe=timeframe, force_refresh=True, source="background")
 
     return results

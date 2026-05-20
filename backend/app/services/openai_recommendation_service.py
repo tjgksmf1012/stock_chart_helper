@@ -22,7 +22,7 @@ from ..core.redis import cache_get, cache_set
 
 logger = structlog.get_logger()
 
-_OVERLAY_CACHE_PREFIX = "ai:recommendation-overlay:v5"
+_OVERLAY_CACHE_PREFIX = "ai:recommendation-overlay:v6"
 _IN_FLIGHT_REFRESHES: set[str] = set()
 
 
@@ -99,8 +99,10 @@ async def _request_overlay(payload: dict[str, Any]) -> dict[str, Any]:
                     "Rewrite the supplied rule-based scan commentary into concise Korean portfolio notes for daily execution. "
                     "Keep the tone operational, concrete, and slightly conservative. "
                     "Avoid vague phrasing. Do not promise returns and do not use direct buy or sell imperatives. "
+                    "Return valid JSON only, with no markdown or surrounding prose. "
                     "For each item, produce these exact fields in Korean: summary, action_line, do_now, avoid_if, review_price, skip_reason, overlap_risk, position_hint, next_actions. "
                     "Formatting rules: "
+                    "action_line must start with the Korean phrase '지금 할 일:'. "
                     "action_line must start with '지금 할 일:' and include a condition or price zone followed by the next action. "
                     "avoid_if must clearly state the entry-ban condition. "
                     "review_price must be a re-check price or condition. "
@@ -210,29 +212,53 @@ def _make_prompt_payload(response: AiRecommendationResponse) -> dict[str, Any]:
                 "entry_window": round(item.entry_window_score, 3),
                 "reward_risk_ratio": round(item.reward_risk_ratio, 2),
                 "data_quality": round(item.data_quality, 3),
-                "risk_flags": item.risk_flags[:3],
-                "rule_summary": item.summary,
-                "rule_action_line": item.action_line,
-                "rule_do_now": item.do_now,
-                "rule_avoid_if": item.avoid_if,
-                "rule_review_price": item.review_price,
-                "rule_skip_reason": item.skip_reason,
-                "rule_overlap_risk": item.overlap_risk,
+                "risk_flags": _clip_list(item.risk_flags, max_items=2, max_chars=80),
+                "rule_summary": _clip_text(item.summary, 160),
+                "rule_action_line": _clip_text(item.action_line, 130),
+                "rule_do_now": _clip_text(item.do_now, 130),
+                "rule_avoid_if": _clip_text(item.avoid_if, 120),
+                "rule_review_price": _clip_text(item.review_price, 80),
+                "rule_skip_reason": _clip_text(item.skip_reason, 110),
+                "rule_overlap_risk": _clip_text(item.overlap_risk, 100),
                 "watchlist_priority": item.watchlist_priority,
                 "personal_fit_label": item.personal_fit_label,
                 "personal_fit_score": round(item.personal_fit_score, 1),
-                "personal_fit_reasons": item.personal_fit_reasons[:3],
-                "next_trigger": item.next_trigger,
+                "personal_fit_reasons": _clip_list(item.personal_fit_reasons, max_items=2, max_chars=70),
+                "next_trigger": _clip_text(item.next_trigger, 100),
             }
         )
     return {
         "timeframe": response.timeframe,
         "timeframe_label": response.timeframe_label,
-        "rule_market_brief": response.market_brief,
-        "rule_portfolio_guidance": response.portfolio_guidance,
-        "personal_style": response.personal_style.model_dump(mode="json") if response.personal_style else {},
+        "rule_market_brief": _clip_text(response.market_brief, 220),
+        "rule_portfolio_guidance": _clip_text(response.portfolio_guidance, 220),
+        "personal_style": _compact_personal_style(response.personal_style.model_dump(mode="json") if response.personal_style else {}),
         "watchlist_focus_count": len(response.watchlist_focus_items),
         "items": items,
+    }
+
+
+def _clip_text(value: Any, max_chars: int) -> str:
+    text = str(value or "").strip()
+    if len(text) <= max_chars:
+        return text
+    return text[: max(0, max_chars - 3)].rstrip() + "..."
+
+
+def _clip_list(values: Any, *, max_items: int, max_chars: int) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    return [_clip_text(value, max_chars) for value in values[:max_items] if str(value or "").strip()]
+
+
+def _compact_personal_style(style: dict[str, Any]) -> dict[str, Any]:
+    if not style:
+        return {}
+    return {
+        "sample_size": style.get("sample_size"),
+        "best_intent": style.get("best_intent"),
+        "best_pattern": style.get("best_pattern"),
+        "notes": _clip_list(style.get("notes"), max_items=2, max_chars=90),
     }
 
 
