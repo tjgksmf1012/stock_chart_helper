@@ -30,8 +30,10 @@ class Settings(BaseSettings):
     background_scan_batch_size: int = 3
     manual_scan_limit: int = 30
     manual_scan_batch_size: int = 3
-    scheduled_scan_limit: int = 60
+    scheduled_scan_limit: int = 30
     scheduled_scan_batch_size: int = 3
+    scan_max_duration_seconds: int = 45
+    scheduled_scan_max_duration_seconds: int = 75
     enable_scheduled_intraday_warmup: bool = False
 
     # KIS API (optional, for real-time data)

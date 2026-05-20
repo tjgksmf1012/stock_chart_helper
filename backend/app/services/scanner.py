@@ -1124,6 +1124,11 @@ async def run_scan(
     default_limit, default_batch_size = _scan_workload_defaults(source)
     scan_limit = max(1, int(limit or default_limit))
     scan_batch_size = max(1, int(batch_size or default_batch_size))
+    max_duration_seconds = (
+        settings.scheduled_scan_max_duration_seconds
+        if source == "scheduled"
+        else settings.scan_max_duration_seconds
+    )
 
     async with _scan_lock:
         _update_scan_status(
@@ -1172,6 +1177,15 @@ async def run_scan(
             effective_batch_size = _effective_batch_size(timeframe, scan_batch_size)
             results: list[dict[str, Any]] = []
             for index in range(0, len(universe), effective_batch_size):
+                elapsed = (datetime.utcnow() - started_at).total_seconds()
+                if elapsed >= max_duration_seconds and results:
+                    logger.warning(
+                        "Market scan reached runtime cap for %s after %d/%d candidates; saving partial results",
+                        timeframe,
+                        index,
+                        len(universe),
+                    )
+                    break
                 batch = universe[index:index + effective_batch_size]
                 tasks = [
                     _analyze_one(
