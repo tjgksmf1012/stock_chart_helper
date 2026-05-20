@@ -1188,13 +1188,16 @@ async def run_scan(
                     break
                 batch = universe[index:index + effective_batch_size]
                 tasks = [
-                    _analyze_one(
-                        code,
-                        name,
-                        market,
-                        timeframe,
-                        force_refresh=force_refresh,
-                        allow_live_intraday=(code in live_codes) if timeframe in {"1m", "15m", "30m", "60m"} else True,
+                    asyncio.wait_for(
+                        _analyze_one(
+                            code,
+                            name,
+                            market,
+                            timeframe,
+                            force_refresh=force_refresh,
+                            allow_live_intraday=(code in live_codes) if timeframe in {"1m", "15m", "30m", "60m"} else True,
+                        ),
+                        timeout=max(3, int(settings.scan_symbol_timeout_seconds)),
                     )
                     for code, name, market in batch
                 ]

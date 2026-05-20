@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     scheduled_scan_batch_size: int = 1
     scan_max_duration_seconds: int = 25
     scheduled_scan_max_duration_seconds: int = 45
+    scan_symbol_timeout_seconds: int = 12
+    fdr_daily_timeout_seconds: int = 8
+    market_cap_timeout_seconds: int = 5
     enable_scheduled_intraday_warmup: bool = False
 
     # KIS API (optional, for real-time data)

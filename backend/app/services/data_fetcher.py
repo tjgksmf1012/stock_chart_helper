@@ -504,7 +504,10 @@ class KRXDataFetcher:
         try:
             import FinanceDataReader as fdr
 
-            df = await asyncio.to_thread(fdr.DataReader, code, start, end)
+            df = await asyncio.wait_for(
+                asyncio.to_thread(fdr.DataReader, code, start, end),
+                timeout=max(3, int(settings.fdr_daily_timeout_seconds)),
+            )
             if df.empty:
                 return self._empty_frame(data_source="fdr_daily", fetch_status="daily_empty")
 
@@ -604,7 +607,10 @@ class KRXDataFetcher:
 
             reference_day, _ = resolve_daily_reference_date()
             today = reference_day.strftime("%Y%m%d")
-            df = await asyncio.to_thread(krx.get_market_cap, today, today, code)
+            df = await asyncio.wait_for(
+                asyncio.to_thread(krx.get_market_cap, today, today, code),
+                timeout=max(3, int(settings.market_cap_timeout_seconds)),
+            )
             if df.empty:
                 await cache_set(cache_key, {"market_cap": None}, ttl=900)
                 return None
