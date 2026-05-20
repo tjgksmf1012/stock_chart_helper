@@ -26,14 +26,14 @@ class Settings(BaseSettings):
     # Scan workload controls. Keep defaults modest so the web process remains
     # responsive on small Render instances while scans run in the background.
     startup_daily_scan_enabled: bool = False
-    background_scan_limit: int = 20
-    background_scan_batch_size: int = 3
-    manual_scan_limit: int = 20
-    manual_scan_batch_size: int = 3
-    scheduled_scan_limit: int = 20
-    scheduled_scan_batch_size: int = 3
-    scan_max_duration_seconds: int = 45
-    scheduled_scan_max_duration_seconds: int = 75
+    background_scan_limit: int = 8
+    background_scan_batch_size: int = 1
+    manual_scan_limit: int = 8
+    manual_scan_batch_size: int = 1
+    scheduled_scan_limit: int = 12
+    scheduled_scan_batch_size: int = 1
+    scan_max_duration_seconds: int = 25
+    scheduled_scan_max_duration_seconds: int = 45
     enable_scheduled_intraday_warmup: bool = False
 
     # KIS API (optional, for real-time data)
