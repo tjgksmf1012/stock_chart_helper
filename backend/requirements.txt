@@ -19,13 +19,8 @@ yfinance==0.2.54
 # Analysis
 pandas==2.2.3
 numpy==2.1.3
-scipy==1.14.1
-scikit-learn==1.5.2
-ta==0.11.0
 
 # Utils
 httpx==0.28.1
-python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
 apscheduler==3.10.4
 structlog==24.4.0
