@@ -129,3 +129,56 @@ class TestPatternResultSchema:
         results = engine.detect_all(sample_ohlcv_df_long)
         for result in results:
             assert result.start_dt, "start_dt must be set"
+
+
+def _build_ohlcv_from_closes(closes):
+    import numpy as np
+    import pandas as pd
+
+    rng = np.random.default_rng(0)
+    dates = pd.bdate_range("2023-01-02", periods=len(closes))
+    rows = []
+    for dt, close in zip(dates, closes):
+        open_px = close * (1 + rng.normal(0, 0.002))
+        high = max(open_px, close) * (1 + abs(rng.normal(0, 0.003)))
+        low = min(open_px, close) * (1 - abs(rng.normal(0, 0.003)))
+        rows.append(
+            {
+                "date": dt,
+                "open": round(open_px),
+                "high": round(high),
+                "low": round(low),
+                "close": round(close),
+                "volume": 1_000_000,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+class TestPositiveDetection:
+    """A textbook synthetic pattern must actually be detected, not just 'no crash'."""
+
+    def test_detects_textbook_double_bottom(self):
+        import numpy as np
+
+        closes = (
+            list(np.linspace(10_000, 9_000, 30))
+            + list(np.linspace(9_000, 8_000, 15))  # first leg down to L1
+            + list(np.linspace(8_000, 9_000, 15))  # bounce up to the neckline
+            + list(np.linspace(9_000, 8_050, 15))  # second leg down to ~L1
+            + list(np.linspace(8_050, 9_400, 20))  # breakout back through the neckline
+        )
+        df = _build_ohlcv_from_closes(closes)
+        results = PatternEngine().detect_all(df, timeframe="1d")
+
+        doubles = [r for r in results if r.pattern_type == "double_bottom"]
+        assert doubles, f"expected a double_bottom, got {[r.pattern_type for r in results]}"
+
+        db = doubles[0]
+        assert db.state in VALID_STATES
+        assert db.grade in VALID_GRADES
+        assert db.textbook_similarity > 0.5
+        if db.target_level is not None:
+            assert db.target_level > 0
+        if db.invalidation_level is not None:
+            assert db.invalidation_level > 0

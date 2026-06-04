@@ -370,27 +370,51 @@ def compute_probability(
         ),
     )
 
+    # rule_* and empirical_* already encode the pattern's direction. The remaining
+    # terms measure how strong/reliable the signal is, not which way it points, so
+    # they must reinforce the pattern's *own* direction. For a bullish pattern this
+    # is identical to "higher == more up"; for a bearish pattern it mirrors, so a
+    # well-formed double top correctly pushes p_down instead of p_up.
+    if pattern.pattern_type in _BULLISH_PATTERNS:
+        toward_up = 1.0
+    elif pattern.pattern_type in _BEARISH_PATTERNS:
+        toward_up = 0.0
+    else:
+        toward_up = 0.5
+
+    def _dir(quality: float) -> tuple[float, float]:
+        up = toward_up * quality + (1 - toward_up) * (1 - quality)
+        return up, 1 - up
+
+    conf_up, conf_down = _dir(pattern_confirmation)
+    regime_up, regime_down = _dir(regime_match)
+    comp_up, comp_down = _dir(completion_proximity)
+    rec_up, rec_down = _dir(recency_score)
+    dq_up, dq_down = _dir(data_quality)
+    rr_up, rr_down = _dir(rr_score)
+    edge_up, edge_down = _dir(edge_score)
+
     p_up_raw = (
         0.27 * rule_up
         + 0.25 * empirical_up
-        + 0.13 * pattern_confirmation
-        + 0.08 * regime_match
-        + 0.07 * completion_proximity
-        + 0.07 * recency_score
-        + 0.05 * data_quality
-        + 0.04 * rr_score
-        + 0.04 * edge_score
+        + 0.13 * conf_up
+        + 0.08 * regime_up
+        + 0.07 * comp_up
+        + 0.07 * rec_up
+        + 0.05 * dq_up
+        + 0.04 * rr_up
+        + 0.04 * edge_up
     )
     p_down_raw = (
         0.27 * rule_down
         + 0.25 * empirical_down
-        + 0.13 * (1 - pattern_confirmation)
-        + 0.08 * (1 - regime_match)
-        + 0.07 * (1 - completion_proximity)
-        + 0.07 * (1 - recency_score)
-        + 0.05 * (1 - data_quality)
-        + 0.04 * (1 - rr_score)
-        + 0.04 * (1 - edge_score)
+        + 0.13 * conf_down
+        + 0.08 * regime_down
+        + 0.07 * comp_down
+        + 0.07 * rec_down
+        + 0.05 * dq_down
+        + 0.04 * rr_down
+        + 0.04 * edge_down
     )
 
     p_up = _logistic_calibrate(p_up_raw)
