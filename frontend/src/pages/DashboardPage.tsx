@@ -9,7 +9,7 @@ import { Card } from '@/components/ui/Card'
 import { QueryError } from '@/components/ui/QueryError'
 import { dashboardApi, outcomesApi, symbolsApi, systemApi } from '@/lib/api'
 import { TIMEFRAME_OPTIONS, normalizeDisplayTimeframe, timeframeLabel } from '@/lib/timeframes'
-import { cn, fmtDateTime, fmtPct, fmtPrice, INTRADAY_COLLECTION_MODE_LABELS, PATTERN_NAMES, SETUP_STAGE_LABELS } from '@/lib/utils'
+import { cn, fmtDateTime, fmtPct, fmtPrice, PATTERN_NAMES } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
 import {
   type CandidateMovement,
@@ -30,6 +30,7 @@ import {
   routineActionText,
   uniqueRoutineSymbols,
 } from '@/lib/dashboardDecks'
+import { bestPersonalIntents, bestPersonalPattern, buildDashboardSummary, buildIntradaySummary } from '@/lib/dashboardSummary'
 import type { DashboardItem, DashboardResponse, OutcomeEvaluationResponse, OutcomeRecord, OutcomesSummary, OutcomeStatus, PriceInfo, ScanStatusResponse, Timeframe } from '@/types/api'
 
 type IntradayView = 'all' | 'live' | 'stored' | 'public' | 'mixed' | 'cooldown'
@@ -1376,121 +1377,6 @@ function filterDashboard(
       return matchesView && matchesPreset
     }),
   }
-}
-
-function buildDashboardSummary(sections: Array<DashboardResponse | undefined>) {
-  const items = dedupeDashboardItems(sections)
-  if (items.length === 0) {
-    return {
-      totalCount: 0,
-      readyCount: 0,
-      watchCount: 0,
-      riskCount: 0,
-      avgUp: 0,
-      avgReadiness: 0,
-      avgQuality: 0,
-      bestAction: '후보가 준비되면 이 영역이 채워집니다.',
-    }
-  }
-
-  const readyCount = items.filter(item => item.action_plan === 'ready_now').length
-  const watchCount = items.filter(item => item.action_plan === 'watch').length
-  const riskCount = items.filter(item => item.no_signal_flag || item.action_plan === 'recheck').length
-
-  return {
-    totalCount: items.length,
-    readyCount,
-    watchCount,
-    riskCount,
-    avgUp: average(items.map(item => item.p_up)),
-    avgReadiness: average(items.map(item => item.trade_readiness_score ?? 0)),
-    avgQuality: average(items.map(item => item.data_quality)),
-    bestAction:
-      readyCount > 0
-        ? `지금 바로 볼 후보 ${readyCount}개가 있습니다.`
-        : watchCount > 0
-          ? `트리거 확인이 필요한 후보 ${watchCount}개가 중심입니다.`
-          : '관망 또는 데이터 보강이 필요한 종목 비중이 높습니다.',
-  }
-}
-
-function buildIntradaySummary(sections: Array<DashboardResponse | undefined>) {
-  const items = dedupeDashboardItems(sections)
-  if (items.length === 0) {
-    return null
-  }
-
-  const liveCount = items.filter(item => item.live_intraday_candidate).length
-  const placeholderCount = items.filter(item => item.fetch_status === 'placeholder_pending').length
-  const dominantMode = dominantLabel(items.map(item => item.intraday_collection_mode), value => INTRADAY_COLLECTION_MODE_LABELS[value] ?? value)
-  const dominantStage = dominantLabel(items.map(item => item.setup_stage), value => SETUP_STAGE_LABELS[value] ?? value)
-
-  return {
-    guidance:
-      liveCount > 0
-        ? `현재 ${liveCount}개는 live 우선 후보입니다.`
-        : placeholderCount === items.length
-          ? '지금은 임시 후보가 먼저 표시되고 있습니다.'
-          : `${dominantMode} 중심으로 정리되고, 셋업은 ${dominantStage} 비중이 큽니다.`,
-  }
-}
-
-function bestPersonalPattern(summary: OutcomesSummary | undefined) {
-  if (!summary?.by_pattern) return null
-  const entries = Object.entries(summary.by_pattern)
-    .filter(([, stats]) => stats.total > 0)
-    .sort((left, right) => {
-      const [, leftStats] = left
-      const [, rightStats] = right
-      return rightStats.win_rate - leftStats.win_rate || rightStats.total - leftStats.total
-    })
-  const best = entries[0]
-  if (!best) return null
-  return { pattern: best[0], winRate: best[1].win_rate, total: best[1].total }
-}
-
-function bestPersonalIntents(summary: OutcomesSummary | undefined) {
-  if (!summary?.by_intent) return []
-
-  const labels: Record<string, string> = {
-    observe: '관망',
-    breakout_wait: '돌파 대기',
-    pullback_candidate: '눌림 매수',
-    invalidation_watch: '손절 구간 감시',
-  }
-
-  return Object.entries(summary.by_intent)
-    .filter(([, stats]) => stats.total > 0)
-    .sort((left, right) => {
-      const [, leftStats] = left
-      const [, rightStats] = right
-      return rightStats.total - leftStats.total || rightStats.win_rate - leftStats.win_rate
-    })
-    .slice(0, 4)
-    .map(([key, stats]) => ({
-      key,
-      label: labels[key] ?? key,
-      total: stats.total,
-      winRate: stats.win_rate,
-    }))
-}
-
-function average(values: number[]) {
-  if (values.length === 0) return 0
-  return values.reduce((sum, value) => sum + value, 0) / values.length
-}
-
-function dominantLabel(values: string[], formatter?: (value: string) => string) {
-  if (values.length === 0) return '-'
-
-  const counts = values.reduce<Record<string, number>>((acc, value) => {
-    acc[value] = (acc[value] ?? 0) + 1
-    return acc
-  }, {})
-
-  const winner = Object.entries(counts).sort((left, right) => right[1] - left[1])[0]?.[0]
-  if (!winner) return '-'
-  return formatter ? formatter(winner) : winner
 }
 
 function statusHeadline(status: ScanStatusResponse | undefined) {
