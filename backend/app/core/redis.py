@@ -7,6 +7,20 @@ settings = get_settings()
 
 # In-memory fallback cache (used when Redis is unavailable)
 _mem_cache: dict[str, tuple[Any, float]] = {}  # key -> (value, expires_at)
+# Bound the fallback cache so a long-running memory-only instance (e.g. Render
+# free with no REDIS_URL) can't grow without limit.
+_MEM_CACHE_MAX_ENTRIES = 5000
+
+
+def _evict_mem_cache() -> None:
+    """Drop expired entries first; if still over the cap, drop the soonest-to-expire."""
+    now = time.time()
+    for key in [k for k, (_, expires_at) in _mem_cache.items() if expires_at <= now]:
+        _mem_cache.pop(key, None)
+    overflow = len(_mem_cache) - _MEM_CACHE_MAX_ENTRIES
+    if overflow > 0:
+        for key, _ in sorted(_mem_cache.items(), key=lambda item: item[1][1])[:overflow]:
+            _mem_cache.pop(key, None)
 
 _redis = None
 _redis_available: bool | None = None  # None = not yet tried
@@ -56,6 +70,8 @@ async def cache_set(key: str, value: Any, ttl: int) -> None:
             pass
     # in-memory fallback
     _mem_cache[key] = (value, time.time() + ttl)
+    if len(_mem_cache) > _MEM_CACHE_MAX_ENTRIES:
+        _evict_mem_cache()
 
 
 async def cache_delete(key: str) -> None:
