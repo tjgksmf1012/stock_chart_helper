@@ -3,7 +3,7 @@ import type {
   SymbolInfo, OHLCVBar, AnalysisResult, PriceInfo,
   AiRecommendationItem, AiRecommendationResponse, DashboardOverviewResponse, DashboardResponse, PatternLibraryEntry, ScreenerRequest, DashboardItem, ReferenceCaseResponse, ScanStatusResponse, Timeframe,
   IntradayCandidateWarmupRequest, IntradayWarmupJobStatus, IntradayWarmupRequest, IntradayWarmupResponse, KisPrimeStatus, PatternStatsResponse, RuntimeStatusResponse, ScanHistoryRunSummary, ScanQualityReportResponse,
-  WatchlistItem, OutcomeEvaluationResponse, OutcomeRecord, OutcomesSummary, OutcomeStatus,
+  WatchlistItem, OutcomeEvaluationResponse, OutcomeRecord, OutcomesSummary, OutcomeStatus, CalibrationReport,
 } from '@/types/api'
 
 function resolveApiBase() {
@@ -332,6 +332,10 @@ export const outcomesApi = {
     api.delete<{ status: string; deleted_id: number }>(`/outcomes/${id}`).then(r => r.data),
   summary: () => api.get<OutcomesSummary>('/outcomes/summary').then(r => r.data),
   evaluatePending: () => api.post<OutcomeEvaluationResponse>('/outcomes/evaluate-pending').then(r => r.data),
+  calibration: (timeframe?: string, binCount = 10) =>
+    api
+      .get<CalibrationReport>('/outcomes/calibration', { params: { timeframe, bin_count: binCount } })
+      .then(r => r.data),
 }
 
 export const systemApi = {

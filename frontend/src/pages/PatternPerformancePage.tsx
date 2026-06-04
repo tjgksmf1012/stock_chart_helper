@@ -5,6 +5,7 @@ import { Activity, BarChart2, Clock3, Flag, Loader2, RefreshCw, ShieldCheck, Shi
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { QueryError } from '@/components/ui/QueryError'
+import { CalibrationPanel } from '@/components/CalibrationPanel'
 import { outcomesApi, patternsApi } from '@/lib/api'
 import { fmtPct, PATTERN_NAMES } from '@/lib/utils'
 import type { OutcomeRecord, OutcomeStatus, PatternStatsEntry } from '@/types/api'
@@ -185,6 +186,8 @@ export default function PatternPerformancePage() {
               데이터 품질까지 함께 봐야 하고, 표본이 작거나 최근 시장 환경이 많이 바뀐 패턴은 숫자를 더 보수적으로 해석하는 편이 좋습니다.
             </p>
           </Card>
+
+          <CalibrationPanel timeframe={timeframe} />
 
           {isLoading ? (
             <div className="py-10 text-center text-muted-foreground">리포트를 불러오는 중입니다...</div>

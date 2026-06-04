@@ -87,6 +87,7 @@ async def test_load_price_path_since_signal_excludes_same_day_daily_bar_before_s
         datetime(2026, 4, 21).date(),
         "1d",
         datetime(2026, 4, 21, 15, 0),
+        today=datetime(2026, 4, 22).date(),
     )
 
     assert len(snapshot.events) == 1

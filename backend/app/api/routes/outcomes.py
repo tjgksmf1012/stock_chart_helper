@@ -13,6 +13,7 @@ from sqlalchemy import func, select
 
 from ...core.database import AsyncSessionLocal
 from ...models.outcome import SignalOutcome
+from ...services.calibration_service import build_calibration_report, outcome_to_pair
 from ...services.data_fetcher import get_data_fetcher
 from ...services.kis_client import get_kis_client
 from ...services.personalization_service import build_personalization_snapshot
@@ -215,9 +216,9 @@ async def _latest_close(symbol: str) -> float | None:
     return None
 
 
-async def _load_price_path(symbol: str, signal_day: date, timeframe: str) -> PricePathSnapshot:
+async def _load_price_path(symbol: str, signal_day: date, timeframe: str, *, today: date | None = None) -> PricePathSnapshot:
     fetcher = get_data_fetcher()
-    today = date.today()
+    today = today or date.today()
     daily_df = await fetcher.get_stock_ohlcv(symbol, signal_day, today)
     daily_events = _frame_events(daily_df, timestamp_column="date", basis="daily_high_low")
 
@@ -267,8 +268,10 @@ async def _load_price_path_since_signal(
     signal_day: date,
     timeframe: str,
     recorded_at: datetime | None,
+    *,
+    today: date | None = None,
 ) -> PricePathSnapshot:
-    snapshot = await _load_price_path(symbol, signal_day, timeframe)
+    snapshot = await _load_price_path(symbol, signal_day, timeframe, today=today)
     cutoff = _normalize_cutoff(recorded_at)
     if cutoff is None:
         return snapshot
@@ -493,6 +496,37 @@ async def outcomes_summary() -> dict:
         result = await session.execute(select(SignalOutcome))
         records = result.scalars().all()
     return build_personalization_snapshot(records)
+
+
+@router.get("/calibration")
+async def calibration_report(timeframe: str | None = None, bin_count: int = 10) -> dict:
+    """Reliability check: do the shown probabilities match realized win rates?
+
+    Pulls resolved signals (win/loss/stopped_out with a stored ``p_up_at_signal``)
+    and compares the predicted win probability against the observed win rate per
+    probability bin. Returns a reliability curve plus Brier score and ECE.
+    """
+    bin_count = max(2, min(20, bin_count))
+    async with AsyncSessionLocal() as session:
+        stmt = select(SignalOutcome)
+        if timeframe:
+            stmt = stmt.where(SignalOutcome.timeframe == timeframe)
+        result = await session.execute(stmt)
+        records = result.scalars().all()
+
+    pairs: list[tuple[float, bool]] = []
+    for record in records:
+        pair = outcome_to_pair(_serialize(record))
+        if pair is not None:
+            pairs.append(pair)
+
+    report = build_calibration_report(pairs, bin_count=bin_count)
+    return {
+        "timeframe": timeframe,
+        "evaluated_total": len(records),
+        "scored_total": len(pairs),
+        **report.to_dict(),
+    }
 
 
 @router.patch("/{outcome_id}")

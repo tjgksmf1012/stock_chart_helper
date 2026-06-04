@@ -774,6 +774,30 @@ export interface OutcomesSummary {
   style_profile?: PersonalStyleProfile
 }
 
+export interface CalibrationBin {
+  lower: number
+  upper: number
+  count: number
+  predicted: number
+  observed: number
+  gap: number
+}
+
+export interface CalibrationReport {
+  timeframe: string | null
+  evaluated_total: number
+  scored_total: number
+  sample_size: number
+  resolved_wins: number
+  base_rate: number
+  mean_predicted: number
+  brier_score: number
+  ece: number
+  mean_gap: number
+  reliability: string
+  bins: CalibrationBin[]
+}
+
 export interface OutcomeEvaluationItem {
   id: number
   symbol_code: string
