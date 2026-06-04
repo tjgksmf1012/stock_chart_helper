@@ -3080,6 +3080,109 @@ def build_no_signal_snapshot(
     )
 
 
+def _compute_risk_penalty(
+    *,
+    data_quality: float,
+    liquidity: float,
+    recency: float,
+    pattern: PatternResult,
+    trend_profile: dict[str, Any],
+    timeframe: str,
+    intraday_profile: dict[str, Any],
+    ichimoku: dict[str, Any],
+    wyckoff_profile: dict[str, Any],
+    opportunity: dict[str, Any],
+    historical_edge_score: float,
+) -> float:
+    """Aggregate heuristic risk penalty (>= 0) that pulls scores/probability down
+    when the setup shows known weaknesses: poor data quality, thin liquidity, a
+    stale signal, weak formation fits, adverse trend / ichimoku / wyckoff context,
+    or poor reward:risk.
+
+    NOTE: these penalty weights are hand-tuned, not yet empirically calibrated.
+    The calibration report (GET /outcomes/calibration) is the feedback loop meant
+    to validate and eventually fit them. Extracted verbatim from
+    analyze_symbol_dataframe so behavior is identical but the heuristic lives —
+    and can be reviewed/tuned — in one place.
+    """
+    risk_penalty = 0.0
+    if data_quality < 0.65:
+        risk_penalty += 0.10
+    if liquidity < 0.45:
+        risk_penalty += 0.08
+    if recency < 0.3:
+        risk_penalty += 0.08
+    if pattern.state == "played_out":
+        risk_penalty += 0.18
+    if trend_profile["trend_alignment_score"] < 0.35:
+        risk_penalty += 0.18
+    elif trend_profile["trend_alignment_score"] < 0.55:
+        risk_penalty += 0.08
+    if pattern.state == "confirmed" and pattern.breakout_quality_fit < 0.42:
+        risk_penalty += 0.14
+    if pattern.state in {"confirmed", "armed"} and pattern.retest_quality_fit < 0.35:
+        risk_penalty += 0.10
+    if pattern.leg_balance_fit < 0.42:
+        risk_penalty += 0.12
+    elif pattern.leg_balance_fit < 0.55:
+        risk_penalty += 0.06
+    if pattern.reversal_energy_fit < 0.38:
+        risk_penalty += 0.14
+    elif pattern.reversal_energy_fit < 0.52:
+        risk_penalty += 0.07
+    if pattern.variant_fit < 0.58:
+        risk_penalty += 0.10
+    elif pattern.variant_fit < 0.70:
+        risk_penalty += 0.05
+    if pattern.candlestick_confirmation_fit < 0.34:
+        risk_penalty += 0.12
+    elif pattern.candlestick_confirmation_fit < 0.48:
+        risk_penalty += 0.06
+    if is_intraday_timeframe(timeframe):
+        if intraday_profile["intraday_session_score"] < 0.34:
+            risk_penalty += 0.12
+        elif intraday_profile["intraday_session_score"] < 0.48:
+            risk_penalty += 0.06
+        elif intraday_profile["intraday_session_score"] > 0.82:
+            risk_penalty -= 0.02
+    if ichimoku["cloud_position"] in {"below_cloud", "cloud_bottom_test"}:
+        risk_penalty += 0.10
+    elif ichimoku["cloud_position"] == "inside_cloud":
+        risk_penalty += 0.04
+    elif ichimoku["cloud_position"] in {"above_cloud", "cloud_top_test"}:
+        risk_penalty -= 0.02
+    if ichimoku["prior_high_structure"] == "recent_high_cleared_old_high_pending":
+        risk_penalty += 0.04
+    if _is_bullish(pattern.pattern_type):
+        if wyckoff_profile["wyckoff_phase"] == "markdown":
+            risk_penalty += 0.16
+        elif wyckoff_profile["wyckoff_phase"] == "distribution":
+            risk_penalty += 0.10
+        elif wyckoff_profile["wyckoff_phase"] == "accumulation":
+            risk_penalty -= 0.03
+        elif wyckoff_profile["wyckoff_phase"] == "markup":
+            risk_penalty -= 0.02
+    elif _is_bearish(pattern.pattern_type):
+        if wyckoff_profile["wyckoff_phase"] == "markup":
+            risk_penalty += 0.16
+        elif wyckoff_profile["wyckoff_phase"] == "accumulation":
+            risk_penalty += 0.10
+        elif wyckoff_profile["wyckoff_phase"] == "distribution":
+            risk_penalty -= 0.03
+        elif wyckoff_profile["wyckoff_phase"] == "markdown":
+            risk_penalty -= 0.02
+    risk_penalty = max(0.0, risk_penalty)
+    if opportunity["reward_risk_ratio"] < 1.2:
+        risk_penalty += 0.12
+    if opportunity["headroom_score"] < 0.2:
+        risk_penalty += 0.14
+    if historical_edge_score < 0.28:
+        risk_penalty += 0.12
+    elif historical_edge_score < 0.40:
+        risk_penalty += 0.06
+    return risk_penalty
+
+
 async def analyze_symbol_dataframe(
     symbol: SymbolInfo,
     timeframe: str,
@@ -3165,81 +3268,19 @@ async def analyze_symbol_dataframe(
         invalidated_at=best_invalidated_at,
     )
 
-    risk_penalty = 0.0
-    if profile["data_quality"] < 0.65:
-        risk_penalty += 0.10
-    if liquidity < 0.45:
-        risk_penalty += 0.08
-    if best_recency < 0.3:
-        risk_penalty += 0.08
-    if best_pattern.state == "played_out":
-        risk_penalty += 0.18
-    if trend_profile["trend_alignment_score"] < 0.35:
-        risk_penalty += 0.18
-    elif trend_profile["trend_alignment_score"] < 0.55:
-        risk_penalty += 0.08
-    if best_pattern.state == "confirmed" and best_pattern.breakout_quality_fit < 0.42:
-        risk_penalty += 0.14
-    if best_pattern.state in {"confirmed", "armed"} and best_pattern.retest_quality_fit < 0.35:
-        risk_penalty += 0.10
-    if best_pattern.leg_balance_fit < 0.42:
-        risk_penalty += 0.12
-    elif best_pattern.leg_balance_fit < 0.55:
-        risk_penalty += 0.06
-    if best_pattern.reversal_energy_fit < 0.38:
-        risk_penalty += 0.14
-    elif best_pattern.reversal_energy_fit < 0.52:
-        risk_penalty += 0.07
-    if best_pattern.variant_fit < 0.58:
-        risk_penalty += 0.10
-    elif best_pattern.variant_fit < 0.70:
-        risk_penalty += 0.05
-    if best_pattern.candlestick_confirmation_fit < 0.34:
-        risk_penalty += 0.12
-    elif best_pattern.candlestick_confirmation_fit < 0.48:
-        risk_penalty += 0.06
-    if is_intraday_timeframe(timeframe):
-        if intraday_profile["intraday_session_score"] < 0.34:
-            risk_penalty += 0.12
-        elif intraday_profile["intraday_session_score"] < 0.48:
-            risk_penalty += 0.06
-        elif intraday_profile["intraday_session_score"] > 0.82:
-            risk_penalty -= 0.02
-    if ichimoku["cloud_position"] in {"below_cloud", "cloud_bottom_test"}:
-        risk_penalty += 0.10
-    elif ichimoku["cloud_position"] == "inside_cloud":
-        risk_penalty += 0.04
-    elif ichimoku["cloud_position"] in {"above_cloud", "cloud_top_test"}:
-        risk_penalty -= 0.02
-    if ichimoku["prior_high_structure"] == "recent_high_cleared_old_high_pending":
-        risk_penalty += 0.04
-    if _is_bullish(best_pattern.pattern_type):
-        if wyckoff_profile["wyckoff_phase"] == "markdown":
-            risk_penalty += 0.16
-        elif wyckoff_profile["wyckoff_phase"] == "distribution":
-            risk_penalty += 0.10
-        elif wyckoff_profile["wyckoff_phase"] == "accumulation":
-            risk_penalty -= 0.03
-        elif wyckoff_profile["wyckoff_phase"] == "markup":
-            risk_penalty -= 0.02
-    elif _is_bearish(best_pattern.pattern_type):
-        if wyckoff_profile["wyckoff_phase"] == "markup":
-            risk_penalty += 0.16
-        elif wyckoff_profile["wyckoff_phase"] == "accumulation":
-            risk_penalty += 0.10
-        elif wyckoff_profile["wyckoff_phase"] == "distribution":
-            risk_penalty -= 0.03
-        elif wyckoff_profile["wyckoff_phase"] == "markdown":
-            risk_penalty -= 0.02
-    risk_penalty = max(0.0, risk_penalty)
-    if opportunity["reward_risk_ratio"] < 1.2:
-        risk_penalty += 0.12
-    if opportunity["headroom_score"] < 0.2:
-        risk_penalty += 0.14
-    if historical_edge_score < 0.28:
-        risk_penalty += 0.12
-    elif historical_edge_score < 0.40:
-        risk_penalty += 0.06
+    risk_penalty = _compute_risk_penalty(
+        data_quality=profile["data_quality"],
+        liquidity=liquidity,
+        recency=best_recency,
+        pattern=best_pattern,
+        trend_profile=trend_profile,
+        timeframe=timeframe,
+        intraday_profile=intraday_profile,
+        ichimoku=ichimoku,
+        wyckoff_profile=wyckoff_profile,
+        opportunity=opportunity,
+        historical_edge_score=historical_edge_score,
+    )
 
     probability = compute_probability(
         best_pattern,
