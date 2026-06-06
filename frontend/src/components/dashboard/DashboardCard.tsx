@@ -83,6 +83,12 @@ export function DashboardCard({ item }: DashboardCardProps) {
             <Badge variant={actionPlanVariant(item.action_plan)}>{item.action_plan_label}</Badge>
           </div>
 
+          {item.pattern_type && item.state && (
+            <p className="text-xs text-muted-foreground">
+              {STATE_LABELS[item.state] ?? item.state} · 오를 확률 {Math.round(item.p_up * 100)}%
+            </p>
+          )}
+
           <div className="flex flex-wrap items-center gap-1.5">
             {item.pattern_type ? (
               <Badge variant={getPatternBias(item.pattern_type)}>{PATTERN_NAMES[item.pattern_type] ?? item.pattern_type}</Badge>

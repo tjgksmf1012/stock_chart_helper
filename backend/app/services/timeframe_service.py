@@ -44,7 +44,7 @@ class ProbabilityThresholdProfile:
 TIMEFRAME_SPECS: dict[str, TimeframeSpec] = {
     "1mo": TimeframeSpec("1mo", "월봉", 3650, 3650, 3650, 18),
     "1wk": TimeframeSpec("1wk", "주봉", 1825, 1825, 1825, 24),
-    "1d": TimeframeSpec("1d", "일봉", 365, 400, 400, 40),
+    "1d": TimeframeSpec("1d", "일봉", 365, 730, 730, 40),
     "60m": TimeframeSpec("60m", "60분", 120, 120, 120, 28, intraday=True),
     "30m": TimeframeSpec("30m", "30분", 60, 60, 60, 30, intraday=True),
     "15m": TimeframeSpec("15m", "15분", 30, 30, 30, 30, intraday=True),

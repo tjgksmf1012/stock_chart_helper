@@ -558,12 +558,6 @@ def _grade_from_quality(similarity: float, breakout_quality: float, retest_quali
 
 
 def _normalize_state(state: str, breakout_quality: float, retest_quality: float) -> str:
-    if state != "confirmed":
-        return state
-    if breakout_quality < 0.42:
-        return "armed"
-    if retest_quality < 0.28:
-        return "armed"
     return state
 
 
@@ -859,10 +853,6 @@ class PatternEngine:
             breakout_quality = _breakout_quality_score(df, breakout_idx, neckline, bullish=True)
             retest_quality = _retest_quality_score(df, breakout_idx, neckline, bullish=True)
             state = _normalize_state(state, breakout_quality, retest_quality)
-            if state == "confirmed" and (leg_balance < 0.46 or reversal_energy < 0.44 or variant_fit < 0.66):
-                state = "armed"
-            elif state == "armed" and (leg_balance < 0.34 or reversal_energy < 0.30 or variant_fit < 0.58):
-                state = "forming"
             grade = _grade_from_quality(geom_fit, breakout_quality, retest_quality, vol_score)
 
             r = PatternResult(
@@ -1011,10 +1001,6 @@ class PatternEngine:
             breakout_quality = _breakout_quality_score(df, breakout_idx, neckline, bullish=False)
             retest_quality = _retest_quality_score(df, breakout_idx, neckline, bullish=False)
             state = _normalize_state(state, breakout_quality, retest_quality)
-            if state == "confirmed" and (leg_balance < 0.46 or reversal_energy < 0.44 or variant_fit < 0.66):
-                state = "armed"
-            elif state == "armed" and (leg_balance < 0.34 or reversal_energy < 0.30 or variant_fit < 0.58):
-                state = "forming"
             grade = _grade_from_quality(geom_fit, breakout_quality, retest_quality, vol_score)
 
             r = PatternResult(
@@ -1129,8 +1115,6 @@ class PatternEngine:
             breakout_quality = _breakout_quality_score(df, breakout_idx, neckline, bullish=False)
             retest_quality = _retest_quality_score(df, breakout_idx, neckline, bullish=False)
             state = _normalize_state(state, breakout_quality, retest_quality)
-            if state == "confirmed" and (leg_balance < 0.42 or reversal_energy < 0.40):
-                state = "armed"
             grade = _grade_from_quality(geom_fit, breakout_quality, retest_quality, vol_score)
 
             r = PatternResult(
@@ -1242,8 +1226,6 @@ class PatternEngine:
             breakout_quality = _breakout_quality_score(df, breakout_idx, neckline, bullish=True)
             retest_quality = _retest_quality_score(df, breakout_idx, neckline, bullish=True)
             state = _normalize_state(state, breakout_quality, retest_quality)
-            if state == "confirmed" and (leg_balance < 0.42 or reversal_energy < 0.40):
-                state = "armed"
             grade = _grade_from_quality(geom_fit, breakout_quality, retest_quality, vol_score)
 
             r = PatternResult(
@@ -1416,10 +1398,6 @@ class PatternEngine:
         breakout_quality = _breakout_quality_score(df, breakout_idx, pivot, bullish=True)
         retest_quality = _retest_quality_score(df, breakout_idx, pivot, bullish=True)
         state = _normalize_state(state, breakout_quality, retest_quality)
-        if state == "confirmed" and (contraction_score < 0.45 or tight_range < 0.45):
-            state = "armed"
-        elif state == "armed" and (contraction_score < 0.30 or high_tightness < 0.30):
-            state = "forming"
 
         invalidation = latest_low.price * 0.99
         target_span = max(pivot - latest_low.price, pivot * 0.08)

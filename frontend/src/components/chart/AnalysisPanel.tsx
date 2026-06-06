@@ -66,6 +66,7 @@ export function AnalysisPanel({ analysis, symbol, timeframe }: AnalysisPanelProp
 
       {activeTab === 'overview' && (
         <div className="space-y-3">
+          {!analysis.no_signal_flag && bestPattern && <PatternSummaryCard pattern={bestPattern} analysis={analysis} />}
           <ActionPlanCard analysis={analysis} />
           <DecisionSummaryGrid analysis={analysis} />
           <DecisionSupportCard analysis={analysis} />
@@ -383,6 +384,57 @@ function PatternCard({ pattern }: { pattern: PatternInfo }) {
       </div>
       {pattern.lifecycle_note && <p className="text-xs leading-relaxed text-muted-foreground">{pattern.lifecycle_note}</p>}
     </div>
+  )
+}
+
+function PatternSummaryCard({ pattern, analysis }: { pattern: PatternInfo; analysis: AnalysisResult }) {
+  const pUp = Math.round(analysis.p_up * 100)
+  const pDown = Math.round(analysis.p_down * 100)
+  return (
+    <Card className="space-y-3 border-primary/20 bg-primary/5">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm font-semibold">{PATTERN_NAMES[pattern.pattern_type] ?? pattern.pattern_type}</span>
+        <span className={cn('rounded px-1.5 py-0.5 text-xs font-medium', STATE_COLORS[pattern.state] ?? 'bg-muted text-muted-foreground')}>
+          {STATE_LABELS[pattern.state] ?? pattern.state}
+        </span>
+        <Badge variant={pattern.grade === 'A' ? 'bullish' : pattern.grade === 'B' ? 'neutral' : 'muted'} className="ml-auto">
+          {pattern.grade}급
+        </Badge>
+      </div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        {pattern.invalidation_level != null && (
+          <div className="rounded-lg border border-rose-400/20 bg-rose-400/6 p-2.5">
+            <div className="text-xs text-muted-foreground">손절 기준가</div>
+            <div className="mt-0.5 text-sm font-semibold text-rose-400">{fmtPrice(pattern.invalidation_level)}</div>
+          </div>
+        )}
+        {pattern.target_level != null && (
+          <div className="rounded-lg border border-emerald-400/20 bg-emerald-400/6 p-2.5">
+            <div className="text-xs text-muted-foreground">익절 기준가</div>
+            <div className="mt-0.5 text-sm font-semibold text-emerald-400">{fmtPrice(pattern.target_level)}</div>
+          </div>
+        )}
+        {pattern.neckline != null && (
+          <div className="rounded-lg border border-border bg-background/55 p-2.5">
+            <div className="text-xs text-muted-foreground">돌파선</div>
+            <div className="mt-0.5 text-sm font-semibold">{fmtPrice(pattern.neckline)}</div>
+          </div>
+        )}
+      </div>
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1.5">
+          <TrendingUp size={13} className="text-emerald-400" />
+          <span className="text-sm font-semibold text-emerald-400">{pUp}%</span>
+          <span className="text-xs text-muted-foreground">오를 확률</span>
+        </div>
+        <div className="h-3 w-px bg-border" />
+        <div className="flex items-center gap-1.5">
+          <TrendingDown size={13} className="text-rose-400" />
+          <span className="text-sm font-semibold text-rose-400">{pDown}%</span>
+          <span className="text-xs text-muted-foreground">내릴 확률</span>
+        </div>
+      </div>
+    </Card>
   )
 }
 

@@ -152,8 +152,18 @@ def _allow_placeholder(timeframe: str) -> bool:
     return timeframe in {"1m", "15m", "30m", "60m"}
 
 
+_TERMINAL_STATES = frozenset({"played_out", "invalidated"})
+
+
+def _is_active_candidate(row: dict) -> bool:
+    return (
+        row.get("state") not in _TERMINAL_STATES
+        and row.get("freshness_score", 0.0) >= 0.15
+    )
+
+
 def _long_response(timeframe: str, data: list[dict], limit: int) -> DashboardResponse:
-    ranked = [row for row in data if not row["no_signal_flag"] and row["p_up"] > 0.55 and row.get("action_plan") != "cooling"]
+    ranked = [row for row in data if not row["no_signal_flag"] and row["p_up"] > 0.55 and row.get("action_plan") != "cooling" and _is_active_candidate(row)]
     ranked.sort(
         key=lambda row: (
             row.get("trade_readiness_score", 0.0),
@@ -173,7 +183,7 @@ def _long_response(timeframe: str, data: list[dict], limit: int) -> DashboardRes
 
 
 def _short_response(timeframe: str, data: list[dict], limit: int) -> DashboardResponse:
-    ranked = [row for row in data if not row["no_signal_flag"] and row["p_down"] > 0.55 and row.get("action_plan") != "cooling"]
+    ranked = [row for row in data if not row["no_signal_flag"] and row["p_down"] > 0.55 and row.get("action_plan") != "cooling" and _is_active_candidate(row)]
     ranked.sort(
         key=lambda row: (
             row.get("trade_readiness_score", 0.0),
@@ -194,7 +204,7 @@ def _short_response(timeframe: str, data: list[dict], limit: int) -> DashboardRe
 
 def _similarity_response(timeframe: str, data: list[dict], limit: int) -> DashboardResponse:
     ranked = sorted(
-        data,
+        [row for row in data if _is_active_candidate(row)],
         key=lambda row: (
             row.get("trade_readiness_score", 0.0),
             row.get("entry_window_score", 0.0),
@@ -213,7 +223,7 @@ def _similarity_response(timeframe: str, data: list[dict], limit: int) -> Dashbo
 
 
 def _no_signal_response(timeframe: str, data: list[dict], limit: int) -> DashboardResponse:
-    ranked = [row for row in data if row["no_signal_flag"]]
+    ranked = [row for row in data if row["no_signal_flag"] and row.get("freshness_score", 0.0) >= 0.05]
     ranked.sort(key=lambda row: (row["data_quality"], row.get("historical_edge_score", 0.0), row["available_bars"]), reverse=True)
     return _response("watchlist_no_signal", timeframe, [_make_item(index + 1, row) for index, row in enumerate(ranked[:limit])])
 
@@ -221,7 +231,7 @@ def _no_signal_response(timeframe: str, data: list[dict], limit: int) -> Dashboa
 def _armed_response(timeframe: str, data: list[dict], limit: int) -> DashboardResponse:
     ranked = [
         row for row in data
-        if row.get("state") in ("armed", "forming") and row["textbook_similarity"] >= 0.5
+        if row.get("state") in ("armed", "forming") and row["textbook_similarity"] >= 0.5 and row.get("freshness_score", 0.0) >= 0.15
     ]
     ranked.sort(
         key=lambda row: (
@@ -247,6 +257,7 @@ def _forming_response(timeframe: str, data: list[dict], limit: int) -> Dashboard
         if row.get("state") == "forming"
         and row.get("formation_quality", 0.0) >= 0.42
         and row.get("textbook_similarity", 0.0) >= 0.45
+        and row.get("freshness_score", 0.0) >= 0.15
     ]
     ranked.sort(
         key=lambda row: (
