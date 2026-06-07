@@ -8,9 +8,39 @@ services:
     healthCheckPath: /health
     envVars:
       # Redis
-      # Leave blank to use the in-memory fallback cache.
+      # Upstash Redis URL 등록 권장 (무료 플랜). 비워두면 in-memory fallback 사용.
       - key: REDIS_URL
         value: ""
+
+      # Keep-alive (Render free tier 15분 슬립 방지)
+      - key: ENABLE_PLATFORM_KEEPALIVE
+        value: "true"
+      - key: SELF_HEALTHCHECK_URL
+        value: "https://stock-chart-helper-api.onrender.com/health"
+
+      # 시작 직후 스캔 (서버 재시작 후 바로 데이터 갱신)
+      - key: STARTUP_DAILY_SCAN_ENABLED
+        value: "true"
+
+      # 스케줄 스캔 설정 (전체 종목 커버)
+      - key: SCHEDULED_SCAN_LIMIT
+        value: "500"
+      - key: SCHEDULED_SCAN_BATCH_SIZE
+        value: "5"
+      - key: SCHEDULED_SCAN_MAX_DURATION_SECONDS
+        value: "1200"
+
+      # 수동/백그라운드 스캔 설정
+      - key: MANUAL_SCAN_LIMIT
+        value: "200"
+      - key: MANUAL_SCAN_BATCH_SIZE
+        value: "5"
+      - key: BACKGROUND_SCAN_LIMIT
+        value: "100"
+      - key: BACKGROUND_SCAN_BATCH_SIZE
+        value: "5"
+      - key: SCAN_MAX_DURATION_SECONDS
+        value: "300"
 
       # CORS
       # Add your deployed frontend URL and keep localhost for local development.

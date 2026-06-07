@@ -809,7 +809,7 @@ async def _analyze_one(
             market_cap=await fetcher.get_market_cap(code),
             is_in_universe=True,
         )
-        analysis = await analyze_symbol_dataframe(symbol, timeframe, df)
+        analysis = await analyze_symbol_dataframe(symbol, timeframe, df, fetch_money_flow=False)
         signal_price = float(df["close"].iloc[-1]) if "close" in df.columns and not df.empty else None
         reference_day, _ = resolve_daily_reference_date()
         result = _analysis_to_scan_row(

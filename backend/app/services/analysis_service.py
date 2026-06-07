@@ -3187,6 +3187,8 @@ async def analyze_symbol_dataframe(
     symbol: SymbolInfo,
     timeframe: str,
     df: pd.DataFrame,
+    *,
+    fetch_money_flow: bool = True,
 ) -> AnalysisResult:
     profile = _data_profile(df, timeframe)
     if df.empty or len(df) < max(20, get_timeframe_spec(timeframe).min_bars):
@@ -3453,29 +3455,31 @@ async def analyze_symbol_dataframe(
             probability.sample_reliability,
         )
 
-    # ── 수급 데이터 (비동기, 오류 시 graceful skip) ──────────────────────
+    # ── 수급 데이터 (개별 종목 조회 시만 수집 — 스캔에서는 건너뜀) ──────────────
+    # fetch_money_flow=False (스캐너 경로)면 pykrx 추가 요청을 하지 않아 스캔 속도 유지
     money_flow_data = None
-    try:
-        from .money_flow_service import get_money_flow
-        from ..api.schemas import MoneyFlowData, MoneyFlowDailyEntry
-        primary_pattern_type = best_pattern.pattern_type if best_pattern else None
-        mf_raw = await asyncio.wait_for(
-            get_money_flow(symbol.code, primary_pattern_type),
-            timeout=8.0,
-        )
-        if mf_raw:
-            money_flow_data = MoneyFlowData(
-                foreign_net_3d=mf_raw.get("foreign_net_3d", 0.0),
-                foreign_net_10d=mf_raw.get("foreign_net_10d", 0.0),
-                institution_net_3d=mf_raw.get("institution_net_3d", 0.0),
-                institution_net_10d=mf_raw.get("institution_net_10d", 0.0),
-                alignment=mf_raw.get("alignment", "neutral"),
-                alignment_label=mf_raw.get("alignment_label", ""),
-                alignment_note=mf_raw.get("alignment_note", ""),
-                daily=[MoneyFlowDailyEntry(**d) for d in mf_raw.get("daily", [])],
+    if fetch_money_flow:
+        try:
+            from .money_flow_service import get_money_flow
+            from ..api.schemas import MoneyFlowData, MoneyFlowDailyEntry
+            primary_pattern_type = best_pattern.pattern_type if best_pattern else None
+            mf_raw = await asyncio.wait_for(
+                get_money_flow(symbol.code, primary_pattern_type),
+                timeout=8.0,
             )
-    except Exception as _mf_exc:
-        logger.debug("money flow skipped for %s: %s", symbol.code, _mf_exc)
+            if mf_raw:
+                money_flow_data = MoneyFlowData(
+                    foreign_net_3d=mf_raw.get("foreign_net_3d", 0.0),
+                    foreign_net_10d=mf_raw.get("foreign_net_10d", 0.0),
+                    institution_net_3d=mf_raw.get("institution_net_3d", 0.0),
+                    institution_net_10d=mf_raw.get("institution_net_10d", 0.0),
+                    alignment=mf_raw.get("alignment", "neutral"),
+                    alignment_label=mf_raw.get("alignment_label", ""),
+                    alignment_note=mf_raw.get("alignment_note", ""),
+                    daily=[MoneyFlowDailyEntry(**d) for d in mf_raw.get("daily", [])],
+                )
+        except Exception as _mf_exc:
+            logger.debug("money flow skipped for %s: %s", symbol.code, _mf_exc)
 
     return AnalysisResult(
         symbol=symbol,

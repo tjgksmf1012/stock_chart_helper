@@ -63,6 +63,19 @@ def _start_scheduler() -> None:
 
         scheduler = AsyncIOScheduler(timezone="Asia/Seoul")
 
+        # 08:30 — 장 시작 전 전일 종가 기준 전체 스캔 (사이트 진입 즉시 데이터 확인 가능)
+        scheduler.add_job(
+            run_scan,
+            CronTrigger(day_of_week="mon-fri", hour=8, minute=30, timezone="Asia/Seoul"),
+            kwargs={
+                "timeframe": "1d",
+                "limit": settings.scheduled_scan_limit,
+                "batch_size": settings.scheduled_scan_batch_size,
+                "force_refresh": True,
+            },
+            id="premarket_scan",
+            replace_existing=True,
+        )
         scheduler.add_job(
             run_scan,
             CronTrigger(day_of_week="mon-fri", hour=9, minute=10, timezone="Asia/Seoul"),
@@ -157,6 +170,7 @@ def _start_scheduler() -> None:
 
         scheduler.start()
         jobs = [
+            "premarket_scan",
             "morning_scan",
             "midday_scan",
             "close_scan",
