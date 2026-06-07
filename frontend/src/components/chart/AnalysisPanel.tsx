@@ -2,8 +2,11 @@ import { useState, type ReactNode } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { Activity, AlertCircle, Database, Flag, Layers3, ShieldAlert, Target, TrendingDown, TrendingUp } from 'lucide-react'
 
-import type { AnalysisResult, PatternInfo } from '@/types/api'
+import type { AnalysisResult, OHLCVBar, PatternInfo } from '@/types/api'
 import { outcomesApi } from '@/lib/api'
+import { MoneyFlowCard } from '@/components/chart/MoneyFlowCard'
+import { PositionSizerCard } from '@/components/chart/PositionSizerCard'
+import { RiskSettingsDrawer } from '@/components/RiskSettingsDrawer'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { ProbBar } from '@/components/ui/ProbBar'
@@ -28,6 +31,8 @@ interface AnalysisPanelProps {
   analysis: AnalysisResult
   symbol?: string
   timeframe?: string
+  bars?: OHLCVBar[]
+  currentPrice?: number
 }
 
 type AnalysisTab = 'overview' | 'setup' | 'pattern' | 'data'
@@ -39,8 +44,9 @@ const ANALYSIS_TABS: Array<{ key: AnalysisTab; label: string }> = [
   { key: 'data', label: '참고사항' },
 ]
 
-export function AnalysisPanel({ analysis, symbol, timeframe }: AnalysisPanelProps) {
+export function AnalysisPanel({ analysis, symbol, timeframe, bars = [], currentPrice }: AnalysisPanelProps) {
   const [activeTab, setActiveTab] = useState<AnalysisTab>('overview')
+  const [riskSettingsOpen, setRiskSettingsOpen] = useState(false)
   const bestPattern = analysis.patterns[0]
 
   return (
@@ -67,6 +73,7 @@ export function AnalysisPanel({ analysis, symbol, timeframe }: AnalysisPanelProp
       {activeTab === 'overview' && (
         <div className="space-y-3">
           {!analysis.no_signal_flag && bestPattern && <PatternSummaryCard pattern={bestPattern} analysis={analysis} />}
+          {analysis.money_flow && <MoneyFlowCard data={analysis.money_flow} />}
           <ActionPlanCard analysis={analysis} />
           <DecisionSummaryGrid analysis={analysis} />
           <DecisionSupportCard analysis={analysis} />
@@ -82,6 +89,12 @@ export function AnalysisPanel({ analysis, symbol, timeframe }: AnalysisPanelProp
           <FreshnessCard analysis={analysis} />
           <ReentryCard analysis={analysis} />
           <ActiveSetupCard analysis={analysis} />
+          <PositionSizerCard
+            analysis={analysis}
+            bars={bars}
+            currentPrice={currentPrice}
+            onOpenSettings={() => setRiskSettingsOpen(true)}
+          />
         </div>
       )}
 
@@ -101,6 +114,11 @@ export function AnalysisPanel({ analysis, symbol, timeframe }: AnalysisPanelProp
           <ScoreDetailCard analysis={analysis} />
         </div>
       )}
+
+      <RiskSettingsDrawer
+        open={riskSettingsOpen}
+        onClose={() => setRiskSettingsOpen(false)}
+      />
     </div>
   )
 }

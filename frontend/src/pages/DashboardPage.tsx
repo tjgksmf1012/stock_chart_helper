@@ -4,6 +4,8 @@ import { useMutation, useQueries, useQuery } from '@tanstack/react-query'
 import { Activity, Layers3, Loader2, RefreshCw, Sparkles } from 'lucide-react'
 
 import { DashboardSection } from '@/components/dashboard/DashboardSection'
+import { MarketRegimeBar, getRegimeWarning } from '@/components/dashboard/MarketRegimeBar'
+import { SectorHeatmap } from '@/components/dashboard/SectorHeatmap'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { QueryError } from '@/components/ui/QueryError'
@@ -112,6 +114,19 @@ export default function DashboardPage() {
     queryKey: ['outcomes', 'summary', 'dashboard'],
     queryFn: outcomesApi.summary,
     staleTime: 60_000,
+  })
+
+  const regimeQ = useQuery({
+    queryKey: ['dashboard', 'market-regime'],
+    queryFn: () => dashboardApi.marketRegime(),
+    staleTime: 1_800_000,
+    refetchInterval: 1_800_000,
+  })
+
+  const sectorQ = useQuery({
+    queryKey: ['dashboard', timeframe, 'sector-heatmap'],
+    queryFn: () => dashboardApi.sectorHeatmap(timeframe),
+    staleTime: 1_800_000,
   })
 
   useEffect(() => {
@@ -270,8 +285,18 @@ export default function DashboardPage() {
   const liveEmptyMessage = getLiveSectionEmptyMessage(status, timeframe)
   const sectionEmptyMessage = getDefaultSectionEmptyMessage(status, timeframe)
 
+  const regimeWarning = regimeQ.data ? getRegimeWarning(regimeQ.data.overall_regime) : null
+
   return (
     <div className="space-y-6">
+      {/* 시장 체제 지표 */}
+      {regimeQ.data && <MarketRegimeBar data={regimeQ.data} />}
+      {regimeWarning && (
+        <div className="rounded-lg border border-amber-400/25 bg-amber-400/8 px-3 py-2 text-xs font-medium text-amber-400">
+          {regimeWarning}
+        </div>
+      )}
+
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1.3fr)_360px]">
         <Card className="space-y-5 border-primary/15 bg-[linear-gradient(180deg,rgba(37,99,235,0.12),rgba(15,23,42,0.18))]">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -600,6 +625,11 @@ export default function DashboardPage() {
           </div>
         </Card>
       </section>
+
+      {/* 섹터 패턴 분포 히트맵 */}
+      {sectorQ.data && sectorQ.data.sectors.length > 0 && (
+        <SectorHeatmap sectors={sectorQ.data.sectors} />
+      )}
 
       <DashboardSection
         title="지금 볼 후보"

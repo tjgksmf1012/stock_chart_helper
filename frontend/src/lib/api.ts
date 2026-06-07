@@ -4,6 +4,7 @@ import type {
   AiRecommendationItem, AiRecommendationResponse, DashboardOverviewResponse, DashboardResponse, PatternLibraryEntry, ScreenerRequest, DashboardItem, ReferenceCaseResponse, ScanStatusResponse, Timeframe,
   IntradayCandidateWarmupRequest, IntradayWarmupJobStatus, IntradayWarmupRequest, IntradayWarmupResponse, KisPrimeStatus, PatternStatsResponse, RuntimeStatusResponse, ScanHistoryRunSummary, ScanQualityReportResponse,
   WatchlistItem, OutcomeEvaluationResponse, OutcomeRecord, OutcomesSummary, OutcomeStatus, CalibrationReport,
+  MarketRegimeResponse, SectorHeatmapResponse, MoneyFlowData,
 } from '@/types/api'
 
 function resolveApiBase() {
@@ -77,6 +78,8 @@ export const symbolsApi = {
     api.get<ReferenceCaseResponse>(`/symbols/${symbol}/reference-cases`, { params: { timeframe, limit } }).then(r => r.data),
   getPrice: (symbol: string) =>
     api.get<PriceInfo>(`/symbols/${symbol}/price`).then(r => r.data),
+  getMoneyFlow: (symbol: string, timeframe: Timeframe) =>
+    api.get<MoneyFlowData>(`/symbols/${symbol}/money-flow`, { params: { timeframe } }).then(r => r.data),
 }
 
 export const dashboardApi = {
@@ -90,6 +93,8 @@ export const dashboardApi = {
   liveIntraday: (timeframe: Timeframe, limit = 10) => api.get<DashboardResponse>('/dashboard/live-intraday-candidates', { params: { timeframe, limit } }).then(r => r.data),
   scanStatus: (timeframe: Timeframe) => api.get<ScanStatusResponse>('/dashboard/scan-status', { params: { timeframe } }).then(r => r.data),
   refreshScan: (timeframe: Timeframe) => api.post<ScanStatusResponse>('/dashboard/scan-refresh', null, { params: { timeframe } }).then(r => r.data),
+  marketRegime: () => api.get<MarketRegimeResponse>('/dashboard/market-regime').then(r => r.data),
+  sectorHeatmap: (timeframe: Timeframe) => api.get<SectorHeatmapResponse>('/dashboard/sector-heatmap', { params: { timeframe } }).then(r => r.data),
 }
 
 export const aiApi = {

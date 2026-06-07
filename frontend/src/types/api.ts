@@ -233,6 +233,57 @@ export interface AnalysisResult {
   bars_since_signal: number | null
   stats_timeframe: string
   available_bars: number
+  money_flow?: MoneyFlowData | null
+}
+
+// ─── Market Intelligence ──────────────────────────────────────────────────────
+
+export interface MoneyFlowDailyEntry {
+  date: string
+  foreign: number   // 억원 (양수=순매수)
+  institution: number
+}
+
+export interface MoneyFlowData {
+  foreign_net_3d: number
+  foreign_net_10d: number
+  institution_net_3d: number
+  institution_net_10d: number
+  alignment: 'aligned' | 'diverged' | 'mixed' | 'neutral'
+  alignment_label: string
+  alignment_note: string
+  daily: MoneyFlowDailyEntry[]
+}
+
+export interface IndexRegime {
+  regime: 'bull' | 'correction' | 'bear' | 'sideways' | 'unknown'
+  current: number
+  change_pct: number
+  ma20: number | null
+  ma60: number | null
+  ma120: number | null
+  distance_from_ma120_pct: number
+}
+
+export interface MarketRegimeResponse {
+  kospi: IndexRegime
+  kosdaq: IndexRegime
+  overall_regime: 'bull' | 'correction' | 'bear' | 'sideways' | 'unknown'
+  generated_at: string
+}
+
+export interface SectorEntry {
+  sector_name: string
+  bullish_count: number
+  bearish_count: number
+  net_score: number
+  top_symbols: string[]
+}
+
+export interface SectorHeatmapResponse {
+  sectors: SectorEntry[]
+  code_to_sector: Record<string, string>
+  generated_at: string
 }
 
 export interface DashboardItem {

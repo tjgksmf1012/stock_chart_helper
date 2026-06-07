@@ -291,3 +291,34 @@ async def get_price(symbol: str) -> PriceInfo:
         pass
 
     return PriceInfo(code=symbol, close=0.0, prev_close=0.0, change=0.0, change_pct=0.0, volume=0, source="none")
+
+
+@router.get("/{symbol}/money-flow")
+async def get_money_flow_endpoint(
+    symbol: str,
+    timeframe: str = Query(default=DEFAULT_TIMEFRAME),
+) -> dict:
+    """외국인/기관 순매수 데이터 (T+1). 4시간 캐시."""
+    from ...services.money_flow_service import get_money_flow
+
+    # 분석 캐시에서 패턴 타입 참조 (있으면 정렬 판정에 사용)
+    pattern_type: str | None = None
+    cached_analysis = await cache_get(f"analysis:v9:{symbol}:{timeframe}")
+    if isinstance(cached_analysis, dict) and cached_analysis.get("patterns"):
+        pats = cached_analysis["patterns"]
+        if pats and isinstance(pats[0], dict):
+            pattern_type = pats[0].get("pattern_type")
+
+    result = await get_money_flow(symbol, pattern_type)
+    if result is None:
+        return {
+            "foreign_net_3d": 0.0,
+            "foreign_net_10d": 0.0,
+            "institution_net_3d": 0.0,
+            "institution_net_10d": 0.0,
+            "alignment": "neutral",
+            "alignment_label": "수급 데이터 없음",
+            "alignment_note": "",
+            "daily": [],
+        }
+    return result

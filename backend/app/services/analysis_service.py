@@ -3453,6 +3453,30 @@ async def analyze_symbol_dataframe(
             probability.sample_reliability,
         )
 
+    # ── 수급 데이터 (비동기, 오류 시 graceful skip) ──────────────────────
+    money_flow_data = None
+    try:
+        from .money_flow_service import get_money_flow
+        from ..api.schemas import MoneyFlowData, MoneyFlowDailyEntry
+        primary_pattern_type = best_pattern.pattern_type if best_pattern else None
+        mf_raw = await asyncio.wait_for(
+            get_money_flow(symbol.code, primary_pattern_type),
+            timeout=8.0,
+        )
+        if mf_raw:
+            money_flow_data = MoneyFlowData(
+                foreign_net_3d=mf_raw.get("foreign_net_3d", 0.0),
+                foreign_net_10d=mf_raw.get("foreign_net_10d", 0.0),
+                institution_net_3d=mf_raw.get("institution_net_3d", 0.0),
+                institution_net_10d=mf_raw.get("institution_net_10d", 0.0),
+                alignment=mf_raw.get("alignment", "neutral"),
+                alignment_label=mf_raw.get("alignment_label", ""),
+                alignment_note=mf_raw.get("alignment_note", ""),
+                daily=[MoneyFlowDailyEntry(**d) for d in mf_raw.get("daily", [])],
+            )
+    except Exception as _mf_exc:
+        logger.debug("money flow skipped for %s: %s", symbol.code, _mf_exc)
+
     return AnalysisResult(
         symbol=symbol,
         timeframe=timeframe,
@@ -3545,6 +3569,7 @@ async def analyze_symbol_dataframe(
         bars_since_signal=bars_since_signal,
         stats_timeframe=stats_timeframe,
         available_bars=profile["available_bars"],
+        money_flow=money_flow_data,
     )
 
 

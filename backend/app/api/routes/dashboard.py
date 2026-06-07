@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 
 from fastapi import APIRouter, Query
 
-from ..schemas import DashboardItem, DashboardOverviewResponse, DashboardResponse, ScanStatusResponse, SymbolInfo
+from ..schemas import (
+    DashboardItem, DashboardOverviewResponse, DashboardResponse,
+    MarketRegimeResponse, IndexRegime,
+    ScanStatusResponse, SectorEntry, SectorHeatmapResponse, SymbolInfo,
+)
 from ...core.config import get_settings
+from ...services.market_regime_service import get_market_regime
 from ...services.scanner import get_scan_results, get_scan_status, trigger_scan
+from ...services.sector_service import build_sector_heatmap, get_sector_map
 from ...services.timeframe_service import DEFAULT_TIMEFRAME, timeframe_label
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -423,4 +430,36 @@ async def dashboard_overview(
         high_textbook_similarity=_similarity_response(timeframe, data, limit),
         short_high_probability=_short_response(timeframe, data, limit),
         watchlist_no_signal=_no_signal_response(timeframe, data, limit),
+    )
+
+
+@router.get("/market-regime", response_model=MarketRegimeResponse)
+async def dashboard_market_regime() -> MarketRegimeResponse:
+    data = await get_market_regime()
+    return MarketRegimeResponse(
+        kospi=IndexRegime(**data["kospi"]),
+        kosdaq=IndexRegime(**data["kosdaq"]),
+        overall_regime=data["overall_regime"],
+        generated_at=data["generated_at"],
+    )
+
+
+@router.get("/sector-heatmap", response_model=SectorHeatmapResponse)
+async def dashboard_sector_heatmap(
+    timeframe: str = Query(default=DEFAULT_TIMEFRAME),
+) -> SectorHeatmapResponse:
+    timeframe = _timeframe_query(timeframe)
+    code_to_sector_result, scan_data_result = await asyncio.gather(
+        get_sector_map(),
+        get_scan_results(timeframe),
+        return_exceptions=True,
+    )
+    code_to_sector: dict = code_to_sector_result if not isinstance(code_to_sector_result, Exception) else {}
+    scan_data: list = scan_data_result if not isinstance(scan_data_result, Exception) else []
+
+    sector_rows = build_sector_heatmap(scan_data, code_to_sector)
+    return SectorHeatmapResponse(
+        sectors=[SectorEntry(**s) for s in sector_rows],
+        code_to_sector=code_to_sector,
+        generated_at=datetime.utcnow().isoformat(),
     )

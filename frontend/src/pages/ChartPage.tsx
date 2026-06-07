@@ -321,7 +321,13 @@ export default function ChartPage() {
           </Card>
 
           {analysis ? (
-            <AnalysisPanel analysis={analysis} symbol={symbol} timeframe={timeframe} />
+            <AnalysisPanel
+              analysis={analysis}
+              symbol={symbol}
+              timeframe={timeframe}
+              bars={barsQ.data ?? []}
+              currentPrice={priceQ.data?.close ?? (barsQ.data ? barsQ.data[barsQ.data.length - 1]?.close : undefined)}
+            />
           ) : (
             <Card className="flex items-center justify-center text-sm text-muted-foreground">
               분석 결과가 준비되면 오른쪽에 해석이 표시됩니다.

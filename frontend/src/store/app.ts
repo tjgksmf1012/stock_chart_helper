@@ -5,10 +5,29 @@ import type { Timeframe, WatchlistItem } from '@/types/api'
 import { DEFAULT_TIMEFRAME, normalizeDisplayTimeframe } from '@/lib/timeframes'
 import { watchlistApi } from '@/lib/api'
 
+export interface RiskSettings {
+  /** 계좌 총액 (원). 0 = 미설정 */
+  accountSize: number
+  /** 1회 최대 리스크 비율 (예: 0.02 = 2%) */
+  riskPerTrade: number
+  /** ATR 손절 배수 (예: 2.0 = ATR×2) */
+  atrMultiplier: number
+  /** true=ATR 기준, false=패턴 기준 */
+  preferAtrStop: boolean
+}
+
+const DEFAULT_RISK_SETTINGS: RiskSettings = {
+  accountSize: 0,
+  riskPerTrade: 0.02,
+  atrMultiplier: 2.0,
+  preferAtrStop: false,
+}
+
 interface AppStore {
   selectedSymbol: string | null
   selectedTimeframe: Timeframe
   watchlist: WatchlistItem[]
+  riskSettings: RiskSettings
   setSymbol: (code: string) => void
   setTimeframe: (tf: Timeframe) => void
   addToWatchlist: (item: { code: string; name: string; market: string }) => void
@@ -16,6 +35,7 @@ interface AppStore {
   isWatched: (code: string) => boolean
   /** Pull the server-side watchlist and merge into local state. */
   syncFromServer: () => Promise<void>
+  setRiskSettings: (settings: Partial<RiskSettings>) => void
 }
 
 export const useAppStore = create<AppStore>()(
@@ -24,6 +44,7 @@ export const useAppStore = create<AppStore>()(
       selectedSymbol: null,
       selectedTimeframe: DEFAULT_TIMEFRAME,
       watchlist: [],
+      riskSettings: DEFAULT_RISK_SETTINGS,
 
       setSymbol: code => set({ selectedSymbol: code }),
       setTimeframe: tf => set({ selectedTimeframe: normalizeDisplayTimeframe(tf) }),
@@ -44,6 +65,9 @@ export const useAppStore = create<AppStore>()(
       },
 
       isWatched: code => get().watchlist.some(w => w.code === code),
+
+      setRiskSettings: (settings) =>
+        set(state => ({ riskSettings: { ...state.riskSettings, ...settings } })),
 
       syncFromServer: async () => {
         try {
@@ -66,7 +90,7 @@ export const useAppStore = create<AppStore>()(
     }),
     {
       name: 'sch-app-store',
-      partialize: state => ({ watchlist: state.watchlist, selectedTimeframe: state.selectedTimeframe }),
+      partialize: state => ({ watchlist: state.watchlist, selectedTimeframe: state.selectedTimeframe, riskSettings: state.riskSettings }),
       merge: (persistedState, currentState) => {
         const typedState = (persistedState as Partial<AppStore> | undefined) ?? {}
         return {

@@ -146,6 +146,54 @@ class ReferenceCaseResponse(BaseModel):
     items: list[ReferenceCaseItem] = Field(default_factory=list)
 
 
+class MoneyFlowDailyEntry(BaseModel):
+    date: str
+    foreign: float  # 억원 (양수=순매수)
+    institution: float
+
+
+class MoneyFlowData(BaseModel):
+    foreign_net_3d: float = 0.0
+    foreign_net_10d: float = 0.0
+    institution_net_3d: float = 0.0
+    institution_net_10d: float = 0.0
+    alignment: str = "neutral"  # aligned | diverged | mixed | neutral
+    alignment_label: str = ""
+    alignment_note: str = ""
+    daily: list[MoneyFlowDailyEntry] = Field(default_factory=list)
+
+
+class IndexRegime(BaseModel):
+    regime: str  # bull | correction | bear | sideways | unknown
+    current: float = 0.0
+    change_pct: float = 0.0
+    ma20: float | None = None
+    ma60: float | None = None
+    ma120: float | None = None
+    distance_from_ma120_pct: float = 0.0
+
+
+class MarketRegimeResponse(BaseModel):
+    kospi: IndexRegime
+    kosdaq: IndexRegime
+    overall_regime: str
+    generated_at: str
+
+
+class SectorEntry(BaseModel):
+    sector_name: str
+    bullish_count: int
+    bearish_count: int
+    net_score: int
+    top_symbols: list[str] = Field(default_factory=list)
+
+
+class SectorHeatmapResponse(BaseModel):
+    sectors: list[SectorEntry] = Field(default_factory=list)
+    code_to_sector: dict[str, str] = Field(default_factory=dict)
+    generated_at: str
+
+
 class AnalysisResult(BaseModel):
     symbol: SymbolInfo
     timeframe: str
@@ -238,6 +286,7 @@ class AnalysisResult(BaseModel):
     bars_since_signal: int | None
     stats_timeframe: str
     available_bars: int
+    money_flow: MoneyFlowData | None = None
 
 
 class DashboardItem(BaseModel):
