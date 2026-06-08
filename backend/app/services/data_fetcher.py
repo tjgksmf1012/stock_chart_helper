@@ -556,7 +556,7 @@ class KRXDataFetcher:
                 if not rows:
                     return await self._fdr_universe_fallback()
                 df = pd.DataFrame(rows)
-                await cache_set(UNIVERSE_CACHE_KEY, df.to_dict(orient="records"), ttl=3600)
+                await cache_set(UNIVERSE_CACHE_KEY, df.to_dict(orient="records"), ttl=43200)  # 12시간
                 return df
             except Exception as exc:
                 logger.error("pykrx universe failed (%s); falling back to FDR", exc)
@@ -580,7 +580,7 @@ class KRXDataFetcher:
 
             result = await asyncio.to_thread(_fetch)
             if not result.empty:
-                await cache_set(UNIVERSE_CACHE_KEY, result.to_dict(orient="records"), ttl=3600)
+                await cache_set(UNIVERSE_CACHE_KEY, result.to_dict(orient="records"), ttl=43200)  # 12시간
             return result
         except Exception as exc:
             logger.error("FDR universe fallback failed: %s", exc)
