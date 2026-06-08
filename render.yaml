@@ -7,10 +7,8 @@ services:
     plan: free
     healthCheckPath: /health
     envVars:
-      # Redis
-      # Upstash Redis URL 등록 권장 (무료 플랜). 비워두면 in-memory fallback 사용.
-      - key: REDIS_URL
-        value: ""
+      # Redis URL은 Render 대시보드에서 직접 관리 (render.yaml로 덮어쓰면 안 됨)
+      # Upstash Redis 연결 중 — 수동으로 REDIS_URL 환경변수 설정 유지할 것
 
       # Keep-alive (Render free tier 15분 슬립 방지)
       - key: ENABLE_PLATFORM_KEEPALIVE
