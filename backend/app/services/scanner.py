@@ -1243,7 +1243,13 @@ async def run_scan(
         if force_refresh and isinstance(previous_cached, list):
             _update_scan_status(timeframe, cached_result_count=len(previous_cached))
 
-        cached = None if force_refresh else previous_cached
+        # 플레이스홀더 캐시는 진짜 분석 결과가 아니므로 재스캔 필요
+        _is_placeholder_cache = (
+            isinstance(previous_cached, list)
+            and len(previous_cached) > 0
+            and previous_cached[0].get("data_source") == "placeholder_seed"
+        )
+        cached = None if (force_refresh or _is_placeholder_cache) else previous_cached
         if cached:
             _update_scan_status(
                 timeframe,
@@ -1633,7 +1639,8 @@ async def get_scan_results(timeframe: str = DEFAULT_TIMEFRAME) -> list[dict[str,
 
     fallback = _placeholder_fallback_codes(timeframe)
     results = _build_placeholder_scan_results(timeframe, fallback)
-    await cache_set(cache_key, results, ttl=180)
+    # TTL 짧게 유지 — 플레이스홀더는 run_scan이 진짜 결과로 교체할 때까지만 임시 사용
+    await cache_set(cache_key, results, ttl=60)
     _update_scan_status(
         timeframe,
         status="ready",
