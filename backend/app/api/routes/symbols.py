@@ -175,9 +175,16 @@ async def get_analysis(
 
     name = await fetcher.get_stock_name(symbol)
     market_cap = await fetcher.get_market_cap(symbol)
-    universe = await fetcher.get_universe()
-    matched = universe.loc[universe["code"] == symbol]
-    market = matched.iloc[0]["market"] if not matched.empty else "KRX"
+
+    # universe는 캐시가 있을 때만 조회 (없으면 "KRX" 기본값)
+    # get_universe() 직접 await는 최대 50초 블로킹 → 분석 API 타임아웃의 주범
+    market = "KRX"
+    _cached_univ = await cache_get(UNIVERSE_CACHE_KEY)
+    if _cached_univ:
+        _univ_df = pd.DataFrame(_cached_univ)
+        _matched = _univ_df.loc[_univ_df["code"] == symbol]
+        if not _matched.empty:
+            market = str(_matched.iloc[0]["market"])
 
     symbol_info = SymbolInfo(
         code=symbol,
@@ -216,9 +223,14 @@ async def get_reference_cases(
 
     name = await fetcher.get_stock_name(symbol)
     market_cap = await fetcher.get_market_cap(symbol)
-    universe = await fetcher.get_universe()
-    matched = universe.loc[universe["code"] == symbol]
-    market = matched.iloc[0]["market"] if not matched.empty else "KRX"
+
+    market = "KRX"
+    _cached_univ2 = await cache_get(UNIVERSE_CACHE_KEY)
+    if _cached_univ2:
+        _univ_df2 = pd.DataFrame(_cached_univ2)
+        _matched2 = _univ_df2.loc[_univ_df2["code"] == symbol]
+        if not _matched2.empty:
+            market = str(_matched2.iloc[0]["market"])
 
     symbol_info = SymbolInfo(
         code=symbol,

@@ -43,7 +43,7 @@ services:
       # CORS
       # Add your deployed frontend URL and keep localhost for local development.
       - key: ALLOWED_ORIGINS
-        value: "https://frontend-mu-sooty-i4662dxm4r.vercel.app,http://localhost:5173"
+        value: "https://stockcharthelper.vercel.app,https://frontend-mu-sooty-i4662dxm4r.vercel.app,http://localhost:5173"
 
       # KIS API
       # Leave blank if you want to rely on public sources only.
