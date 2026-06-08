@@ -578,7 +578,7 @@ class KRXDataFetcher:
                     df["market_cap"] = None
                 return df[["code", "market", "name", "market_cap"]].reset_index(drop=True)
 
-            result = await asyncio.to_thread(_fetch)
+            result = await asyncio.wait_for(asyncio.to_thread(_fetch), timeout=30.0)
             if not result.empty:
                 await cache_set(UNIVERSE_CACHE_KEY, result.to_dict(orient="records"), ttl=43200)  # 12시간
             return result

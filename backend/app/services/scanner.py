@@ -679,14 +679,22 @@ async def _fetch_universe_codes(limit: int = 100) -> tuple[list[tuple[str, str, 
     fetcher = get_data_fetcher()
     universe = await fetcher.get_universe()
     watchlist_rows = await _load_watchlist_rows()
-    universe_names = (
-        {
-            str(row["code"]): row.get("name", row["code"]) or row["code"]
-            for _, row in universe.iterrows()
-        }
-        if not universe.empty
-        else {}
-    )
+
+    # pykrx/FDR 모두 실패한 경우 FALLBACK_CODES를 최소 universe로 사용
+    # → static_fallback 대신 FDR fallback 경로를 탈 수 있도록 함
+    if universe is None or universe.empty:
+        logger.warning(
+            "get_universe() returned empty; using %d FALLBACK_CODES as minimal universe",
+            len(FALLBACK_CODES),
+        )
+        universe = pd.DataFrame(
+            [{"code": c, "market": m, "name": n, "market_cap": None} for c, n, m in FALLBACK_CODES]
+        )
+
+    universe_names = {
+        str(row["code"]): row.get("name", row["code"]) or row["code"]
+        for _, row in universe.iterrows()
+    }
 
     try:
         from pykrx import stock as krx
@@ -696,7 +704,10 @@ async def _fetch_universe_codes(limit: int = 100) -> tuple[list[tuple[str, str, 
         rows: list[tuple[str, str, str, float, float]] = []  # code, name, market, mktcap, turnover
 
         for market in ("KOSPI", "KOSDAQ"):
-            cap_df = await asyncio.to_thread(krx.get_market_cap_by_ticker, today, market=market)
+            cap_df = await asyncio.wait_for(
+                asyncio.to_thread(krx.get_market_cap_by_ticker, today, market=market),
+                timeout=15.0,  # 시장별 15초 타임아웃
+            )
             if cap_df is None or cap_df.empty:
                 continue
             market_cap_col = next((column for column in ("시가총액", "MarketCap", "market_cap") if column in cap_df.columns), None)

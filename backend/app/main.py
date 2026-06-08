@@ -215,18 +215,26 @@ async def on_startup():
     from .services.data_fetcher import get_data_fetcher
     from .services.scanner import run_scan
 
-    if settings.startup_daily_scan_enabled:
-        asyncio.create_task(
-            run_scan(
+    fetcher = get_data_fetcher()
+
+    async def _universe_then_scan() -> None:
+        """universe 빌드를 먼저 완료한 뒤 스타트업 스캔 시작 (race condition 방지)."""
+        try:
+            await asyncio.wait_for(fetcher.get_universe(), timeout=60.0)
+            logger.info("Universe warmup complete — starting startup scan")
+        except Exception as exc:
+            logger.warning("Universe warmup failed (%s); scan will use fallback universe", exc)
+        if settings.startup_daily_scan_enabled:
+            await run_scan(
                 timeframe="1d",
                 limit=settings.background_scan_limit,
                 batch_size=settings.background_scan_batch_size,
                 force_refresh=False,
                 source="startup",
             )
-        )
+
+    asyncio.create_task(_universe_then_scan())
     asyncio.create_task(get_pattern_stats_map())
-    asyncio.create_task(get_data_fetcher().get_universe())
     if settings.kis_app_key and settings.kis_app_secret:
         trigger_background_kis_prime(triggered_by="startup")
     logger.info(

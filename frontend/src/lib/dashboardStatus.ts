@@ -75,7 +75,7 @@ export function candidateSourceLabel(source: string | null | undefined): string 
     case 'krx_universe_fallback':
       return 'KRX 대체 유니버스'
     case 'static_fallback':
-      return '⚠️ 15종목 제한 스캔'
+      return '⚠️ 기본 종목 스캔'
     case 'fallback':
       return '기본 후보'
     default:
@@ -84,9 +84,7 @@ export function candidateSourceLabel(source: string | null | undefined): string 
 }
 
 export function candidateSourceWarning(source: string | null | undefined): string | null {
-  if (source === 'static_fallback') {
-    return '스캔 유니버스 로드에 실패해 일부 종목만 스캔됐습니다. 잠시 후 새로고침해 주세요.'
-  }
+  // 이제 static_fallback도 100개 기본 종목을 스캔하므로 경고 제거
   return null
 }
 
