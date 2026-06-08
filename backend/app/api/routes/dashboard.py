@@ -342,7 +342,7 @@ async def dashboard_scan_refresh(
 @router.get("/long-high-probability")
 async def dashboard_long(
     timeframe: str = Query(default=DEFAULT_TIMEFRAME),
-    limit: int = Query(default=10, le=50),
+    limit: int = Query(default=30, le=100),
 ) -> DashboardResponse:
     timeframe = _timeframe_query(timeframe)
     data = await get_scan_results(timeframe)
@@ -352,7 +352,7 @@ async def dashboard_long(
 @router.get("/short-high-probability")
 async def dashboard_short(
     timeframe: str = Query(default=DEFAULT_TIMEFRAME),
-    limit: int = Query(default=10, le=50),
+    limit: int = Query(default=30, le=100),
 ) -> DashboardResponse:
     timeframe = _timeframe_query(timeframe)
     data = await get_scan_results(timeframe)
@@ -362,7 +362,7 @@ async def dashboard_short(
 @router.get("/high-textbook-similarity")
 async def dashboard_similarity(
     timeframe: str = Query(default=DEFAULT_TIMEFRAME),
-    limit: int = Query(default=10, le=50),
+    limit: int = Query(default=30, le=100),
 ) -> DashboardResponse:
     timeframe = _timeframe_query(timeframe)
     data = await get_scan_results(timeframe)
@@ -372,7 +372,7 @@ async def dashboard_similarity(
 @router.get("/watchlist-no-signal")
 async def dashboard_no_signal(
     timeframe: str = Query(default=DEFAULT_TIMEFRAME),
-    limit: int = Query(default=10, le=50),
+    limit: int = Query(default=30, le=100),
 ) -> DashboardResponse:
     timeframe = _timeframe_query(timeframe)
     data = await get_scan_results(timeframe)
@@ -382,7 +382,7 @@ async def dashboard_no_signal(
 @router.get("/pattern-armed")
 async def dashboard_armed(
     timeframe: str = Query(default=DEFAULT_TIMEFRAME),
-    limit: int = Query(default=10, le=50),
+    limit: int = Query(default=30, le=100),
 ) -> DashboardResponse:
     timeframe = _timeframe_query(timeframe)
     data = await get_scan_results(timeframe)
@@ -392,7 +392,7 @@ async def dashboard_armed(
 @router.get("/forming-candidates")
 async def dashboard_forming(
     timeframe: str = Query(default=DEFAULT_TIMEFRAME),
-    limit: int = Query(default=10, le=50),
+    limit: int = Query(default=30, le=100),
 ) -> DashboardResponse:
     timeframe = _timeframe_query(timeframe)
     data = await get_scan_results(timeframe)
@@ -402,7 +402,7 @@ async def dashboard_forming(
 @router.get("/live-intraday-candidates")
 async def dashboard_live_intraday(
     timeframe: str = Query(default=DEFAULT_TIMEFRAME),
-    limit: int = Query(default=10, le=50),
+    limit: int = Query(default=30, le=100),
 ) -> DashboardResponse:
     timeframe = _timeframe_query(timeframe)
     data = await get_scan_results(timeframe)
@@ -413,7 +413,7 @@ async def dashboard_live_intraday(
 @router.get("/overview", response_model=DashboardOverviewResponse)
 async def dashboard_overview(
     timeframe: str = Query(default=DEFAULT_TIMEFRAME),
-    limit: int = Query(default=10, le=50),
+    limit: int = Query(default=30, le=100),
 ) -> DashboardOverviewResponse:
     timeframe = _timeframe_query(timeframe)
     status = await get_scan_status(timeframe)
