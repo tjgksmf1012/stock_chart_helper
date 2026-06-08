@@ -120,13 +120,24 @@ export default function DashboardPage() {
     queryKey: ['dashboard', 'market-regime'],
     queryFn: () => dashboardApi.marketRegime(),
     staleTime: 1_800_000,
-    refetchInterval: 1_800_000,
+    // 백그라운드 빌드 중엔 unknown 반환 → 30초마다 재시도
+    refetchInterval: (query) => {
+      const data = query.state.data
+      if (!data || data.overall_regime === 'unknown') return 30_000
+      return 1_800_000
+    },
   })
 
   const sectorQ = useQuery({
     queryKey: ['dashboard', timeframe, 'sector-heatmap'],
     queryFn: () => dashboardApi.sectorHeatmap(timeframe),
     staleTime: 1_800_000,
+    // 섹터 맵이 백그라운드 빌드 중이면 빈 결과를 받으므로 30초마다 재시도
+    refetchInterval: (query) => {
+      const data = query.state.data
+      if (!data || data.sectors.length === 0) return 30_000
+      return false
+    },
   })
 
   useEffect(() => {

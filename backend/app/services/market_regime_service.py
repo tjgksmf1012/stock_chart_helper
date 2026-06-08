@@ -20,6 +20,34 @@ KOSDAQ_TICKER = "2001"
 _CACHE_KEY = "market:regime:v1"
 _CACHE_TTL = 1800  # 30분
 
+# 동시 pykrx 호출 방지 — 한 번에 하나만 수행, 진행 중이면 즉시 unknown 반환
+_fetch_lock: asyncio.Lock | None = None
+
+
+def _get_fetch_lock() -> asyncio.Lock:
+    global _fetch_lock
+    if _fetch_lock is None:
+        _fetch_lock = asyncio.Lock()
+    return _fetch_lock
+
+
+def _unknown_regime() -> dict:
+    unk = {
+        "regime": "unknown",
+        "current": 0.0,
+        "change_pct": 0.0,
+        "ma20": None,
+        "ma60": None,
+        "ma120": None,
+        "distance_from_ma120_pct": 0.0,
+    }
+    return {
+        "kospi": unk,
+        "kosdaq": unk,
+        "overall_regime": "unknown",
+        "generated_at": datetime.utcnow().isoformat(),
+    }
+
 
 def _classify_regime(close: pd.Series) -> dict:
     """OHLCV close 시리즈에서 체제를 판정해 dict로 반환."""
@@ -73,7 +101,7 @@ async def _fetch_index_df(ticker: str, days: int = 180) -> pd.DataFrame | None:
                 end.strftime("%Y%m%d"),
                 ticker,
             ),
-            timeout=15.0,
+            timeout=10.0,  # 15→10초로 단축해 thread pool 빨리 반환
         )
         return df if df is not None else pd.DataFrame()
     except Exception as exc:
@@ -95,20 +123,8 @@ def _close_series(df: pd.DataFrame | None) -> pd.Series:
     return pd.Series(dtype=float)
 
 
-async def get_market_regime() -> dict:
-    """
-    Returns MarketRegimeResponse-compatible dict.
-    {
-        kospi: { regime, current, change_pct, ma20, ma60, ma120, distance_from_ma120_pct },
-        kosdaq: { ... },
-        overall_regime: str,
-        generated_at: str,
-    }
-    """
-    cached = await cache_get(_CACHE_KEY)
-    if cached:
-        return cached
-
+async def _do_fetch_market_regime() -> None:
+    """실제 pykrx 호출 — 캐시에 저장만 하고 반환값 없음. 백그라운드 task용."""
     try:
         kospi_df, kosdaq_df = await asyncio.gather(
             _fetch_index_df(KOSPI_TICKER),
@@ -121,13 +137,11 @@ async def get_market_regime() -> dict:
         kospi_regime = _classify_regime(kospi_close)
         kosdaq_regime = _classify_regime(kosdaq_close)
 
-        # overall: 두 지수 중 더 약한 쪽 기준 (보수적)
         rank = {"bull": 3, "sideways": 2, "correction": 1, "bear": 0, "unknown": -1}
         overall = min(
             [kospi_regime["regime"], kosdaq_regime["regime"]],
             key=lambda r: rank.get(r, -1),
         )
-
         result = {
             "kospi": kospi_regime,
             "kosdaq": kosdaq_regime,
@@ -135,13 +149,35 @@ async def get_market_regime() -> dict:
             "generated_at": datetime.utcnow().isoformat(),
         }
         await cache_set(_CACHE_KEY, result, ttl=_CACHE_TTL)
-        return result
+        logger.info("market regime cached: %s", overall)
     except Exception as exc:
         logger.warning("market regime fetch failed: %s", exc)
-        unknown = {"regime": "unknown", "current": 0.0, "change_pct": 0.0, "ma20": None, "ma60": None, "ma120": None, "distance_from_ma120_pct": 0.0}
-        return {
-            "kospi": unknown,
-            "kosdaq": unknown,
-            "overall_regime": "unknown",
-            "generated_at": datetime.utcnow().isoformat(),
-        }
+
+
+async def get_market_regime() -> dict:
+    """
+    Returns MarketRegimeResponse-compatible dict.
+    캐시 히트 → 즉시 반환.
+    캐시 미스 → unknown 즉시 반환 + 백그라운드 갱신 (서버 블로킹 없음).
+    동시 요청이 와도 락으로 중복 fetch 방지.
+    """
+    cached = await cache_get(_CACHE_KEY)
+    if cached:
+        return cached
+
+    lock = _get_fetch_lock()
+    if lock.locked():
+        # 이미 다른 요청이 fetch 중 → 즉시 unknown 반환 (블로킹 없음)
+        logger.debug("market regime fetch already in progress, returning unknown")
+        return _unknown_regime()
+
+    # 백그라운드 태스크로 실행 — 현재 요청은 즉시 unknown 반환
+    async def _locked_fetch() -> None:
+        async with lock:
+            # double-check
+            if await cache_get(_CACHE_KEY):
+                return
+            await _do_fetch_market_regime()
+
+    asyncio.create_task(_locked_fetch())
+    return _unknown_regime()

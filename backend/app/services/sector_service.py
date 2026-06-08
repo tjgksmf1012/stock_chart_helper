@@ -2,6 +2,8 @@
 Sector classification service using pykrx WICS sector index constituents.
 Maps stock code → sector name, aggregates scan results into sector heatmap.
 Cached for 24 hours (sector memberships rarely change).
+
+Non-blocking design: cache miss → return empty immediately + background build.
 """
 from __future__ import annotations
 
@@ -17,6 +19,10 @@ logger = logging.getLogger(__name__)
 
 _SECTOR_MAP_CACHE_KEY = "market:sector-map:v1"
 _SECTOR_MAP_TTL = 86400  # 24시간
+
+# 동시 pykrx 호출 수 제한 (18개 섹터를 한 번에 다 쏘면 thread pool 포화)
+_SECTOR_SEMAPHORE: asyncio.Semaphore | None = None
+_sector_build_task: asyncio.Task | None = None  # 진행 중인 빌드 task 추적
 
 # KOSPI WICS 섹터 인덱스 티커 → 섹터명
 _SECTOR_TICKERS: dict[str, str] = {
@@ -49,24 +55,30 @@ _BEARISH_PATTERNS = {
 }
 
 
+def _get_semaphore() -> asyncio.Semaphore:
+    global _SECTOR_SEMAPHORE
+    if _SECTOR_SEMAPHORE is None:
+        _SECTOR_SEMAPHORE = asyncio.Semaphore(3)  # 한 번에 최대 3개 섹터만 pykrx 호출
+    return _SECTOR_SEMAPHORE
+
+
 async def _fetch_sector_constituents(ticker: str, today: str) -> tuple[str, list[str]]:
-    """단일 섹터 인덱스의 구성 종목 코드 리스트를 반환."""
+    """단일 섹터 인덱스의 구성 종목 코드 리스트를 반환. 세마포어로 동시 호출 제한."""
     sector_name = _SECTOR_TICKERS.get(ticker, ticker)
+    sem = _get_semaphore()
     try:
         from pykrx import stock as krx
-        df = await asyncio.wait_for(
-            asyncio.to_thread(krx.get_index_portfolio_deposit_file, ticker, today),
-            timeout=12.0,
-        )
+        async with sem:
+            df = await asyncio.wait_for(
+                asyncio.to_thread(krx.get_index_portfolio_deposit_file, ticker, today),
+                timeout=10.0,
+            )
         if df is None or (hasattr(df, "empty") and df.empty):
             return sector_name, []
 
-        # pykrx 반환형이 버전마다 다를 수 있음
         if isinstance(df, pd.DataFrame):
-            # 종목코드가 인덱스인 경우
             if df.index.dtype == object or str(df.index.dtype).startswith("object"):
                 codes = [str(c).zfill(6) for c in df.index if str(c).strip()]
-            # 또는 컬럼 중 코드 컬럼 찾기
             elif "티커" in df.columns:
                 codes = [str(c).zfill(6) for c in df["티커"] if str(c).strip()]
             elif "종목코드" in df.columns:
@@ -84,19 +96,14 @@ async def _fetch_sector_constituents(ticker: str, today: str) -> tuple[str, list
         return sector_name, []
 
 
-async def get_sector_map() -> dict[str, str]:
-    """
-    Returns {stock_code: sector_name} mapping.
-    Fetches from pykrx if not cached; caches for 24h.
-    """
-    cached = await cache_get(_SECTOR_MAP_CACHE_KEY)
-    if cached and isinstance(cached, dict) and len(cached) > 50:
-        return cached
-
+async def _build_sector_map() -> dict[str, str]:
+    """18개 섹터를 순차 배치(3개씩)로 가져와 캐시에 저장."""
     today = date.today().strftime("%Y%m%d")
+    tickers = list(_SECTOR_TICKERS.keys())
 
+    # 세마포어가 3이므로 asyncio.gather로 한 번에 보내도 최대 3개만 동시 실행
     results = await asyncio.gather(
-        *[_fetch_sector_constituents(t, today) for t in _SECTOR_TICKERS],
+        *[_fetch_sector_constituents(t, today) for t in tickers],
         return_exceptions=True,
     )
 
@@ -112,6 +119,39 @@ async def get_sector_map() -> dict[str, str]:
     if len(code_to_sector) > 50:
         await cache_set(_SECTOR_MAP_CACHE_KEY, code_to_sector, ttl=_SECTOR_MAP_TTL)
     return code_to_sector
+
+
+async def get_sector_map() -> dict[str, str]:
+    """
+    Returns {stock_code: sector_name} mapping.
+
+    Non-blocking:
+    - 캐시 히트 → 즉시 반환
+    - 캐시 미스 + 빌드 진행 중 → 빈 dict 즉시 반환
+    - 캐시 미스 + 빌드 없음 → 백그라운드 빌드 시작 후 빈 dict 즉시 반환
+    """
+    global _sector_build_task
+
+    cached = await cache_get(_SECTOR_MAP_CACHE_KEY)
+    if cached and isinstance(cached, dict) and len(cached) > 50:
+        return cached
+
+    # 이미 빌드 중이면 즉시 빈 dict 반환
+    if _sector_build_task is not None and not _sector_build_task.done():
+        logger.debug("sector map build in progress, returning empty")
+        return {}
+
+    # 백그라운드 빌드 시작
+    logger.info("sector map cache miss — starting background build")
+
+    async def _run_build() -> None:
+        try:
+            await _build_sector_map()
+        except Exception as exc:
+            logger.warning("sector map background build failed: %s", exc)
+
+    _sector_build_task = asyncio.create_task(_run_build())
+    return {}
 
 
 def build_sector_heatmap(
