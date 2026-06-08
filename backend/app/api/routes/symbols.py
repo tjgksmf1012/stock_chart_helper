@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import traceback
 from datetime import date, timedelta
 
 from fastapi import APIRouter, HTTPException, Query
+
+_logger = logging.getLogger(__name__)
 
 from ..schemas import AnalysisResult, OHLCVBar, PriceInfo, ReferenceCaseResponse, SymbolInfo
 from ...core.config import get_settings
@@ -184,11 +188,16 @@ async def get_analysis(
         is_in_universe=market_cap is not None and market_cap >= settings.min_market_cap_billion,
     )
 
-    result = (
-        await analyze_symbol_dataframe(symbol_info, timeframe, df)
-        if not df.empty
-        else build_no_signal_snapshot(symbol_info, timeframe, df)
-    )
+    try:
+        result = (
+            await analyze_symbol_dataframe(symbol_info, timeframe, df)
+            if not df.empty
+            else build_no_signal_snapshot(symbol_info, timeframe, df)
+        )
+    except Exception as _exc:
+        tb = traceback.format_exc()
+        _logger.error("analyze_symbol_dataframe failed for %s/%s: %s\n%s", symbol, timeframe, _exc, tb)
+        raise HTTPException(status_code=500, detail=f"Analysis error: {type(_exc).__name__}: {_exc}")
     await cache_set(cache_key, result.model_dump(), settings.pattern_cache_ttl)
     await schedule_reference_case_warmup(symbol_code=symbol, timeframe=timeframe, analysis=result, limit=3)
     return result
