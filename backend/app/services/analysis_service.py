@@ -3188,7 +3188,7 @@ async def analyze_symbol_dataframe(
     timeframe: str,
     df: pd.DataFrame,
     *,
-    fetch_money_flow: bool = True,
+    fetch_money_flow: bool = False,  # 기본 False — 분석 API 블로킹 방지. 필요시 호출자가 True로 설정
 ) -> AnalysisResult:
     profile = _data_profile(df, timeframe)
     if df.empty or len(df) < max(20, get_timeframe_spec(timeframe).min_bars):

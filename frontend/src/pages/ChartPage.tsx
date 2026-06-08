@@ -69,6 +69,15 @@ export default function ChartPage() {
     refetchInterval: 120_000,
   })
 
+  // 수급 데이터는 분석 API 블로킹 방지를 위해 별도 쿼리로 분리
+  const moneyFlowQ = useQuery({
+    queryKey: ['money-flow', symbol, timeframe],
+    queryFn: () => symbolsApi.getMoneyFlow(symbol!, timeframe),
+    enabled: !!symbol && timeframe === '1d',  // 일봉에서만 수급 데이터 표시
+    staleTime: 3_600_000,  // 1시간
+    retry: 0,  // 실패해도 재시도 안 함
+  })
+
   const contextTimeframes = getContextTimeframes(timeframe)
   const contextQueries = useQueries({
     queries: contextTimeframes.map(contextTimeframe => ({
@@ -327,6 +336,7 @@ export default function ChartPage() {
               timeframe={timeframe}
               bars={barsQ.data ?? []}
               currentPrice={priceQ.data?.close ?? (barsQ.data ? barsQ.data[barsQ.data.length - 1]?.close : undefined)}
+              moneyFlow={moneyFlowQ.data ?? null}
             />
           ) : (
             <Card className="flex items-center justify-center text-sm text-muted-foreground">

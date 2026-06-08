@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { Activity, AlertCircle, Database, Flag, Layers3, ShieldAlert, Target, TrendingDown, TrendingUp } from 'lucide-react'
 
-import type { AnalysisResult, OHLCVBar, PatternInfo } from '@/types/api'
+import type { AnalysisResult, MoneyFlowData, OHLCVBar, PatternInfo } from '@/types/api'
 import { outcomesApi } from '@/lib/api'
 import { MoneyFlowCard } from '@/components/chart/MoneyFlowCard'
 import { PositionSizerCard } from '@/components/chart/PositionSizerCard'
@@ -33,6 +33,8 @@ interface AnalysisPanelProps {
   timeframe?: string
   bars?: OHLCVBar[]
   currentPrice?: number
+  /** 분석 API와 분리된 수급 전용 쿼리 결과 (analysis.money_flow보다 우선) */
+  moneyFlow?: MoneyFlowData | null
 }
 
 type AnalysisTab = 'overview' | 'setup' | 'pattern' | 'data'
@@ -44,7 +46,7 @@ const ANALYSIS_TABS: Array<{ key: AnalysisTab; label: string }> = [
   { key: 'data', label: '참고사항' },
 ]
 
-export function AnalysisPanel({ analysis, symbol, timeframe, bars = [], currentPrice }: AnalysisPanelProps) {
+export function AnalysisPanel({ analysis, symbol, timeframe, bars = [], currentPrice, moneyFlow }: AnalysisPanelProps) {
   const [activeTab, setActiveTab] = useState<AnalysisTab>('overview')
   const [riskSettingsOpen, setRiskSettingsOpen] = useState(false)
   const bestPattern = analysis.patterns[0]
@@ -73,7 +75,7 @@ export function AnalysisPanel({ analysis, symbol, timeframe, bars = [], currentP
       {activeTab === 'overview' && (
         <div className="space-y-3">
           {!analysis.no_signal_flag && bestPattern && <PatternSummaryCard pattern={bestPattern} analysis={analysis} />}
-          {analysis.money_flow && <MoneyFlowCard data={analysis.money_flow} />}
+          {(moneyFlow ?? analysis.money_flow) && <MoneyFlowCard data={(moneyFlow ?? analysis.money_flow)!} />}
           <ActionPlanCard analysis={analysis} />
           <DecisionSummaryGrid analysis={analysis} />
           <DecisionSupportCard analysis={analysis} />
