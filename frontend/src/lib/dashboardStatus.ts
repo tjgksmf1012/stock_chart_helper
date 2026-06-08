@@ -75,7 +75,7 @@ export function candidateSourceLabel(source: string | null | undefined): string 
     case 'krx_universe_fallback':
       return 'KRX 대체 유니버스'
     case 'static_fallback':
-      return '⚠️ 기본 종목 스캔'
+      return '기본 종목 스캔'
     case 'fallback':
       return '기본 후보'
     default:
