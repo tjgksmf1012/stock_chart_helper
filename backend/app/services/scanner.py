@@ -1227,7 +1227,7 @@ async def run_scan(
                 ),
                 reverse=True,
             )
-            await cache_set(cache_key, results, ttl=settings.dashboard_cache_ttl * 20)
+            await cache_set(cache_key, results, ttl=settings.scan_results_ttl)
             finished_at = datetime.utcnow()
             reference_day, reference_reason = resolve_daily_reference_date()
             if timeframe in {"1m", "15m", "30m", "60m"}:

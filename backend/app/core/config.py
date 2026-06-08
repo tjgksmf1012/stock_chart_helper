@@ -53,8 +53,9 @@ class Settings(BaseSettings):
     # Cache TTL (seconds)
     daily_bars_ttl: int = 3600
     intraday_bars_ttl: int = 300
-    pattern_cache_ttl: int = 300
-    dashboard_cache_ttl: int = 30
+    pattern_cache_ttl: int = 14400        # 4시간 (분석 결과 캐시 — 변경 전 5분으로 너무 짧았음)
+    scan_results_ttl: int = 43200         # 12시간 (스캔 결과 캐시 — 다음 장까지 유지)
+    dashboard_cache_ttl: int = 30         # 대시보드 폴링 간격 (변경 금지)
     intraday_storage_path: str = "data/intraday_cache.sqlite3"
     intraday_store_retention_days: int = 45
     intraday_recent_store_reuse_minutes: int = 2
