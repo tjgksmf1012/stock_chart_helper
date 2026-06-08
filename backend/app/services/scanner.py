@@ -1249,7 +1249,19 @@ async def run_scan(
             and len(previous_cached) > 0
             and previous_cached[0].get("data_source") == "placeholder_seed"
         )
-        cached = None if (force_refresh or _is_placeholder_cache) else previous_cached
+        # 캐시 종목 수가 너무 적으면 (이전 불완전 스캔 잔재) 재스캔
+        _MIN_VALID_SCAN_COUNT = 20
+        _is_insufficient_cache = (
+            isinstance(previous_cached, list)
+            and len(previous_cached) < _MIN_VALID_SCAN_COUNT
+            and not force_refresh  # force_refresh=True면 이미 재스캔 예정이므로 중복 체크 불필요
+        )
+        if _is_insufficient_cache:
+            logger.warning(
+                "Cached scan for %s has only %d items (< %d) — treating as incomplete, forcing rescan",
+                timeframe, len(previous_cached) if isinstance(previous_cached, list) else 0, _MIN_VALID_SCAN_COUNT,
+            )
+        cached = None if (force_refresh or _is_placeholder_cache or _is_insufficient_cache) else previous_cached
         if cached:
             _update_scan_status(
                 timeframe,

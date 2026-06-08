@@ -218,9 +218,15 @@ async def on_startup():
     fetcher = get_data_fetcher()
 
     async def _universe_then_scan() -> None:
-        """universe 빌드를 먼저 완료한 뒤 스타트업 스캔 시작 (race condition 방지)."""
+        """universe 빌드를 먼저 완료한 뒤 스타트업 스캔 시작 (race condition 방지).
+
+        항상 force_refresh=True로 실행:
+        - 이전 캐시가 6개처럼 너무 적거나 오래된 경우에도 새 스캔을 보장
+        - 배포 후 즉시 최신 데이터로 교체
+        - 스캔 중에는 이전 캐시(6개)가 그대로 보이다가, 완료 후 새 결과로 교체됨
+        """
         try:
-            await asyncio.wait_for(fetcher.get_universe(), timeout=60.0)
+            await asyncio.wait_for(fetcher.get_universe(), timeout=90.0)
             logger.info("Universe warmup complete — starting startup scan")
         except Exception as exc:
             logger.warning("Universe warmup failed (%s); scan will use fallback universe", exc)
@@ -229,7 +235,7 @@ async def on_startup():
                 timeframe="1d",
                 limit=settings.background_scan_limit,
                 batch_size=settings.background_scan_batch_size,
-                force_refresh=False,
+                force_refresh=True,   # 항상 새 스캔 (오래된 소규모 캐시 방치 방지)
                 source="startup",
             )
 

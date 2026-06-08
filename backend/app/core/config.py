@@ -23,20 +23,20 @@ class Settings(BaseSettings):
     openai_overlay_cache_ttl_seconds: int = 1800
     openai_overlay_refresh_after_seconds: int = 600
 
-    # Scan workload controls. Keep defaults modest so the web process remains
-    # responsive on small Render instances while scans run in the background.
-    startup_daily_scan_enabled: bool = False
-    background_scan_limit: int = 8
-    background_scan_batch_size: int = 1
-    manual_scan_limit: int = 8
-    manual_scan_batch_size: int = 1
-    scheduled_scan_limit: int = 12
-    scheduled_scan_batch_size: int = 1
-    scan_max_duration_seconds: int = 25
-    scheduled_scan_max_duration_seconds: int = 45
-    scan_symbol_timeout_seconds: int = 12
-    fdr_daily_timeout_seconds: int = 8
-    market_cap_timeout_seconds: int = 5
+    # Scan workload controls.
+    # ⚠️ 여기 기본값이 실제 Render 동작에 직접 영향. 환경변수 미설정 시에도 충분히 스캔되도록 높게 유지.
+    startup_daily_scan_enabled: bool = True       # 서버 재시작 시 항상 스캔
+    background_scan_limit: int = 200              # 시작 스캔 최대 종목 수 (환경변수 BACKGROUND_SCAN_LIMIT)
+    background_scan_batch_size: int = 5           # 시작 스캔 배치 크기
+    manual_scan_limit: int = 100                  # 수동 스캔 최대 종목 수
+    manual_scan_batch_size: int = 5
+    scheduled_scan_limit: int = 500               # 예약 스캔 최대 종목 수
+    scheduled_scan_batch_size: int = 5
+    scan_max_duration_seconds: int = 600          # 시작/수동 스캔 최대 시간 (10분)
+    scheduled_scan_max_duration_seconds: int = 1200  # 예약 스캔 최대 시간 (20분)
+    scan_symbol_timeout_seconds: int = 15         # 종목당 타임아웃
+    fdr_daily_timeout_seconds: int = 10
+    market_cap_timeout_seconds: int = 15
     enable_scheduled_intraday_warmup: bool = False
 
     # KIS API (optional, for real-time data)
