@@ -131,7 +131,9 @@ def _formation_quality(pattern: PatternResult) -> float:
     )
 
 
-def _logistic_calibrate(raw: float) -> float:
+def _shrink_toward_even(raw: float) -> float:
+    # Linear shrink of a probability toward 0.5 — conservative regularization so the
+    # blend never over-commits. (Not a logistic transform, despite the old name.)
     return 0.5 + (raw - 0.5) * 0.85
 
 
@@ -174,33 +176,6 @@ def _historical_edge(avg_mfe_pct: float, avg_mae_pct: float, avg_bars_to_outcome
     expected_bars = 18.0 if sample_size >= 20 else 10.0 if sample_size >= 10 else 6.0
     speed_score = max(0.0, min(1.0, 1 - (avg_bars_to_outcome / max(expected_bars, 1.0))))
     return max(0.0, min(1.0, 0.45 * rr_score + 0.30 * mfe_score + 0.25 * speed_score))
-
-
-def _summary(
-    pattern: PatternResult,
-    completion_proximity: float,
-    recency_score: float,
-    sample_text: str,
-    reward_risk_ratio: float,
-    target_distance_pct: float,
-    avg_mfe_pct: float,
-    avg_mae_pct: float,
-    avg_bars_to_outcome: float,
-    edge_score: float,
-    posterior_success_rate: float,
-    sample_reliability: float,
-    confidence: float,
-) -> str:
-    return (
-        f"{pattern.pattern_type} 패턴 / 교과서 유사도 {pattern.textbook_similarity:.0%} / "
-        f"상태 {pattern.state} / 완성 임박도 {completion_proximity:.0%} / "
-        f"신호 신선도 {recency_score:.0%} / 표본 {sample_text} / "
-        f"기대 손익비 {reward_risk_ratio:.2f} / 목표까지 여지 {target_distance_pct:.1%} / "
-        f"평균 MFE {avg_mfe_pct:.1%} / 평균 MAE {avg_mae_pct:.1%} / "
-        f"평균 결과 바 수 {avg_bars_to_outcome:.1f} / 백테스트 우위 {edge_score:.0%} / "
-        f"보정 승률 {posterior_success_rate:.0%} / 표본 신뢰도 {sample_reliability:.0%} / "
-        f"신뢰도 {confidence:.0%}"
-    )
 
 
 def _probability_cap(
@@ -417,8 +392,8 @@ def compute_probability(
         + 0.04 * edge_down
     )
 
-    p_up = _logistic_calibrate(p_up_raw)
-    p_down = _logistic_calibrate(p_down_raw)
+    p_up = _shrink_toward_even(p_up_raw)
+    p_down = _shrink_toward_even(p_down_raw)
     total_prob = max(p_up + p_down, 1e-9)
     p_up, p_down = p_up / total_prob, p_down / total_prob
 
