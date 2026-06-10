@@ -15,6 +15,7 @@ import {
 
 import type { AnalysisResult, OHLCVBar, PatternInfo, ProjectionScenario } from '@/types/api'
 import { computeSupportResistance } from '@/lib/supportResistance'
+import { computeTrendlines } from '@/lib/trendlines'
 
 interface CandleChartProps {
   bars: OHLCVBar[]
@@ -47,6 +48,8 @@ const OVERLAY_COLORS = {
   projectionRisk: '#f59e0b',
   autoSupport: 'rgba(16, 185, 129, 0.55)',
   autoResistance: 'rgba(244, 63, 94, 0.55)',
+  trendSupport: 'rgba(45, 212, 191, 0.85)',
+  trendResistance: 'rgba(251, 146, 60, 0.85)',
   ichimokuConversion: '#60a5fa',
   ichimokuBase: '#f59e0b',
   ichimokuSpanA: '#34d399',
@@ -82,6 +85,7 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
   })
   const cloudPointsRef = useRef<CloudPoint[]>([])
   const srPriceLinesRef = useRef<IPriceLine[]>([])
+  const trendSeriesRef = useRef<ISeriesApi<'Line'>[]>([])
   const redrawFrameRef = useRef<number | null>(null)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
 
@@ -350,6 +354,40 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
       srPriceLinesRef.current.push(line)
     }
 
+    // 자동 대각 추세선 (3터치 이상 검증된 라인만, 측면당 1개)
+    trendSeriesRef.current.forEach(series => {
+      try {
+        chartRef.current?.removeSeries(series)
+      } catch {
+        // ignore stale series
+      }
+    })
+    trendSeriesRef.current = []
+    const stepMs = isIntraday ? inferStepMs(sortedBars) : 0
+    const extendBars = 30
+    for (const trend of computeTrendlines(sortedBars)) {
+      const horizonValue = trend.endPrice + trend.slopePerBar * extendBars
+      const startTime: Time = isIntraday
+        ? (Math.floor(toTimestamp(sortedBars[trend.startIndex].date) / 1000) as Time)
+        : (trend.startIndex as Time)
+      const horizonTime: Time = isIntraday
+        ? (Math.floor((toTimestamp(sortedBars[sortedBars.length - 1].date) + stepMs * extendBars) / 1000) as Time)
+        : ((sortedBars.length - 1 + extendBars) as Time)
+      const series = chartRef.current!.addLineSeries({
+        color: trend.kind === 'support' ? OVERLAY_COLORS.trendSupport : OVERLAY_COLORS.trendResistance,
+        lineWidth: 1,
+        lineStyle: LineStyle.Solid,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false,
+      })
+      series.setData([
+        { time: startTime, value: trend.startPrice },
+        { time: horizonTime, value: horizonValue },
+      ])
+      trendSeriesRef.current.push(series)
+    }
+
     chartRef.current?.timeScale().fitContent()
     scheduleCloudDraw()
   }, [bars])
@@ -569,6 +607,12 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
           </span>
           <span className="flex items-center gap-1">
             <span className="inline-block h-px w-3" style={{ borderTop: `1px dashed ${OVERLAY_COLORS.autoResistance}` }} /> 자동 저항선
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-px w-3" style={{ borderTop: `1px solid ${OVERLAY_COLORS.trendSupport}` }} /> 추세 지지선
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-px w-3" style={{ borderTop: `1px solid ${OVERLAY_COLORS.trendResistance}` }} /> 추세 저항선
           </span>
           {chartPattern && (
             <>
