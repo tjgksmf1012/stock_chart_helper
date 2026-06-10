@@ -29,7 +29,11 @@ logger = logging.getLogger(__name__)
 
 _CACHE_PREFIX = "calibration:offline:v1"
 _CACHE_TTL = 7 * 86400  # rebuilt weekly at most; refresh=true forces it
-_OFFLINE_MAX_SYMBOLS = 10  # keep background builds light on the free instance
+_OFFLINE_MAX_SYMBOLS = 8  # keep background builds light on the free instance
+# Real sleep (not just a loop tick) between windows so /health and user requests
+# get CPU time while the build crunches pandas on the tiny free instance.
+_WINDOW_BREATH_SECONDS = 0.05
+_SYMBOL_BREATH_SECONDS = 0.5
 
 _build_tasks: dict[str, asyncio.Task] = {}
 
@@ -127,7 +131,7 @@ async def collect_symbol_pairs(
         pairs.append((float(predicted), bool(won)))
 
         # keep the event loop responsive during long background builds
-        await asyncio.sleep(0)
+        await asyncio.sleep(_WINDOW_BREATH_SECONDS)
 
     return pairs, {"windows": windows, "signals": signals, "unresolved": unresolved}
 
@@ -166,7 +170,7 @@ async def run_offline_calibration(
             totals["windows"] += meta["windows"]
             totals["signals"] += meta["signals"]
             totals["unresolved"] += meta["unresolved"]
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(_SYMBOL_BREATH_SECONDS)
         except Exception as exc:
             logger.warning("offline calibration failed for %s (%s): %s", code, timeframe, exc)
 

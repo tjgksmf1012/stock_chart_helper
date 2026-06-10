@@ -35,6 +35,7 @@ interface IchimokuData {
 }
 
 const OVERLAY_COLORS = {
+  patternShape: '#a78bfa',
   neckline: '#f59e0b',
   target: '#34d399',
   invalidation: '#f87171',
@@ -407,7 +408,66 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
     }
 
     if (best) {
-      if (best.neckline) addHorizontalLine(best.neckline, OVERLAY_COLORS.neckline, LineStyle.Dashed)
+      const timedPoints = best.key_points
+        .filter((point): point is { dt: string; price: number; type: string } => Boolean(point.dt))
+        .sort((left, right) => compareBarDates(left.dt, right.dt))
+
+      // 패턴 모양 라인 (Finviz 스타일): 키포인트를 시간순으로 연결해 W/M·숄더 형태를
+      // 차트 위에 직접 그린다. H&S의 좌/우 넥라인 포인트는 별도의 경사 넥라인으로 그린다.
+      const necklineAnchors = timedPoints.filter(point => point.type.endsWith('_neckline'))
+      const shapePoints = timedPoints.filter(point => !point.type.endsWith('_neckline'))
+
+      const dedupeByTime = (points: typeof timedPoints) => {
+        const out: { time: Time; value: number }[] = []
+        for (const point of points) {
+          const time = toTime(point.dt)
+          if (out.length > 0 && Number(out[out.length - 1].time) >= Number(time)) continue
+          out.push({ time, value: point.price })
+        }
+        return out
+      }
+
+      const shapeData = dedupeByTime(shapePoints)
+      if (shapeData.length >= 2) {
+        const shapeSeries = chart.addLineSeries({
+          color: OVERLAY_COLORS.patternShape,
+          lineWidth: 2,
+          lineStyle: LineStyle.Solid,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false,
+        })
+        shapeSeries.setData(shapeData)
+        overlayRef.current.push(shapeSeries)
+      }
+
+      // 경사 넥라인: 좌/우 넥라인 포인트를 잇고 미래(horizon)까지 연장.
+      // 이 경우 수평 넥라인은 중복이라 생략한다.
+      const necklineData = dedupeByTime(necklineAnchors)
+      const hasSlopedNeckline = necklineData.length >= 2
+      if (hasSlopedNeckline) {
+        const first = necklineData[0]
+        const last = necklineData[necklineData.length - 1]
+        const t1 = Number(first.time)
+        const t2 = Number(last.time)
+        const horizon = Number(horizonTime)
+        const slope = (last.value - first.value) / Math.max(t2 - t1, 1)
+        const necklineSeries = chart.addLineSeries({
+          color: OVERLAY_COLORS.neckline,
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          priceLineVisible: false,
+          lastValueVisible: true,
+          crosshairMarkerVisible: false,
+        })
+        necklineSeries.setData([
+          { time: first.time, value: first.value },
+          { time: horizon as Time, value: last.value + slope * (horizon - t2) },
+        ])
+        overlayRef.current.push(necklineSeries)
+      }
+
+      if (best.neckline && !hasSlopedNeckline) addHorizontalLine(best.neckline, OVERLAY_COLORS.neckline, LineStyle.Dashed)
       if (best.target_level) addHorizontalLine(best.target_level, OVERLAY_COLORS.target, LineStyle.Dotted)
       if (best.invalidation_level) addHorizontalLine(best.invalidation_level, OVERLAY_COLORS.invalidation, LineStyle.Dotted)
 
