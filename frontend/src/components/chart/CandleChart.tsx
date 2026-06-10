@@ -6,6 +6,7 @@ import {
   type CandlestickData,
   type HistogramData,
   type IChartApi,
+  type IPriceLine,
   type ISeriesApi,
   type LineData,
   type SeriesMarker,
@@ -13,6 +14,7 @@ import {
 } from 'lightweight-charts'
 
 import type { AnalysisResult, OHLCVBar, PatternInfo, ProjectionScenario } from '@/types/api'
+import { computeSupportResistance } from '@/lib/supportResistance'
 
 interface CandleChartProps {
   bars: OHLCVBar[]
@@ -43,6 +45,8 @@ const OVERLAY_COLORS = {
   projectionBear: '#fb7185',
   projectionNeutral: '#94a3b8',
   projectionRisk: '#f59e0b',
+  autoSupport: 'rgba(16, 185, 129, 0.55)',
+  autoResistance: 'rgba(244, 63, 94, 0.55)',
   ichimokuConversion: '#60a5fa',
   ichimokuBase: '#f59e0b',
   ichimokuSpanA: '#34d399',
@@ -77,6 +81,7 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
     spanB: null,
   })
   const cloudPointsRef = useRef<CloudPoint[]>([])
+  const srPriceLinesRef = useRef<IPriceLine[]>([])
   const redrawFrameRef = useRef<number | null>(null)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
 
@@ -323,6 +328,28 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
     ichimokuRef.current.spanB?.setData(ichimoku.spanB)
     cloudPointsRef.current = ichimoku.cloud
 
+    // 자동 지지/저항선 (TrendSpider 스타일): 스윙 고점/저점 군집 기반
+    srPriceLinesRef.current.forEach(line => {
+      try {
+        candleRef.current?.removePriceLine(line)
+      } catch {
+        // ignore stale price lines
+      }
+    })
+    srPriceLinesRef.current = []
+    for (const level of computeSupportResistance(sortedBars)) {
+      const isSupport = level.kind === 'support'
+      const line = candleRef.current.createPriceLine({
+        price: level.price,
+        color: isSupport ? OVERLAY_COLORS.autoSupport : OVERLAY_COLORS.autoResistance,
+        lineWidth: 1,
+        lineStyle: LineStyle.LargeDashed,
+        axisLabelVisible: false,
+        title: `${isSupport ? '지지' : '저항'}${level.touches > 1 ? ` ×${level.touches}` : ''}`,
+      })
+      srPriceLinesRef.current.push(line)
+    }
+
     chartRef.current?.timeScale().fitContent()
     scheduleCloudDraw()
   }, [bars])
@@ -536,6 +563,12 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
           </span>
           <span className="flex items-center gap-1">
             <span className="inline-block h-2.5 w-3 rounded-sm bg-red-400/20 ring-1 ring-red-400/30" /> 저항 구름
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-px w-3" style={{ borderTop: `1px dashed ${OVERLAY_COLORS.autoSupport}` }} /> 자동 지지선
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-px w-3" style={{ borderTop: `1px dashed ${OVERLAY_COLORS.autoResistance}` }} /> 자동 저항선
           </span>
           {chartPattern && (
             <>
