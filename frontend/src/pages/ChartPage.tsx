@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 
 import { AnalysisPanel } from '@/components/chart/AnalysisPanel'
+import { CandidateRail } from '@/components/chart/CandidateRail'
 import { CandleChart } from '@/components/chart/CandleChart'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
@@ -288,7 +289,12 @@ export default function ChartPage() {
       )}
 
       {symbol && (analysis || hasBars || isChartLoading || isChartError) && (
-        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <section className="grid gap-4 xl:grid-cols-[228px_minmax(0,1fr)_360px]">
+          {/* 좌측 후보 레일 (AlphaSquare 스타일) — xl 미만에서는 숨김 */}
+          <aside className="hidden xl:block">
+            <CandidateRail activeSymbol={symbol} timeframe={timeframe} />
+          </aside>
+
           <Card className="space-y-3 overflow-hidden">
             <div className="flex items-start justify-between gap-3 border-b border-border/70 px-4 py-3">
               <div>
