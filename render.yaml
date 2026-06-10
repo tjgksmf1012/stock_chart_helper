@@ -1,3 +1,6 @@
+# ⚠️ NOTE: 이 서비스는 Render 대시보드에서 수동 생성됐기 때문에 (Blueprint 아님)
+# 이 파일의 envVars는 실제 배포에 적용되지 않습니다. 환경 변수는 Render 대시보드
+# → Environment 에서 직접 관리하세요. 이 파일은 권장 설정의 문서로만 사용됩니다.
 services:
   - type: web
     name: stock-chart-helper-api
