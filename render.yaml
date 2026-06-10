@@ -20,9 +20,9 @@ services:
       - key: STARTUP_DAILY_SCAN_ENABLED
         value: "true"
 
-      # 스케줄 스캔 설정 (전체 종목 커버)
+      # 스케줄 스캔 설정 (free tier 512MB 고려 — OOM/타임아웃·503 방지 위해 보수적으로)
       - key: SCHEDULED_SCAN_LIMIT
-        value: "500"
+        value: "200"
       - key: SCHEDULED_SCAN_BATCH_SIZE
         value: "5"
       - key: SCHEDULED_SCAN_MAX_DURATION_SECONDS
@@ -30,11 +30,11 @@ services:
 
       # 수동/백그라운드 스캔 설정
       - key: MANUAL_SCAN_LIMIT
-        value: "200"
+        value: "100"
       - key: MANUAL_SCAN_BATCH_SIZE
         value: "5"
       - key: BACKGROUND_SCAN_LIMIT
-        value: "100"
+        value: "50"
       - key: BACKGROUND_SCAN_BATCH_SIZE
         value: "5"
       - key: SCAN_MAX_DURATION_SECONDS
