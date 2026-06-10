@@ -65,4 +65,23 @@ describe('calcPosition', () => {
     expect(calcPosition(0, 0.01, 10_000, 9_500)).toBeNull() // no account
     expect(calcPosition(10_000_000, 0.01, 10_000, 10_000)).toBeNull() // zero stop distance
   })
+
+  it('caps shares at what the account can actually buy when the stop is tight', () => {
+    // stop distance 10원 → uncapped risk-sizing would be 10,000 shares = 1억원,
+    // 10x the account. Must cap at floor(10M / 10,000) = 1,000 shares (100%).
+    const p = calcPosition(10_000_000, 0.01, 10_000, 9_990, 11_000)
+    expect(p).not.toBeNull()
+    expect(p!.shares).toBe(1_000)
+    expect(p!.positionValue).toBeLessThanOrEqual(10_000_000)
+    expect(p!.positionPct).toBeCloseTo(100)
+    expect(p!.cashCapped).toBe(true)
+  })
+
+  it('does not flag cashCapped on normal sizing', () => {
+    expect(calcPosition(10_000_000, 0.01, 10_000, 9_500, 11_000)!.cashCapped).toBe(false)
+  })
+
+  it('returns null when even one share is unaffordable', () => {
+    expect(calcPosition(5_000, 0.01, 10_000, 9_990)).toBeNull()
+  })
 })

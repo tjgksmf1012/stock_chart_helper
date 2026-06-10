@@ -54,6 +54,7 @@ export interface PositionCalc {
   positionPct: number      // 계좌 대비 비중 %
   rewardRisk: number       // R:R 비율 (0=목표가 없음)
   rewardRiskOk: boolean    // 1:2 이상 여부
+  cashCapped: boolean      // 현금 한도로 수량이 잘렸는지 (실제 리스크 < 설정 리스크)
 }
 
 /** 포지션 크기 계산 */
@@ -69,7 +70,13 @@ export function calcPosition(
   if (stopDistance <= 0) return null
 
   const maxLossKrw = accountSize * riskPct
-  const shares = Math.floor(maxLossKrw / stopDistance)
+  let shares = Math.floor(maxLossKrw / stopDistance)
+  if (shares <= 0) return null
+
+  // 손절이 타이트하면 리스크 기준 수량이 계좌로 살 수 있는 양을 넘을 수 있음 — 현금 한도로 캡
+  const maxAffordable = Math.floor(accountSize / currentPrice)
+  const cashCapped = shares > maxAffordable
+  if (cashCapped) shares = maxAffordable
   if (shares <= 0) return null
 
   const positionValue = shares * currentPrice
@@ -91,5 +98,6 @@ export function calcPosition(
     positionPct,
     rewardRisk,
     rewardRiskOk: rewardRisk >= 2.0,
+    cashCapped,
   }
 }

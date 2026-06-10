@@ -160,6 +160,13 @@ export function PositionSizerCard({ analysis, bars, currentPrice, onOpenSettings
                 />
               </div>
 
+              {calc.cashCapped && (
+                <div className="rounded-lg border border-amber-400/20 bg-amber-400/6 p-2 text-xs font-medium text-amber-400">
+                  손절이 타이트해 리스크 기준 수량이 계좌 한도를 넘어, 현금으로 살 수 있는 최대 수량으로 제한했습니다.
+                  실제 손절 시 손실은 설정 리스크보다 작습니다.
+                </div>
+              )}
+
               {calc.rewardRisk > 0 && (
                 <div className={cn(
                   'rounded-lg border p-2 text-xs font-medium',
