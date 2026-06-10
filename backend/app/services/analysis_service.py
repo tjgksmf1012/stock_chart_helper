@@ -428,19 +428,23 @@ def _completion_proximity(pattern: PatternResult, current_close: float) -> float
     return max(0.0, min(1.0, max(progress, baseline)))
 
 
+# 타임프레임별 (fresh, okay, stale) 경과 바 수 경계.
+# stale 경계는 _max_pattern_age_bars의 하드 컷오프로도 사용된다.
+_RECENCY_THRESHOLDS: dict[str, tuple[int, int, int]] = {
+    "1mo": (1, 3, 6),
+    "1wk": (2, 6, 12),
+    "1d": (5, 20, 45),
+    "60m": (6, 24, 48),
+    "30m": (8, 32, 72),
+    "15m": (10, 40, 96),
+    "1m": (15, 60, 180),
+}
+
+
 def _recency_score(timeframe: str, bars_since_signal: int) -> float:
     if bars_since_signal < 0:
         return 0.0
-    thresholds = {
-        "1mo": (1, 3, 6),
-        "1wk": (2, 6, 12),
-        "1d": (5, 20, 45),
-        "60m": (6, 24, 48),
-        "30m": (8, 32, 72),
-        "15m": (10, 40, 96),
-        "1m": (15, 60, 180),
-    }
-    fresh, okay, stale = thresholds.get(timeframe, (5, 20, 45))
+    fresh, okay, stale = _RECENCY_THRESHOLDS.get(timeframe, (5, 20, 45))
     if bars_since_signal <= fresh:
         return 1.0
     if bars_since_signal <= okay:
@@ -448,6 +452,17 @@ def _recency_score(timeframe: str, bars_since_signal: int) -> float:
     if bars_since_signal <= stale:
         return 0.45
     return 0.15
+
+
+def _max_pattern_age_bars(timeframe: str) -> int:
+    """패턴의 마지막 구조 포인트 이후 허용되는 최대 경과 바 수.
+
+    이 한도를 넘긴 패턴은 현재 셋업이 아니라 과거 기록이므로 분석 결과에서
+    제외한다. 신선도 감점만으로는 다른 패턴이 없을 때 수개월 전 패턴이
+    여전히 1순위로 차트·대시보드에 노출되는 문제가 있다.
+    """
+    _, _, stale = _RECENCY_THRESHOLDS.get(timeframe, (5, 20, 45))
+    return stale
 
 
 def _average_turnover_billion(df: pd.DataFrame) -> float:
@@ -3201,12 +3216,19 @@ async def analyze_symbol_dataframe(
         return build_no_signal_snapshot(symbol, timeframe, df)
 
     patterns_with_meta: list[tuple[PatternResult, float, float, int, str | None, str | None]] = []
+    max_age_bars = _max_pattern_age_bars(timeframe)
     for pattern in raw_patterns:
         refreshed, target_hit_at, invalidated_at = _refresh_pattern_state(df, pattern, current_close, current_high, current_low)
         bars_since_signal = _bars_since_pattern(df, refreshed)
+        # 마지막 구조 포인트가 stale 한도를 넘긴 패턴은 과거 기록 — 결과에서 제외
+        if bars_since_signal > max_age_bars:
+            continue
         recency = _recency_score(timeframe, bars_since_signal)
         completion = _completion_proximity(refreshed, current_close)
         patterns_with_meta.append((refreshed, completion, recency, bars_since_signal, target_hit_at, invalidated_at))
+
+    if not patterns_with_meta:
+        return build_no_signal_snapshot(symbol, timeframe, df)
 
     patterns_with_meta.sort(key=_primary_pattern_rank_score, reverse=True)
     best_pattern, best_completion, best_recency, bars_since_signal, best_target_hit_at, best_invalidated_at = patterns_with_meta[0]

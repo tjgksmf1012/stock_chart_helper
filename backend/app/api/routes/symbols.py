@@ -165,7 +165,7 @@ async def get_analysis(
     timeframe: str = Query(default=DEFAULT_TIMEFRAME),
 ) -> AnalysisResult:
     timeframe = _validate_timeframe(timeframe)
-    cache_key = f"analysis:v9:{symbol}:{timeframe}"
+    cache_key = f"analysis:v10:{symbol}:{timeframe}"
     cached = await cache_get(cache_key)
     if cached:
         return AnalysisResult(**cached)
@@ -324,7 +324,7 @@ async def get_money_flow_endpoint(
 
     # 분석 캐시에서 패턴 타입 참조 (있으면 정렬 판정에 사용)
     pattern_type: str | None = None
-    cached_analysis = await cache_get(f"analysis:v9:{symbol}:{timeframe}")
+    cached_analysis = await cache_get(f"analysis:v10:{symbol}:{timeframe}")
     if isinstance(cached_analysis, dict) and cached_analysis.get("patterns"):
         pats = cached_analysis["patterns"]
         if pats and isinstance(pats[0], dict):
