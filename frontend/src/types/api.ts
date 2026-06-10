@@ -849,6 +849,13 @@ export interface CalibrationReport {
   bins: CalibrationBin[]
 }
 
+export interface OfflineCalibrationResponse extends Partial<CalibrationReport> {
+  timeframe: string
+  status: 'ready' | 'building'
+  generated_at?: string
+  simulated?: { symbols: number; windows: number; signals: number; unresolved: number }
+}
+
 export interface OutcomeEvaluationItem {
   id: number
   symbol_code: string

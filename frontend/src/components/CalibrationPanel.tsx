@@ -1,22 +1,40 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Activity, CheckCircle2, TriangleAlert } from 'lucide-react'
+import { Activity, CheckCircle2, FlaskConical, History, TriangleAlert } from 'lucide-react'
 
 import { Card } from '@/components/ui/Card'
 import { QueryError } from '@/components/ui/QueryError'
 import { outcomesApi } from '@/lib/api'
 import { cn, fmtPct } from '@/lib/utils'
+import type { CalibrationReport, OfflineCalibrationResponse } from '@/types/api'
+
+type CalibrationMode = 'live' | 'offline'
 
 /**
  * Reliability of the shown probabilities: for each predicted-probability bin we
- * compare the model's predicted win rate against the *realized* win rate from
- * resolved signals. This is the feedback loop that proves whether "상승 확률 65%"
- * actually means 65%.
+ * compare the model's predicted win rate against the *realized* win rate.
+ * 실측 기록 = resolved saved signals; 백테스트 검증 = historical replay through
+ * the live pipeline, so it works before any live signals have resolved.
  */
 export function CalibrationPanel({ timeframe }: { timeframe?: string }) {
-  const { data, isLoading, isError, refetch } = useQuery({
+  const [mode, setMode] = useState<CalibrationMode>('live')
+
+  const liveQ = useQuery({
     queryKey: ['outcomes', 'calibration', timeframe ?? 'all'],
     queryFn: () => outcomesApi.calibration(timeframe),
     staleTime: 60_000,
+    enabled: mode === 'live',
+  })
+
+  const offlineQ = useQuery({
+    queryKey: ['outcomes', 'calibration-offline', timeframe ?? '1d'],
+    queryFn: () => outcomesApi.offlineCalibration(timeframe ?? '1d'),
+    staleTime: 60_000,
+    enabled: mode === 'offline',
+    refetchInterval: query => {
+      const data = query.state.data as OfflineCalibrationResponse | undefined
+      return data?.status === 'building' ? 5_000 : false
+    },
   })
 
   return (
@@ -25,23 +43,65 @@ export function CalibrationPanel({ timeframe }: { timeframe?: string }) {
         <div>
           <div className="text-sm font-semibold">확률 신뢰도 · 캘리브레이션</div>
           <p className="text-xs text-muted-foreground">
-            실제로 결과가 확정된 신호에서, 예측 확률 구간별로 모델이 말한 승률과 실제 승률이 얼마나 일치하는지 비교합니다.
+            예측 확률 구간별로 모델이 말한 승률과 실제 승률이 얼마나 일치하는지 비교합니다.
           </p>
+        </div>
+        <div className="flex gap-1 rounded-lg border border-border bg-background/60 p-1">
+          <ModeButton active={mode === 'live'} onClick={() => setMode('live')} icon={<History size={12} />} label="실측 기록" />
+          <ModeButton active={mode === 'offline'} onClick={() => setMode('offline')} icon={<FlaskConical size={12} />} label="백테스트 검증" />
         </div>
       </div>
 
-      {isLoading ? (
-        <div className="py-8 text-center text-xs text-muted-foreground">신뢰도 리포트를 불러오는 중입니다...</div>
-      ) : isError || !data ? (
-        <QueryError message="캘리브레이션 리포트를 불러오지 못했습니다." onRetry={() => refetch()} />
+      {mode === 'live' ? (
+        liveQ.isLoading ? (
+          <LoadingNote text="신뢰도 리포트를 불러오는 중입니다..." />
+        ) : liveQ.isError || !liveQ.data ? (
+          <QueryError message="캘리브레이션 리포트를 불러오지 못했습니다." onRetry={() => liveQ.refetch()} />
+        ) : (
+          <CalibrationBody data={liveQ.data} />
+        )
+      ) : offlineQ.isLoading ? (
+        <LoadingNote text="백테스트 검증 결과를 불러오는 중입니다..." />
+      ) : offlineQ.isError || !offlineQ.data ? (
+        <QueryError message="백테스트 검증 리포트를 불러오지 못했습니다." onRetry={() => offlineQ.refetch()} />
+      ) : offlineQ.data.status === 'building' ? (
+        <LoadingNote text="과거 구간을 실제 분석 파이프라인으로 재생하며 검증 중입니다. 몇 분 걸릴 수 있고, 끝나면 자동으로 표시됩니다." />
       ) : (
-        <CalibrationBody data={data} />
+        <div className="space-y-3">
+          <CalibrationBody data={offlineQ.data as CalibrationReport} />
+          {offlineQ.data.simulated && (
+            <p className="text-[11px] text-muted-foreground">
+              백테스트 리플레이: 종목 {offlineQ.data.simulated.symbols}개 · 구간 {offlineQ.data.simulated.windows}개 ·
+              신호 {offlineQ.data.simulated.signals}건 (미해결 {offlineQ.data.simulated.unresolved}건 제외)
+              {offlineQ.data.generated_at && ` · 생성 ${offlineQ.data.generated_at.slice(0, 16).replace('T', ' ')}`}
+            </p>
+          )}
+        </div>
       )}
     </Card>
   )
 }
 
-function CalibrationBody({ data }: { data: import('@/types/api').CalibrationReport }) {
+function ModeButton({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        'flex items-center gap-1 rounded-md px-2.5 py-1 text-xs transition-colors',
+        active ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
+      )}
+    >
+      {icon}
+      {label}
+    </button>
+  )
+}
+
+function LoadingNote({ text }: { text: string }) {
+  return <div className="py-8 text-center text-xs text-muted-foreground">{text}</div>
+}
+
+function CalibrationBody({ data }: { data: CalibrationReport }) {
   const reliability = data.reliability
   const isGood = reliability.startsWith('양호')
   const isWarn = reliability.includes('과신') || reliability.includes('과소')

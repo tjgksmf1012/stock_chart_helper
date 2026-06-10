@@ -529,6 +529,16 @@ async def calibration_report(timeframe: str | None = None, bin_count: int = 10) 
     }
 
 
+@router.get("/calibration/offline")
+async def offline_calibration_report(timeframe: str = "1d", refresh: bool = False) -> dict:
+    """Backtest-replay calibration: validates the shown probabilities against
+    history without waiting for live signals to resolve. Cached; a cache miss
+    kicks off a background build and returns {"status": "building"}."""
+    from ...services.offline_calibration import get_offline_calibration
+
+    return await get_offline_calibration(timeframe, refresh=refresh)
+
+
 @router.patch("/{outcome_id}")
 async def update_outcome(outcome_id: int, update: OutcomeUpdate) -> dict:
     """Mark a previously-recorded signal as won/lost/stopped/cancelled."""

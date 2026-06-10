@@ -3,7 +3,7 @@ import type {
   SymbolInfo, OHLCVBar, AnalysisResult, PriceInfo,
   AiRecommendationItem, AiRecommendationResponse, DashboardOverviewResponse, DashboardResponse, PatternLibraryEntry, ScreenerRequest, DashboardItem, ReferenceCaseResponse, ScanStatusResponse, Timeframe,
   IntradayCandidateWarmupRequest, IntradayWarmupJobStatus, IntradayWarmupRequest, IntradayWarmupResponse, KisPrimeStatus, PatternStatsResponse, RuntimeStatusResponse, ScanHistoryRunSummary, ScanQualityReportResponse,
-  WatchlistItem, OutcomeEvaluationResponse, OutcomeRecord, OutcomesSummary, OutcomeStatus, CalibrationReport,
+  WatchlistItem, OutcomeEvaluationResponse, OutcomeRecord, OutcomesSummary, OutcomeStatus, CalibrationReport, OfflineCalibrationResponse,
   MarketRegimeResponse, SectorHeatmapResponse, MoneyFlowData,
 } from '@/types/api'
 
@@ -340,6 +340,10 @@ export const outcomesApi = {
   calibration: (timeframe?: string, binCount = 10) =>
     api
       .get<CalibrationReport>('/outcomes/calibration', { params: { timeframe, bin_count: binCount } })
+      .then(r => r.data),
+  offlineCalibration: (timeframe = '1d', refresh = false) =>
+    api
+      .get<OfflineCalibrationResponse>('/outcomes/calibration/offline', { params: { timeframe, refresh } })
       .then(r => r.data),
 }
 
