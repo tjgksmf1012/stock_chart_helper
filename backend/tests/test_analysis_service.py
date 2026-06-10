@@ -80,5 +80,9 @@ async def test_analyze_symbol_dataframe_characterization(monkeypatch):
     assert result.p_up == 0.56
     assert result.p_down == 0.44
     assert result.confidence == 0.662
-    assert result.entry_score == 0.326
-    assert result.trade_readiness_score == 0.48
+    # 0.326 -> 0.334 after pattern_engine stopped demoting "confirmed" patterns to
+    # "armed"/"forming" on low secondary fits (stale-pattern fix). Intentional.
+    assert result.entry_score == 0.334
+    # 0.48 -> 0.42: same pattern-demotion removal keeps the setup "confirmed" with
+    # weak secondary fits, which trips the confirmed+low-quality risk penalty.
+    assert result.trade_readiness_score == 0.42
