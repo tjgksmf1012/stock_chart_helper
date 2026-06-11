@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -675,6 +675,107 @@ async def get_scan_status(timeframe: str = DEFAULT_TIMEFRAME) -> dict[str, Any]:
     return status
 
 
+# 스캔 로테이션: 시총 상위 고정 헤드는 매번 스캔하고, 나머지 유니버스는 커서를
+# 옮겨가며 순환한다 — limit이 작아도(free tier 메모리 제약) 수일에 걸쳐 전 종목 커버.
+_ROTATION_FIXED_HEAD = 50
+_ROTATION_CURSOR_KEY = "scan:universe-rotation-cursor:v1"
+
+# 병합 결과 상한 — Upstash 요청 크기(1MB) 보호 (행당 ~3KB 가정)
+_MERGED_RESULTS_MAX = 250
+
+
+async def _rotate_scan_slice(
+    ordered: list[tuple[str, str, str]], limit: int
+) -> list[tuple[str, str, str]]:
+    """정렬된 유니버스에서 이번 스캔 대상 슬라이스를 고른다 (고정 헤드 + 회전부)."""
+    if limit <= 0:
+        return []
+    if len(ordered) <= limit:
+        return list(ordered)
+
+    head_count = min(_ROTATION_FIXED_HEAD, max(0, limit // 2))
+    fixed = ordered[:head_count]
+    tail = ordered[head_count:]
+    rotation_size = limit - head_count
+
+    cursor = 0
+    try:
+        raw = await cache_get(_ROTATION_CURSOR_KEY)
+        if raw is not None:
+            cursor = int(raw) % len(tail)
+    except (TypeError, ValueError):
+        cursor = 0
+
+    rotating = (tail[cursor:] + tail[:cursor])[:rotation_size]
+    try:
+        await cache_set(_ROTATION_CURSOR_KEY, (cursor + rotation_size) % len(tail), ttl=7 * 24 * 3600)
+    except Exception:
+        pass
+    return fixed + rotating
+
+
+def _scan_row_sort_key(row: dict[str, Any]) -> tuple:
+    return (
+        0 if row.get("no_signal_flag") else 1,
+        row.get("trade_readiness_score", 0),
+        row.get("entry_window_score", 0),
+        row.get("freshness_score", 0),
+        row.get("reentry_score", 0),
+        row.get("active_setup_score", 0),
+        row.get("composite_score", 0),
+        row.get("historical_edge_score", 0),
+        row.get("sample_reliability", 0),
+        row.get("entry_score", 0),
+        row.get("data_quality", 0),
+        row.get("liquidity_score", 0),
+        row.get("textbook_similarity", 0),
+    )
+
+
+def _merge_scan_results(
+    previous: Any, fresh: list[dict[str, Any]], *, max_age_hours: int = 48
+) -> list[dict[str, Any]]:
+    """로테이션 스캔용 병합: 이번 결과 + 이전 스캔의 (이번에 안 돈) 신호 종목.
+
+    - 같은 코드는 fresh 우선
+    - 이전 행은 신호 있는 행만, scanned_at이 max_age_hours 이내인 것만 유지
+      (no_signal 행은 다음 로테이션에서 다시 돌게 두고 캐시 크기를 아낀다)
+    - 플레이스홀더 행 제거, 전체 상한 _MERGED_RESULTS_MAX
+    """
+    now = _utc_now_iso()
+    for row in fresh:
+        row.setdefault("scanned_at", now)
+
+    if not isinstance(previous, list):
+        merged = list(fresh)
+    else:
+        fresh_codes = {str(row.get("code")) for row in fresh}
+        cutoff = datetime.utcnow() - timedelta(hours=max_age_hours)
+        carried: list[dict[str, Any]] = []
+        for row in previous:
+            if not isinstance(row, dict):
+                continue
+            if str(row.get("code")) in fresh_codes:
+                continue
+            if row.get("data_source") == "placeholder_seed":
+                continue
+            if row.get("no_signal_flag", True):
+                continue
+            ts_raw = row.get("scanned_at")
+            if not ts_raw:
+                continue
+            try:
+                if datetime.fromisoformat(str(ts_raw)) < cutoff:
+                    continue
+            except ValueError:
+                continue
+            carried.append(row)
+        merged = list(fresh) + carried
+
+    merged.sort(key=_scan_row_sort_key, reverse=True)
+    return merged[:_MERGED_RESULTS_MAX]
+
+
 async def _fetch_universe_codes(limit: int = 100) -> tuple[list[tuple[str, str, str]], str]:
     fetcher = get_data_fetcher()
     universe = await fetcher.get_universe()
@@ -740,7 +841,8 @@ async def _fetch_universe_codes(limit: int = 100) -> tuple[list[tuple[str, str, 
                 )
 
             rows.sort(key=lambda item: item[3], reverse=True)
-            result = [(code, name, market) for code, name, market, _, _ in rows[:limit]]
+            ordered_full = [(code, name, market) for code, name, market, _, _ in rows]
+            result = await _rotate_scan_slice(ordered_full, limit)
             result, watchlist_included = _merge_priority_rows(result, watchlist_rows, limit=limit)
             logger.info(
                 "Universe loaded: %d stocks via pykrx market-cap (limit=%d, watchlist_included=%d)",
@@ -753,7 +855,8 @@ async def _fetch_universe_codes(limit: int = 100) -> tuple[list[tuple[str, str, 
         logger.warning("Bulk market-cap universe fetch failed: %s", exc)
 
     if universe is not None and not universe.empty:
-        result = _fallback_universe_rows(universe, limit)
+        ordered_full = _fallback_universe_rows(universe, len(universe) + len(FALLBACK_CODES))
+        result = await _rotate_scan_slice(ordered_full, limit)
         result, watchlist_included = _merge_priority_rows(result, watchlist_rows, limit=limit)
         logger.warning(
             "Universe fallback: using broad FDR/pykrx universe (%d stocks, limit=%d). "
@@ -1353,30 +1456,17 @@ async def run_scan(
                         results.append(item)
                 await asyncio.sleep(0.12 if timeframe in {"1m", "15m", "30m", "60m"} else 0.08)
 
-            results.sort(
-                key=lambda row: (
-                        0 if row["no_signal_flag"] else 1,
-                        row.get("trade_readiness_score", 0),
-                        row.get("entry_window_score", 0),
-                        row.get("freshness_score", 0),
-                        row.get("reentry_score", 0),
-                        row.get("active_setup_score", 0),
-                    row.get("composite_score", 0),
-                    row.get("historical_edge_score", 0),
-                    row.get("sample_reliability", 0),
-                    row.get("entry_score", 0),
-                    row.get("data_quality", 0),
-                    row.get("liquidity_score", 0),
-                    row.get("textbook_similarity", 0),
-                ),
-                reverse=True,
-            )
+            results.sort(key=_scan_row_sort_key, reverse=True)
             # 일봉 스캔: 상위 후보에 수급 정렬 보강 (대시보드 랭킹에서 보정치 사용)
             if timeframe == "1d":
                 try:
                     await _enrich_money_flow_alignment(results)
                 except Exception as enrich_exc:
                     logger.warning("Money flow enrichment failed for %s: %s", timeframe, enrich_exc)
+            # 로테이션 스캔: 이번에 안 돈 종목의 최근 신호를 이전 결과에서 이월
+            fresh_results = results
+            if timeframe in {"1d", "1wk", "1mo"}:
+                results = _merge_scan_results(previous_cached, fresh_results)
             await cache_set(cache_key, results, ttl=settings.scan_results_ttl)
             finished_at = datetime.utcnow()
             reference_day, reference_reason = resolve_daily_reference_date()
@@ -1400,7 +1490,7 @@ async def run_scan(
                     finished_at=finished_at,
                     duration_ms=int((finished_at - started_at).total_seconds() * 1000),
                     last_error=None,
-                    results=results,
+                    results=fresh_results,  # 이력에는 이번 런에서 실제 스캔한 행만 기록
                 )
             except Exception as history_exc:
                 logger.warning("Scan history persistence failed for %s: %s", timeframe, history_exc)
