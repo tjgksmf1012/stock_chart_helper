@@ -31,6 +31,7 @@ import {
   timeframeLabel,
 } from '@/lib/timeframes'
 import { cn, fmtDateTime, fmtNumber, fmtPct, fmtPrice, PATTERN_NAMES } from '@/lib/utils'
+import { buildChartSummary, type ChartSummary } from '@/lib/chartSummary'
 import { useAppStore } from '@/store/app'
 import type { AnalysisResult, OutcomeIntent, OutcomeRecord, OutcomeStatus, PatternInfo, PatternStatsEntry, Timeframe } from '@/types/api'
 
@@ -315,6 +316,7 @@ export default function ChartPage() {
                 레퍼런스 창
               </button>
             </div>
+            {analysis && <ChartSummaryBanner summary={buildChartSummary(analysis)} />}
             <div className="p-4 pt-0">
               {hasBars && barsQ.data ? (
                 <CandleChart bars={barsQ.data} analysis={analysis} height={560} />
@@ -660,6 +662,23 @@ export default function ChartPage() {
         </Card>
       )}
 
+    </div>
+  )
+}
+
+function ChartSummaryBanner({ summary }: { summary: ChartSummary }) {
+  const toneClass =
+    summary.tone === 'bullish'
+      ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-100'
+      : summary.tone === 'bearish'
+        ? 'border-red-400/30 bg-red-400/10 text-red-100'
+        : 'border-border/60 bg-muted/30 text-muted-foreground'
+  return (
+    <div className={cn('mx-4 flex items-center gap-2 rounded-lg border px-3 py-2 text-sm', toneClass)}>
+      <span className="text-base leading-none">
+        {summary.tone === 'bullish' ? '▲' : summary.tone === 'bearish' ? '▼' : '■'}
+      </span>
+      <span className="font-medium leading-snug">{summary.text}</span>
     </div>
   )
 }
