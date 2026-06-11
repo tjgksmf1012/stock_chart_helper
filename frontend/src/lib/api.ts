@@ -78,8 +78,12 @@ export const symbolsApi = {
     api.get<ReferenceCaseResponse>(`/symbols/${symbol}/reference-cases`, { params: { timeframe, limit } }).then(r => r.data),
   getPrice: (symbol: string) =>
     api.get<PriceInfo>(`/symbols/${symbol}/price`).then(r => r.data),
-  getMoneyFlow: (symbol: string, timeframe: Timeframe) =>
-    api.get<MoneyFlowData>(`/symbols/${symbol}/money-flow`, { params: { timeframe } }).then(r => r.data),
+  getMoneyFlow: (symbol: string, timeframe: Timeframe, patternType?: string | null) =>
+    api
+      .get<MoneyFlowData>(`/symbols/${symbol}/money-flow`, {
+        params: { timeframe, ...(patternType ? { pattern_type: patternType } : {}) },
+      })
+      .then(r => r.data),
 }
 
 export const dashboardApi = {

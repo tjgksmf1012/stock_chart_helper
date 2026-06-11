@@ -70,10 +70,13 @@ export default function ChartPage() {
     refetchInterval: 120_000,
   })
 
-  // 수급 데이터는 분석 API 블로킹 방지를 위해 별도 쿼리로 분리
+  // 수급 데이터는 분석 API 블로킹 방지를 위해 별도 쿼리로 분리.
+  // 패턴 타입을 직접 전달해 정렬 판정 — 분석 캐시 의존 시 첫 방문 레이스로
+  // "패턴 없음"이 뜨는 문제 방지. 분석 도착 시 queryKey가 바뀌어 자동 재요청.
+  const moneyFlowPatternType = analysisQ.data?.patterns?.[0]?.pattern_type ?? null
   const moneyFlowQ = useQuery({
-    queryKey: ['money-flow', symbol, timeframe],
-    queryFn: () => symbolsApi.getMoneyFlow(symbol!, timeframe),
+    queryKey: ['money-flow', symbol, timeframe, moneyFlowPatternType],
+    queryFn: () => symbolsApi.getMoneyFlow(symbol!, timeframe, moneyFlowPatternType),
     enabled: !!symbol && timeframe === '1d',  // 일봉에서만 수급 데이터 표시
     staleTime: 3_600_000,  // 1시간
     retry: 0,  // 실패해도 재시도 안 함

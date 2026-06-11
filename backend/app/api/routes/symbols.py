@@ -318,17 +318,22 @@ async def get_price(symbol: str) -> PriceInfo:
 async def get_money_flow_endpoint(
     symbol: str,
     timeframe: str = Query(default=DEFAULT_TIMEFRAME),
+    pattern_type: str | None = Query(default=None),
 ) -> dict:
-    """외국인/기관 순매수 데이터 (T+1). 4시간 캐시."""
+    """외국인/기관 순매수 데이터 (T+1). 4시간 캐시.
+
+    pattern_type을 쿼리로 받으면 그대로 정렬 판정에 사용 (프론트가 분석 결과를
+    이미 알고 있을 때). 없으면 분석 캐시 참조 — 단, 분석·수급을 동시 요청하는
+    첫 방문에는 캐시가 비어 '패턴 없음'으로 빠질 수 있어 쿼리 전달이 정확하다.
+    """
     from ...services.money_flow_service import get_money_flow
 
-    # 분석 캐시에서 패턴 타입 참조 (있으면 정렬 판정에 사용)
-    pattern_type: str | None = None
-    cached_analysis = await cache_get(f"analysis:v11:{symbol}:{timeframe}")
-    if isinstance(cached_analysis, dict) and cached_analysis.get("patterns"):
-        pats = cached_analysis["patterns"]
-        if pats and isinstance(pats[0], dict):
-            pattern_type = pats[0].get("pattern_type")
+    if pattern_type is None:
+        cached_analysis = await cache_get(f"analysis:v11:{symbol}:{timeframe}")
+        if isinstance(cached_analysis, dict) and cached_analysis.get("patterns"):
+            pats = cached_analysis["patterns"]
+            if pats and isinstance(pats[0], dict):
+                pattern_type = pats[0].get("pattern_type")
 
     result = await get_money_flow(symbol, pattern_type)
     if result is None:
