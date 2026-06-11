@@ -675,6 +675,10 @@ async def get_scan_status(timeframe: str = DEFAULT_TIMEFRAME) -> dict[str, Any]:
     return status
 
 
+class _KrxCooldownActive(Exception):
+    """KRX 서킷브레이커 활성 — pykrx 시도 자체를 건너뛰는 제어 흐름용."""
+
+
 # 스캔 로테이션: 시총 상위 고정 헤드는 매번 스캔하고, 나머지 유니버스는 커서를
 # 옮겨가며 순환한다 — limit이 작아도(free tier 메모리 제약) 수일에 걸쳐 전 종목 커버.
 _ROTATION_FIXED_HEAD = 50
@@ -798,6 +802,11 @@ async def _fetch_universe_codes(limit: int = 100) -> tuple[list[tuple[str, str, 
     }
 
     try:
+        from .data_fetcher import krx_in_cooldown, mark_krx_cooldown
+
+        if await krx_in_cooldown():
+            raise _KrxCooldownActive("KRX cooldown active — skipping pykrx market-cap")
+
         from pykrx import stock as krx
 
         reference_day, _ = resolve_daily_reference_date()
@@ -851,7 +860,14 @@ async def _fetch_universe_codes(limit: int = 100) -> tuple[list[tuple[str, str, 
                 watchlist_included,
             )
             return result, "krx_universe+watchlist" if watchlist_included else "krx_universe"
+    except _KrxCooldownActive as exc:
+        logger.info("%s", exc)
     except Exception as exc:
+        try:
+            from .data_fetcher import mark_krx_cooldown as _mark
+            await _mark(f"market-cap: {exc}")
+        except Exception:
+            pass
         logger.warning("Bulk market-cap universe fetch failed: %s", exc)
 
     if universe is not None and not universe.empty:

@@ -152,6 +152,11 @@ async def _fetch_daily_rows_kis(code: str) -> list[dict] | None:
 
 async def _fetch_daily_rows_pykrx(code: str) -> list[dict] | None:
     """pykrx 폴백. KRX 로그인 필수화 이후 빈 응답일 수 있음 (KRX_ID/KRX_PW 필요)."""
+    from .data_fetcher import krx_in_cooldown
+
+    if await krx_in_cooldown():
+        return None
+
     from pykrx import stock as krx
 
     end = date.today()

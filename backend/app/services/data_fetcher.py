@@ -27,6 +27,24 @@ UNIVERSE_CACHE_KEY = "symbols:universe"
 MARKET_CAP_CACHE_PREFIX = "symbols:market-cap:v1"
 YAHOO_INTRADAY_COOLDOWN_PREFIX = "yahoo:intraday:cooldown"
 
+# KRX(data.krx.co.kr) 서킷브레이커 — 로그인/조회 실패 시 일정 시간 pykrx 호출을
+# 통째로 건너뛰고 FDR/KIS로 직행한다. KRX는 해외 IP(Render)에서 매달리다
+# 타임아웃되는 경우가 있어, 호출마다 제한시간을 까먹으면 스캔 전체가 느려진다.
+KRX_COOLDOWN_KEY = "krx:cooldown:v1"
+KRX_COOLDOWN_TTL_SECONDS = 900  # 15분
+
+
+async def krx_in_cooldown() -> bool:
+    return bool(await cache_get(KRX_COOLDOWN_KEY))
+
+
+async def mark_krx_cooldown(reason: str) -> None:
+    try:
+        await cache_set(KRX_COOLDOWN_KEY, {"reason": str(reason)[:200]}, ttl=KRX_COOLDOWN_TTL_SECONDS)
+        logger.warning("KRX cooldown engaged for %ss: %s", KRX_COOLDOWN_TTL_SECONDS, str(reason)[:200])
+    except Exception:
+        pass
+
 KRX_OHLCV_COLUMNS = {
     "\uc2dc\uac00": "open",
     "\uace0\uac00": "high",
@@ -139,6 +157,8 @@ class KRXDataFetcher:
         )
 
     async def get_stock_ohlcv(self, code: str, start: date, end: date, adjusted: bool = True) -> pd.DataFrame:
+        if await krx_in_cooldown():
+            return await self._fdr_fallback(code, start, end)
         try:
             from pykrx import stock as krx
 
@@ -157,6 +177,7 @@ class KRXDataFetcher:
                 fetch_status="daily_ok",
             )
         except Exception as exc:
+            await mark_krx_cooldown(f"daily ohlcv {code}: {exc}")
             logger.warning("pykrx failed for %s: %s; trying FinanceDataReader fallback", code, exc)
             return await self._fdr_fallback(code, start, end)
 
@@ -534,6 +555,9 @@ class KRXDataFetcher:
             if cached:
                 return pd.DataFrame(cached)
 
+            if await krx_in_cooldown():
+                return await self._fdr_universe_fallback()
+
             try:
                 from pykrx import stock as krx
 
@@ -559,6 +583,7 @@ class KRXDataFetcher:
                 await cache_set(UNIVERSE_CACHE_KEY, df.to_dict(orient="records"), ttl=43200)  # 12시간
                 return df
             except Exception as exc:
+                await mark_krx_cooldown(f"universe: {exc}")
                 logger.error("pykrx universe failed (%s); falling back to FDR", exc)
                 return await self._fdr_universe_fallback()
 
