@@ -3295,9 +3295,11 @@ async def analyze_symbol_dataframe(
         # 마지막 구조 포인트가 stale 한도를 넘긴 패턴은 과거 기록 — 결과에서 제외
         if bars_since_signal > max_age_bars:
             continue
-        # 형성 기간이 한도(이중 천장/바닥 30봉, 그 외 45봉)를 넘긴 늘어진 구조 제외
+        # 형성 기간이 한도(이중 천장/바닥 30봉=6주, 그 외 45봉) 이상인 늘어진 구조 제외.
+        # 경계 포함(>=): 6주 간격은 교과서 상한이므로 그 자리부터 두 개의 독립된
+        # 움직임으로 본다 (예: 기업은행 M 고점 간격 30봉).
         formation_span = _formation_span_bars(df, refreshed)
-        if formation_span is not None and formation_span > _max_formation_span_bars(timeframe, refreshed.pattern_type):
+        if formation_span is not None and formation_span >= _max_formation_span_bars(timeframe, refreshed.pattern_type):
             continue
         # 트리거(돌파)가 이미 발생한 패턴: 돌파 후 okay 한도(일봉 20봉)를 넘기면
         # 반응 구간이 끝난 셋업이므로 제외 — 구조 나이가 한도 이내라도 마찬가지.

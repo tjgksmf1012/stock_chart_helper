@@ -25,7 +25,7 @@ settings = get_settings()
 POPULAR_SEARCH_CODES = {code for code, _, _ in FALLBACK_CODES}
 
 # 분석 동작이 바뀔 때마다 버전을 올려 이전 캐시를 무효화한다 (bump는 여기 한 곳만)
-ANALYSIS_CACHE_PREFIX = "analysis:v13"
+ANALYSIS_CACHE_PREFIX = "analysis:v14"
 
 
 def _validate_timeframe(timeframe: str) -> str:

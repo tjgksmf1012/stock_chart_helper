@@ -154,7 +154,7 @@ def _full_scan_cache_key(timeframe: str) -> str:
 
 def _single_scan_cache_key(timeframe: str, code: str, allow_live_intraday: bool = True) -> str:
     mode = "live" if allow_live_intraday else "budget"
-    return f"scan:v14:result:{timeframe}:{code}:{mode}"
+    return f"scan:v15:result:{timeframe}:{code}:{mode}"
 
 
 def _utc_now_iso() -> str:

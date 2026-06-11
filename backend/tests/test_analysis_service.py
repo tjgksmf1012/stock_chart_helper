@@ -210,6 +210,42 @@ def _wide_span_double_bottom_df() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _boundary_span_double_top_df() -> pd.DataFrame:
+    """고점 간격이 정확히 30봉(=6주 교과서 상한)인 이중 천장.
+
+    경계 포함 규칙(>=)으로 제외돼야 한다 — 기업은행 M 케이스 회귀 방지.
+    돌파 전(고점2가 넥라인 위 유지)이라 다른 신선도 필터는 통과한다.
+    """
+    rng = np.random.default_rng(1)
+    closes = (
+        list(np.linspace(8_000, 10_000, 12))   # 첫 상승 (고점1 ~index 11)
+        + list(np.linspace(10_000, 9_200, 8))  # 고점1 후 하락 (넥라인 ~9,200)
+        + list(np.linspace(9_200, 9_900, 23))  # 두 번째 봉우리로 (고점1과 ~30봉 간격)
+        + list(np.linspace(9_900, 9_400, 6))   # 고점2 후 소폭 하락 (넥라인 위 유지)
+    )
+    dates = pd.bdate_range("2023-01-02", periods=len(closes))
+    rows = []
+    for dt, close in zip(dates, closes):
+        open_px = close * (1 + rng.normal(0, 0.002))
+        high = max(open_px, close) * (1 + abs(rng.normal(0, 0.003)))
+        low = min(open_px, close) * (1 - abs(rng.normal(0, 0.003)))
+        rows.append(
+            {"date": dt, "open": round(open_px), "high": round(high),
+             "low": round(low), "close": round(close), "volume": 1_000_000}
+        )
+    return pd.DataFrame(rows)
+
+
+@pytest.mark.anyio
+async def test_boundary_30bar_double_top_is_dropped(monkeypatch):
+    """고점 간격 정확히 30봉인 이중 천장은 경계 포함 규칙으로 제외 (기업은행 M 회귀)."""
+    monkeypatch.setattr("app.services.analysis_service.get_pattern_stats", _fixed_stats)
+    symbol = SymbolInfo(code="005930", name="Test", market="KOSPI", sector=None,
+                        market_cap=1e12, is_in_universe=True)
+    result = await analyze_symbol_dataframe(symbol, "1d", _boundary_span_double_top_df())
+    assert all(p.pattern_type != "double_top" for p in result.patterns)
+
+
 @pytest.mark.anyio
 async def test_wide_formation_span_pattern_is_dropped(monkeypatch):
     """이중 바닥/천장의 구조 포인트 간격이 한도(일봉 30봉)를 넘으면 제외.
