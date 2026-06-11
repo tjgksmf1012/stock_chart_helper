@@ -807,7 +807,7 @@ async def _fetch_universe_codes(limit: int = 100) -> tuple[list[tuple[str, str, 
         for market in ("KOSPI", "KOSDAQ"):
             cap_df = await asyncio.wait_for(
                 asyncio.to_thread(krx.get_market_cap_by_ticker, today, market=market),
-                timeout=15.0,  # 시장별 15초 타임아웃
+                timeout=25.0,  # 시장별 타임아웃 — 첫 호출은 KRX 로그인 포함이라 여유 확보
             )
             if cap_df is None or cap_df.empty:
                 continue

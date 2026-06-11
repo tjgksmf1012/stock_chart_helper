@@ -146,7 +146,7 @@ class KRXDataFetcher:
             end_str = end.strftime("%Y%m%d")
             df = await asyncio.wait_for(
                 asyncio.to_thread(krx.get_market_ohlcv, start_str, end_str, code, adjusted=adjusted),
-                timeout=15.0,
+                timeout=20.0,  # 첫 호출은 KRX 로그인(워밍업+POST) 포함 — 여유 확보
             )
             if df.empty:
                 return self._empty_frame(data_source="pykrx_daily", fetch_status="daily_empty")
@@ -552,7 +552,7 @@ class KRXDataFetcher:
                             rows.append({"code": code, "market": market, "name": name})
                     return rows
 
-                rows = await asyncio.wait_for(asyncio.to_thread(build_rows), timeout=20.0)
+                rows = await asyncio.wait_for(asyncio.to_thread(build_rows), timeout=30.0)  # KRX 로그인 포함 여유
                 if not rows:
                     return await self._fdr_universe_fallback()
                 df = pd.DataFrame(rows)
