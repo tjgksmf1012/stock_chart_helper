@@ -19,6 +19,7 @@ import {
 import { AnalysisPanel } from '@/components/chart/AnalysisPanel'
 import { CandidateRail, CandidateStrip } from '@/components/chart/CandidateRail'
 import { CandleChart } from '@/components/chart/CandleChart'
+import { DeepAnalysisPanel } from '@/components/chart/DeepAnalysisPanel'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { QueryError } from '@/components/ui/QueryError'
@@ -42,6 +43,7 @@ export default function ChartPage() {
   const timeframe = normalizeDisplayTimeframe(selectedTimeframe)
   const watched = symbol ? isWatched(symbol) : false
   const [searchQuery, setSearchQuery] = useState('')
+  const [deepOpen, setDeepOpen] = useState(false)
   const [searchResults, setSearchResults] = useState<Array<{ code: string; name: string; market: string }>>([])
   const [savedId, setSavedId] = useState<number | null>(null)
   const [selectedIntent, setSelectedIntent] = useState<OutcomeIntent>('breakout_wait')
@@ -121,6 +123,7 @@ export default function ChartPage() {
   useEffect(() => {
     setSearchQuery('')
     setSearchResults([])
+    setDeepOpen(false) // 종목 전환 시 정밀분석 패널 닫기 (무거운 호출 연쇄 방지)
   }, [symbol])
 
   const analysis = analysisQ.data
@@ -308,13 +311,27 @@ export default function ChartPage() {
                 <div className="text-sm font-semibold">차트</div>
                 <p className="mt-1 text-xs text-muted-foreground">첫 화면에서는 차트와 일목 구름대를 먼저 보고, 자세한 해석은 오른쪽 탭에서 확인합니다.</p>
               </div>
-              <button
-                onClick={() => openReferenceWindow()}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background/60 px-3 py-2 text-xs text-muted-foreground transition-colors hover:text-foreground"
-              >
-                <ExternalLink size={13} />
-                레퍼런스 창
-              </button>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <button
+                  onClick={() => setDeepOpen(open => !open)}
+                  className={cn(
+                    'inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs transition-colors',
+                    deepOpen
+                      ? 'border-primary/40 bg-primary/15 text-primary-foreground'
+                      : 'border-border bg-background/60 text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  <Search size={13} />
+                  정밀분석
+                </button>
+                <button
+                  onClick={() => openReferenceWindow()}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background/60 px-3 py-2 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <ExternalLink size={13} />
+                  레퍼런스 창
+                </button>
+              </div>
             </div>
             {analysis && <ChartSummaryBanner summary={buildChartSummary(analysis)} />}
             <div className="p-4 pt-0">
@@ -359,6 +376,8 @@ export default function ChartPage() {
           )}
         </section>
       )}
+
+      {symbol && deepOpen && <DeepAnalysisPanel symbol={symbol} />}
 
       {analysis && (
         <section className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_360px]">

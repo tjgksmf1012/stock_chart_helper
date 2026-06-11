@@ -930,3 +930,46 @@ export interface ScreenerRequest {
     | 'historical_edge_score'
   limit?: number
 }
+
+// 정밀분석 (온디맨드 심층 분석)
+export interface DeepPatternCase {
+  pattern_type: string
+  signal_date: string
+  outcome: 'success' | 'fail' | 'timeout'
+  bars_to_outcome: number | null
+  move_pct: number
+  mfe_pct: number
+  mae_pct: number
+}
+
+export interface DeepPatternStat {
+  pattern_type: string
+  total: number
+  wins: number
+  losses: number
+  timeouts: number
+  win_rate: number | null
+  avg_bars_to_outcome: number | null
+  avg_win_move_pct: number | null
+  avg_loss_move_pct: number | null
+}
+
+export interface DeepLongContext {
+  week52_high?: number
+  week52_low?: number
+  week52_position?: number
+  volatility_recent_pct?: number
+  volatility_year_pct?: number
+  volatility_regime?: string
+}
+
+export interface DeepAnalysisResponse {
+  symbol_code: string
+  generated_at: string
+  available_bars: number
+  case_count?: number
+  cases: DeepPatternCase[]
+  stats: DeepPatternStat[]
+  long_context: DeepLongContext
+  note: string
+}

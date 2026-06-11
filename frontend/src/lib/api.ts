@@ -4,7 +4,7 @@ import type {
   AiRecommendationItem, AiRecommendationResponse, DashboardOverviewResponse, DashboardResponse, PatternLibraryEntry, ScreenerRequest, DashboardItem, ReferenceCaseResponse, ScanStatusResponse, Timeframe,
   IntradayCandidateWarmupRequest, IntradayWarmupJobStatus, IntradayWarmupRequest, IntradayWarmupResponse, KisPrimeStatus, PatternStatsResponse, RuntimeStatusResponse, ScanHistoryRunSummary, ScanQualityReportResponse,
   WatchlistItem, OutcomeEvaluationResponse, OutcomeRecord, OutcomesSummary, OutcomeStatus, CalibrationReport, OfflineCalibrationResponse,
-  MarketRegimeResponse, SectorHeatmapResponse, MoneyFlowData,
+  MarketRegimeResponse, SectorHeatmapResponse, MoneyFlowData, DeepAnalysisResponse,
 } from '@/types/api'
 
 function resolveApiBase() {
@@ -78,6 +78,8 @@ export const symbolsApi = {
     api.get<ReferenceCaseResponse>(`/symbols/${symbol}/reference-cases`, { params: { timeframe, limit } }).then(r => r.data),
   getPrice: (symbol: string) =>
     api.get<PriceInfo>(`/symbols/${symbol}/price`).then(r => r.data),
+  getDeepAnalysis: (symbol: string) =>
+    api.get<DeepAnalysisResponse>(`/symbols/${symbol}/deep-analysis`, { timeout: 95_000 }).then(r => r.data),
   getMoneyFlow: (symbol: string, timeframe: Timeframe, patternType?: string | null) =>
     api
       .get<MoneyFlowData>(`/symbols/${symbol}/money-flow`, {

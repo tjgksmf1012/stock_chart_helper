@@ -317,6 +317,17 @@ async def get_price(symbol: str) -> PriceInfo:
     return PriceInfo(code=symbol, close=0.0, prev_close=0.0, change=0.0, change_pct=0.0, volume=0, source="none")
 
 
+@router.get("/{symbol}/deep-analysis")
+async def get_deep_analysis(symbol: str) -> dict:
+    """온디맨드 정밀분석 — 이 종목의 과거 패턴 성적표 + 장기 맥락 (일봉 기준, 12h 캐시)."""
+    from ...services.deep_analysis_service import build_deep_analysis
+
+    try:
+        return await asyncio.wait_for(build_deep_analysis(symbol), timeout=90)
+    except TimeoutError:
+        raise HTTPException(status_code=504, detail="정밀분석 시간 초과 — 잠시 후 다시 시도해 주세요.")
+
+
 @router.get("/{symbol}/money-flow")
 async def get_money_flow_endpoint(
     symbol: str,
