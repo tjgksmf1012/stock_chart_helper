@@ -3261,11 +3261,13 @@ async def analyze_symbol_dataframe(
         if bars_since_signal > max_age_bars:
             continue
         # 트리거(돌파)가 이미 발생한 패턴: 돌파 후 okay 한도(일봉 20봉)를 넘기면
-        # 반응 구간이 끝난 셋업이므로 제외 — 구조 나이가 한도 이내라도 마찬가지
-        if refreshed.state in {"confirmed", "played_out", "invalidated"} or target_hit_at or invalidated_at:
-            since_trigger = _bars_since_trigger(df, refreshed)
-            if since_trigger is not None and since_trigger > max_trigger_age:
-                continue
+        # 반응 구간이 끝난 셋업이므로 제외 — 구조 나이가 한도 이내라도 마찬가지.
+        # 현재 상태와 무관하게 적용: 돌파 후 가격이 넥라인 아래로 되돌아오면
+        # 상태가 forming/armed('재돌파 대기')로 다시 읽히지만, 이미 에너지를 쓴
+        # 패턴을 신선한 셋업처럼 재노출하지 않는다.
+        since_trigger = _bars_since_trigger(df, refreshed)
+        if since_trigger is not None and since_trigger > max_trigger_age:
+            continue
         recency = _recency_score(timeframe, bars_since_signal)
         completion = _completion_proximity(refreshed, current_close)
         patterns_with_meta.append((refreshed, completion, recency, bars_since_signal, target_hit_at, invalidated_at))

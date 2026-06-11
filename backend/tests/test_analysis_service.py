@@ -180,6 +180,61 @@ async def test_old_breakout_pattern_is_dropped(monkeypatch):
     assert result.patterns == []
 
 
+def _spent_pullback_double_bottom_df() -> pd.DataFrame:
+    """돌파가 한참 전에 일어났고, 이후 가격이 넥라인 아래로 되돌아온 케이스.
+
+    현재가가 넥라인(9,000) 아래라 상태는 다시 forming/armed('재돌파 대기')로
+    읽히지만, 첫 돌파(bar ~81)가 okay 한도(20봉)보다 오래돼 이미 에너지를 쓴
+    패턴이다. 상태와 무관하게 제외돼야 한다.
+    """
+    rng = np.random.default_rng(0)
+    closes = (
+        list(np.linspace(10_000, 9_000, 30))
+        + list(np.linspace(9_000, 8_000, 15))
+        + list(np.linspace(8_000, 9_000, 15))
+        + list(np.linspace(9_000, 8_050, 15))
+        + list(np.linspace(8_050, 9_250, 10))   # 돌파 랠리 — 넥라인(~9,020)은 넘되 목표가 미달
+        + list(np.linspace(9_250, 8_600, 10))   # 넥라인 한참 아래로 되돌림 (armed 버퍼 밖 → forming)
+        + [8_600 + float(rng.normal(0, 12)) for _ in range(25)]  # 넥라인 아래 횡보
+    )
+    dates = pd.bdate_range("2023-01-02", periods=len(closes))
+    rows = []
+    for dt, close in zip(dates, closes):
+        open_px = close * (1 + rng.normal(0, 0.002))
+        high = max(open_px, close) * (1 + abs(rng.normal(0, 0.003)))
+        low = min(open_px, close) * (1 - abs(rng.normal(0, 0.003)))
+        rows.append(
+            {
+                "date": dt,
+                "open": round(open_px),
+                "high": round(high),
+                "low": round(low),
+                "close": round(close),
+                "volume": 1_000_000,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+@pytest.mark.anyio
+async def test_spent_pullback_pattern_is_dropped(monkeypatch):
+    """돌파 후 넥라인 아래로 되돌아온 패턴: 상태가 forming/armed로 읽혀도
+    첫 돌파가 okay 한도보다 오래됐으면 '재돌파 대기'로 재노출하지 않는다."""
+    monkeypatch.setattr("app.services.analysis_service.get_pattern_stats", _fixed_stats)
+
+    symbol = SymbolInfo(
+        code="005930",
+        name="Test",
+        market="KOSPI",
+        sector=None,
+        market_cap=1e12,
+        is_in_universe=True,
+    )
+    result = await analyze_symbol_dataframe(symbol, "1d", _spent_pullback_double_bottom_df())
+
+    assert all(p.pattern_type != "double_bottom" for p in result.patterns)
+
+
 @pytest.mark.anyio
 async def test_stale_pattern_is_dropped(monkeypatch):
     """마지막 구조 포인트가 stale 한도(일봉 45봉)를 넘긴 패턴은 분석에서 제외돼야 한다.
