@@ -173,7 +173,7 @@ def _long_response(timeframe: str, data: list[dict], limit: int) -> DashboardRes
     ranked = [row for row in data if not row["no_signal_flag"] and row["p_up"] > 0.55 and row.get("action_plan") != "cooling" and _is_active_candidate(row)]
     ranked.sort(
         key=lambda row: (
-            row.get("trade_readiness_score", 0.0),
+            row.get("trade_readiness_score", 0.0) + row.get("money_flow_rank_boost", 0.0),
             row.get("entry_window_score", 0.0),
             row.get("freshness_score", 0.0),
             row.get("reentry_score", 0.0),
@@ -193,7 +193,7 @@ def _short_response(timeframe: str, data: list[dict], limit: int) -> DashboardRe
     ranked = [row for row in data if not row["no_signal_flag"] and row["p_down"] > 0.55 and row.get("action_plan") != "cooling" and _is_active_candidate(row)]
     ranked.sort(
         key=lambda row: (
-            row.get("trade_readiness_score", 0.0),
+            row.get("trade_readiness_score", 0.0) + row.get("money_flow_rank_boost", 0.0),
             row.get("entry_window_score", 0.0),
             row.get("freshness_score", 0.0),
             row.get("reentry_score", 0.0),
@@ -213,7 +213,7 @@ def _similarity_response(timeframe: str, data: list[dict], limit: int) -> Dashbo
     ranked = sorted(
         [row for row in data if _is_active_candidate(row)],
         key=lambda row: (
-            row.get("trade_readiness_score", 0.0),
+            row.get("trade_readiness_score", 0.0) + row.get("money_flow_rank_boost", 0.0),
             row.get("entry_window_score", 0.0),
             row.get("freshness_score", 0.0),
             row.get("reentry_score", 0.0),
@@ -242,7 +242,7 @@ def _armed_response(timeframe: str, data: list[dict], limit: int) -> DashboardRe
     ]
     ranked.sort(
         key=lambda row: (
-            row.get("trade_readiness_score", 0.0),
+            row.get("trade_readiness_score", 0.0) + row.get("money_flow_rank_boost", 0.0),
             row.get("entry_window_score", 0.0),
             row.get("freshness_score", 0.0),
             row.get("reentry_score", 0.0),
@@ -268,7 +268,7 @@ def _forming_response(timeframe: str, data: list[dict], limit: int) -> Dashboard
     ]
     ranked.sort(
         key=lambda row: (
-            row.get("trade_readiness_score", 0.0),
+            row.get("trade_readiness_score", 0.0) + row.get("money_flow_rank_boost", 0.0),
             row.get("entry_window_score", 0.0),
             row.get("reentry_score", 0.0),
             row.get("active_setup_score", 0.0),
@@ -301,7 +301,7 @@ async def _live_intraday_response(timeframe: str, data: list[dict], limit: int, 
     ranked = _resolve_ranked_rows(ranked, data, limit, allow_placeholder=_allow_placeholder(timeframe))
     ranked.sort(
         key=lambda row: (
-            row.get("trade_readiness_score", 0.0),
+            row.get("trade_readiness_score", 0.0) + row.get("money_flow_rank_boost", 0.0),
             row.get("entry_window_score", 0.0),
             row.get("reentry_score", 0.0),
             row.get("active_setup_score", 0.0),

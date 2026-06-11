@@ -1210,6 +1210,34 @@ def _build_placeholder_scan_results(timeframe: str, fallback: list[tuple[str, st
     return results
 
 
+async def _enrich_money_flow_alignment(rows: list[dict[str, Any]], top_n: int = 30) -> None:
+    """상위 후보에 수급 정렬(외인/기관 vs 패턴 방향)을 붙이고 랭킹 보정치 기록.
+
+    aligned +0.05 / diverged -0.05 / mixed -0.02 — 대시보드 정렬에서
+    trade_readiness_score에 더해져 수급이 패턴을 지지하는 후보를 위로 올린다.
+    수급 데이터는 4시간 Redis 캐시(KIS)라 스캔당 추가 비용이 작고, 실패는 무시.
+    """
+    from .money_flow_service import get_money_flow
+
+    bonus = {"aligned": 0.05, "diverged": -0.05, "mixed": -0.02}
+    for row in rows[:top_n]:
+        pattern_type = row.get("pattern_type")
+        if not pattern_type or row.get("no_signal_flag"):
+            continue
+        code = str(row.get("code") or "").strip()
+        if not code:
+            continue
+        try:
+            flow = await get_money_flow(code, pattern_type)
+        except Exception:
+            continue
+        if not flow:
+            continue
+        alignment = str(flow.get("alignment", "neutral"))
+        row["money_flow_alignment"] = alignment
+        row["money_flow_rank_boost"] = bonus.get(alignment, 0.0)
+
+
 async def run_scan(
     timeframe: str = DEFAULT_TIMEFRAME,
     limit: int | None = None,
@@ -1343,6 +1371,12 @@ async def run_scan(
                 ),
                 reverse=True,
             )
+            # 일봉 스캔: 상위 후보에 수급 정렬 보강 (대시보드 랭킹에서 보정치 사용)
+            if timeframe == "1d":
+                try:
+                    await _enrich_money_flow_alignment(results)
+                except Exception as enrich_exc:
+                    logger.warning("Money flow enrichment failed for %s: %s", timeframe, enrich_exc)
             await cache_set(cache_key, results, ttl=settings.scan_results_ttl)
             finished_at = datetime.utcnow()
             reference_day, reference_reason = resolve_daily_reference_date()
