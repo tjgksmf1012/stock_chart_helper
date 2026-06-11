@@ -12,7 +12,7 @@ from pandas.tseries.offsets import BDay, DateOffset
 
 from ..api.schemas import AnalysisResult, PatternInfo, ProjectionPoint, ProjectionScenario, SymbolInfo
 from .backtest_engine import get_pattern_stats
-from .pattern_engine import PatternEngine, PatternResult
+from .pattern_engine import PatternEngine, PatternResult, _breakout_index as _pe_breakout_index
 from .probability_engine import compute_probability
 from .timeframe_service import get_timeframe_spec, is_intraday_timeframe, timeframe_label
 
@@ -463,6 +463,42 @@ def _max_pattern_age_bars(timeframe: str) -> int:
     """
     _, _, stale = _RECENCY_THRESHOLDS.get(timeframe, (5, 20, 45))
     return stale
+
+
+def _max_trigger_age_bars(timeframe: str) -> int:
+    """돌파(트리거) 이후 허용되는 최대 경과 바 수.
+
+    돌파가 이만큼 지났으면 그 셋업의 반응 구간(평균 결과 도달 ~10-16봉)은
+    이미 끝났거나 실패한 상태 — 구조 나이가 한도 이내라도 '오늘까지
+    이어지는' 셋업이 아니므로 제외한다.
+    """
+    _, okay, _ = _RECENCY_THRESHOLDS.get(timeframe, (5, 20, 45))
+    return okay
+
+
+def _last_key_point_position(df: pd.DataFrame, pattern: PatternResult) -> int:
+    timestamps = _timestamp_series(df)
+    latest_point = _latest_pattern_timestamp(pattern)
+    candidates = timestamps[timestamps <= latest_point]
+    if candidates.empty:
+        return 0
+    return int(candidates.index[-1])
+
+
+def _bars_since_trigger(df: pd.DataFrame, pattern: PatternResult) -> int | None:
+    """돌파(트리거) 발생 시점 이후 경과 바 수. 돌파가 아직 없으면 None."""
+    neckline = pattern.neckline
+    if neckline is None:
+        return None
+    bullish = _is_bullish(pattern.pattern_type)
+    bearish = _is_bearish(pattern.pattern_type)
+    if not bullish and not bearish:
+        return None
+    start_idx = _last_key_point_position(df, pattern)
+    breakout_idx = _pe_breakout_index(df, neckline, start_idx, bullish=bullish)
+    if breakout_idx is None:
+        return None
+    return max(0, len(df) - 1 - int(breakout_idx))
 
 
 def _average_turnover_billion(df: pd.DataFrame) -> float:
@@ -3217,12 +3253,19 @@ async def analyze_symbol_dataframe(
 
     patterns_with_meta: list[tuple[PatternResult, float, float, int, str | None, str | None]] = []
     max_age_bars = _max_pattern_age_bars(timeframe)
+    max_trigger_age = _max_trigger_age_bars(timeframe)
     for pattern in raw_patterns:
         refreshed, target_hit_at, invalidated_at = _refresh_pattern_state(df, pattern, current_close, current_high, current_low)
         bars_since_signal = _bars_since_pattern(df, refreshed)
         # 마지막 구조 포인트가 stale 한도를 넘긴 패턴은 과거 기록 — 결과에서 제외
         if bars_since_signal > max_age_bars:
             continue
+        # 트리거(돌파)가 이미 발생한 패턴: 돌파 후 okay 한도(일봉 20봉)를 넘기면
+        # 반응 구간이 끝난 셋업이므로 제외 — 구조 나이가 한도 이내라도 마찬가지
+        if refreshed.state in {"confirmed", "played_out", "invalidated"} or target_hit_at or invalidated_at:
+            since_trigger = _bars_since_trigger(df, refreshed)
+            if since_trigger is not None and since_trigger > max_trigger_age:
+                continue
         recency = _recency_score(timeframe, bars_since_signal)
         completion = _completion_proximity(refreshed, current_close)
         patterns_with_meta.append((refreshed, completion, recency, bars_since_signal, target_hit_at, invalidated_at))

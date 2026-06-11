@@ -70,6 +70,41 @@ class KISClient:
             "timestamp": output.get("stck_cntg_hour"),
         }
 
+    async def fetch_investor_trends(self, code: str, market_div_code: str = "J") -> list[dict[str, Any]]:
+        """일별 투자자별 순매수 동향 (최근 ~30영업일).
+
+        KIS '주식현재가 투자자' (FHKST01010900). 거래대금(*_ntby_tr_pbmn)은 백만원 단위.
+        pykrx 투자자 API가 KRX 로그인 필수화로 동작하지 않아 이 엔드포인트를 주 소스로 사용.
+        """
+        if not self.configured:
+            return []
+
+        payload = await self._authorized_get(
+            "/uapi/domestic-stock/v1/quotations/inquire-investor",
+            tr_id="FHKST01010900",
+            params={
+                "FID_COND_MRKT_DIV_CODE": market_div_code,
+                "FID_INPUT_ISCD": code,
+            },
+        )
+        rows = payload.get("output") or []
+        trends: list[dict[str, Any]] = []
+        for row in rows:
+            date_text = str(row.get("stck_bsop_date") or "").strip()
+            if len(date_text) != 8:
+                continue
+            trends.append(
+                {
+                    "date": f"{date_text[:4]}-{date_text[4:6]}-{date_text[6:]}",
+                    "foreign_value_million": self._to_float(row.get("frgn_ntby_tr_pbmn")) or 0.0,
+                    "institution_value_million": self._to_float(row.get("orgn_ntby_tr_pbmn")) or 0.0,
+                    "person_value_million": self._to_float(row.get("prsn_ntby_tr_pbmn")) or 0.0,
+                }
+            )
+        # 응답은 최신일 우선 — 시간순으로 정렬해 반환
+        trends.sort(key=lambda item: item["date"])
+        return trends
+
     async def ensure_access_token(self) -> dict[str, Any]:
         if not self.configured:
             raise RuntimeError("KIS client is not configured.")
