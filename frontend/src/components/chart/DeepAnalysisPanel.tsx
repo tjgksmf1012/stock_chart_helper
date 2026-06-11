@@ -28,6 +28,11 @@ function pct(value: number | null | undefined, digits = 1): string {
   return `${(value * 100).toFixed(digits)}%`
 }
 
+// 베어리시 패턴은 성공 등락이 음수(하락 도달)라 무조건 '+'를 붙이면 "+-6.3%"가 됨
+function signedPct(value: number, digits = 1): string {
+  return `${value > 0 ? '+' : ''}${pct(value, digits)}`
+}
+
 export function DeepAnalysisPanel({ symbol }: { symbol: string }) {
   const deepQ = useQuery({
     queryKey: ['deep-analysis', symbol],
@@ -130,8 +135,8 @@ function DeepAnalysisBody({ data }: { data: DeepAnalysisResponse }) {
                     {stat.win_rate !== null ? pct(stat.win_rate, 0) : '-'}
                   </td>
                   <td className="py-2 pr-3">{stat.avg_bars_to_outcome !== null ? `${stat.avg_bars_to_outcome}봉` : '-'}</td>
-                  <td className="py-2 pr-3 text-emerald-300">{stat.avg_win_move_pct !== null ? `+${pct(stat.avg_win_move_pct)}` : '-'}</td>
-                  <td className="py-2 text-red-300">{stat.avg_loss_move_pct !== null ? pct(stat.avg_loss_move_pct) : '-'}</td>
+                  <td className="py-2 pr-3 text-emerald-300">{stat.avg_win_move_pct !== null ? signedPct(stat.avg_win_move_pct) : '-'}</td>
+                  <td className="py-2 text-red-300">{stat.avg_loss_move_pct !== null ? signedPct(stat.avg_loss_move_pct) : '-'}</td>
                 </tr>
               ))}
             </tbody>
