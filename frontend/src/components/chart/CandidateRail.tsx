@@ -23,8 +23,8 @@ interface CandidateRailProps {
   timeframe: Timeframe
 }
 
-export function CandidateRail({ activeSymbol, timeframe }: CandidateRailProps) {
-  const nav = useNavigate()
+/** 오늘 스캔 후보 목록 (대시보드 overview 캐시 공유, 우선순위 정렬 상위 30개). */
+export function useTodayCandidates(timeframe: Timeframe) {
   const { isWatched } = useAppStore()
 
   const overviewQ = useQuery({
@@ -36,7 +36,7 @@ export function CandidateRail({ activeSymbol, timeframe }: CandidateRailProps) {
   const items = useMemo(() => {
     const overview = overviewQ.data
     if (!overview) return []
-    // 관망(no signal) 섹션은 제외 — 레일은 "지금 볼 후보 빠르게 넘기기" 용도
+    // 관망(no signal) 섹션은 제외 — "지금 볼 후보 빠르게 넘기기" 용도
     const deduped = dedupeDashboardItems([
       overview.long_high_probability,
       overview.pattern_armed,
@@ -52,6 +52,53 @@ export function CandidateRail({ activeSymbol, timeframe }: CandidateRailProps) {
       .map(entry => entry.item)
   }, [overviewQ.data, isWatched])
 
+  return { items, isLoading: overviewQ.isLoading }
+}
+
+/** 모바일/좁은 화면용 가로 스크롤 후보 칩 스트립 (xl 이상에서는 좌측 레일 사용). */
+export function CandidateStrip({ activeSymbol, timeframe }: CandidateRailProps) {
+  const nav = useNavigate()
+  const { items } = useTodayCandidates(timeframe)
+
+  if (items.length === 0) return null
+
+  return (
+    <div className="flex gap-1.5 overflow-x-auto pb-1 xl:hidden">
+      {items.map(item => {
+        const active = item.symbol.code === activeSymbol
+        const pUpPct = Math.round(item.p_up * 100)
+        return (
+          <button
+            key={`${item.timeframe}-${item.symbol.code}`}
+            onClick={() => nav(`/chart/${item.symbol.code}`)}
+            className={cn(
+              'flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs transition-colors',
+              active
+                ? 'border-primary/50 bg-primary/10 text-foreground'
+                : 'border-border bg-card/70 text-muted-foreground hover:text-foreground',
+            )}
+          >
+            <span className="font-medium">{item.symbol.name}</span>
+            <span
+              className={cn(
+                'font-mono font-semibold',
+                pUpPct >= 55 ? 'text-emerald-300' : pUpPct <= 45 ? 'text-red-300' : '',
+              )}
+            >
+              {pUpPct}%
+            </span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+export function CandidateRail({ activeSymbol, timeframe }: CandidateRailProps) {
+  const nav = useNavigate()
+  const { isWatched } = useAppStore()
+  const { items, isLoading } = useTodayCandidates(timeframe)
+
   return (
     <Card className="flex h-full flex-col overflow-hidden">
       <div className="border-b border-border/70 px-3 py-3">
@@ -61,7 +108,7 @@ export function CandidateRail({ activeSymbol, timeframe }: CandidateRailProps) {
         </p>
       </div>
       <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto p-2">
-        {overviewQ.isLoading ? (
+        {isLoading ? (
           <div className="flex h-32 flex-col items-center justify-center gap-2 text-xs text-muted-foreground">
             <Loader2 size={15} className="animate-spin" />
             후보를 불러오는 중

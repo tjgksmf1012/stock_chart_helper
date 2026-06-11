@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   ColorType,
   createChart,
@@ -16,6 +16,16 @@ import {
 import type { AnalysisResult, OHLCVBar, PatternInfo, ProjectionScenario } from '@/types/api'
 import { computeSupportResistance } from '@/lib/supportResistance'
 import { computeTrendlines } from '@/lib/trendlines'
+import { cn } from '@/lib/utils'
+
+type OverlayGroup = 'ichimoku' | 'levels' | 'trend' | 'pattern'
+
+const OVERLAY_GROUP_LABELS: Record<OverlayGroup, string> = {
+  ichimoku: '일목 구름대',
+  levels: '자동 지지/저항',
+  trend: '추세선',
+  pattern: '패턴·시나리오',
+}
 
 interface CandleChartProps {
   bars: OHLCVBar[]
@@ -86,8 +96,13 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
   const cloudPointsRef = useRef<CloudPoint[]>([])
   const srPriceLinesRef = useRef<IPriceLine[]>([])
   const trendSeriesRef = useRef<ISeriesApi<'Line'>[]>([])
+  const markersRef = useRef<SeriesMarker<Time>[]>([])
   const redrawFrameRef = useRef<number | null>(null)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
+
+  // 오버레이 그룹 표시 토글 — 차트가 빽빽할 때 필요한 것만 남길 수 있게
+  const [hiddenGroups, setHiddenGroups] = useState<OverlayGroup[]>([])
+  const hiddenGroupsRef = useRef<Set<OverlayGroup>>(new Set())
 
   // Ordinal time mapping — built once per bars update
   const indexToDateRef = useRef<string[]>([])
@@ -130,7 +145,7 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
     context.clearRect(0, 0, canvas.width, canvas.height)
     context.scale(dpr, dpr)
 
-    const cloudPoints = cloudPointsRef.current
+    const cloudPoints = hiddenGroupsRef.current.has('ichimoku') ? [] : cloudPointsRef.current
     if (cloudPoints.length < 2) return
 
     for (let index = 1; index < cloudPoints.length; index += 1) {
@@ -167,6 +182,35 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
     }
     redrawFrameRef.current = window.requestAnimationFrame(drawCloud)
   }
+
+  // 현재 토글 상태를 모든 오버레이(시리즈·가격선·마커·구름 캔버스)에 적용
+  const applyOverlayVisibility = () => {
+    const hidden = hiddenGroupsRef.current
+    const ichimokuVisible = !hidden.has('ichimoku')
+    const { conversion, base, spanA, spanB } = ichimokuRef.current
+    for (const series of [conversion, base, spanA, spanB]) {
+      series?.applyOptions({ visible: ichimokuVisible })
+    }
+    const levelsVisible = !hidden.has('levels')
+    srPriceLinesRef.current.forEach(line => line.applyOptions({ lineVisible: levelsVisible }))
+    const trendVisible = !hidden.has('trend')
+    trendSeriesRef.current.forEach(series => series.applyOptions({ visible: trendVisible }))
+    const patternVisible = !hidden.has('pattern')
+    overlayRef.current.forEach(series => series.applyOptions({ visible: patternVisible }))
+    candleRef.current?.setMarkers(patternVisible ? markersRef.current : [])
+    scheduleCloudDraw()
+  }
+
+  const toggleGroup = (group: OverlayGroup) => {
+    setHiddenGroups(prev => (prev.includes(group) ? prev.filter(item => item !== group) : [...prev, group]))
+  }
+
+  useEffect(() => {
+    hiddenGroupsRef.current = new Set(hiddenGroups)
+    applyOverlayVisibility()
+    // applyOverlayVisibility는 ref 기반이라 의존성에 넣지 않는다
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hiddenGroups])
 
   useEffect(() => {
     if (!chartHostRef.current) return
@@ -389,7 +433,8 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
     }
 
     chartRef.current?.timeScale().fitContent()
-    scheduleCloudDraw()
+    applyOverlayVisibility()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bars])
 
   useEffect(() => {
@@ -405,6 +450,7 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
       }
     })
     overlayRef.current = []
+    markersRef.current = []
     candleSeries.setMarkers([])
 
     if (!analysis) {
@@ -536,7 +582,7 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
       if (best.target_level) addHorizontalLine(best.target_level, OVERLAY_COLORS.target, LineStyle.Dotted)
       if (best.invalidation_level) addHorizontalLine(best.invalidation_level, OVERLAY_COLORS.invalidation, LineStyle.Dotted)
 
-      const markers: SeriesMarker<Time>[] = best.key_points
+      markersRef.current = best.key_points
         .filter((point): point is { dt: string; price: number; type: string } => Boolean(point.dt))
         .sort((left, right) => compareBarDates(left.dt, right.dt))
         .map(point => ({
@@ -550,8 +596,6 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
           shape: 'circle',
           text: markerLabel(point.type),
         }))
-
-      candleSeries.setMarkers(markers)
     }
 
     projectionScenarios.slice(0, 3).forEach((scenario, index) => {
@@ -576,7 +620,8 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
     })
 
     chart.timeScale().fitContent()
-    scheduleCloudDraw()
+    applyOverlayVisibility()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [analysis, bars])
 
   const chartPattern = analysis ? getChartPattern(analysis) : null
@@ -589,6 +634,25 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
         <canvas ref={cloudCanvasRef} className="pointer-events-none absolute inset-0 z-10" />
       </div>
       <div className="space-y-2 px-2 text-xs text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {(Object.keys(OVERLAY_GROUP_LABELS) as OverlayGroup[]).map(group => {
+            const off = hiddenGroups.includes(group)
+            return (
+              <button
+                key={group}
+                onClick={() => toggleGroup(group)}
+                className={cn(
+                  'rounded-md border px-2 py-1 text-[11px] transition-colors',
+                  off
+                    ? 'border-border/50 text-muted-foreground/45 line-through'
+                    : 'border-border bg-background/60 text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {OVERLAY_GROUP_LABELS[group]}
+              </button>
+            )
+          })}
+        </div>
         <div className="flex flex-wrap items-center gap-4">
           <span className="flex items-center gap-1">
             <span className="inline-block h-px w-3 bg-blue-400" /> 단기선

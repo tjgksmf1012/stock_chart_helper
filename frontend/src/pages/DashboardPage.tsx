@@ -35,7 +35,6 @@ import {
 import { bestPersonalIntents, bestPersonalPattern, buildDashboardSummary, buildIntradaySummary } from '@/lib/dashboardSummary'
 import {
   candidateSourceLabel,
-  candidateSourceWarning,
   getDefaultSectionEmptyMessage,
   getLiveSectionEmptyMessage,
   statusHeadline,
@@ -444,12 +443,6 @@ export default function DashboardPage() {
             <StatusCell label="캐시 결과" value={`${status?.cached_result_count ?? 0}개`} />
             <StatusCell label="후보 생성 방식" value={candidateSourceLabel(status?.candidate_source)} />
           </div>
-
-          {candidateSourceWarning(status?.candidate_source) && (
-            <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-xs leading-relaxed text-amber-200">
-              {candidateSourceWarning(status?.candidate_source)}
-            </div>
-          )}
 
           <button
             onClick={triggerScan}

@@ -83,11 +83,6 @@ export function candidateSourceLabel(source: string | null | undefined): string 
   }
 }
 
-export function candidateSourceWarning(source: string | null | undefined): string | null {
-  // 이제 static_fallback도 100개 기본 종목을 스캔하므로 경고 제거
-  return null
-}
-
 export function getDefaultSectionEmptyMessage(status: ScanStatusResponse | undefined, timeframe: Timeframe): string | undefined {
   if (!status) return undefined
   if (status.status === 'warming' && (status.cached_result_count ?? 0) === 0) {

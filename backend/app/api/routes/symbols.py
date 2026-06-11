@@ -24,6 +24,9 @@ router = APIRouter(prefix="/symbols", tags=["symbols"])
 settings = get_settings()
 POPULAR_SEARCH_CODES = {code for code, _, _ in FALLBACK_CODES}
 
+# 분석 동작이 바뀔 때마다 버전을 올려 이전 캐시를 무효화한다 (bump는 여기 한 곳만)
+ANALYSIS_CACHE_PREFIX = "analysis:v13"
+
 
 def _validate_timeframe(timeframe: str) -> str:
     if timeframe not in SUPPORTED_TIMEFRAMES:
@@ -165,7 +168,7 @@ async def get_analysis(
     timeframe: str = Query(default=DEFAULT_TIMEFRAME),
 ) -> AnalysisResult:
     timeframe = _validate_timeframe(timeframe)
-    cache_key = f"analysis:v13:{symbol}:{timeframe}"
+    cache_key = f"{ANALYSIS_CACHE_PREFIX}:{symbol}:{timeframe}"
     cached = await cache_get(cache_key)
     if cached:
         return AnalysisResult(**cached)
@@ -329,7 +332,7 @@ async def get_money_flow_endpoint(
     from ...services.money_flow_service import get_money_flow
 
     if pattern_type is None:
-        cached_analysis = await cache_get(f"analysis:v13:{symbol}:{timeframe}")
+        cached_analysis = await cache_get(f"{ANALYSIS_CACHE_PREFIX}:{symbol}:{timeframe}")
         if isinstance(cached_analysis, dict) and cached_analysis.get("patterns"):
             pats = cached_analysis["patterns"]
             if pats and isinstance(pats[0], dict):

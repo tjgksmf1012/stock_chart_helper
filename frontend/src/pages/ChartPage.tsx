@@ -17,7 +17,7 @@ import {
 } from 'lucide-react'
 
 import { AnalysisPanel } from '@/components/chart/AnalysisPanel'
-import { CandidateRail } from '@/components/chart/CandidateRail'
+import { CandidateRail, CandidateStrip } from '@/components/chart/CandidateRail'
 import { CandleChart } from '@/components/chart/CandleChart'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
@@ -290,6 +290,9 @@ export default function ChartPage() {
           <p className="text-sm text-muted-foreground">차트 분석을 시작하려면 종목을 검색하거나 대시보드에서 종목을 선택해 주세요.</p>
         </Card>
       )}
+
+      {/* 좁은 화면: 좌측 레일 대신 가로 스크롤 후보 칩 */}
+      {symbol && <CandidateStrip activeSymbol={symbol} timeframe={timeframe} />}
 
       {symbol && (analysis || hasBars || isChartLoading || isChartError) && (
         <section className="grid gap-4 xl:grid-cols-[228px_minmax(0,1fr)_360px]">
