@@ -485,6 +485,41 @@ def _last_key_point_position(df: pd.DataFrame, pattern: PatternResult) -> int:
     return int(candidates.index[-1])
 
 
+def _max_formation_span_bars(timeframe: str, pattern_type: str) -> int:
+    """패턴 구조 포인트의 처음~끝 허용 최대 간격.
+
+    이중 천장/바닥의 고점·저점 간격은 교과서적으로 2~6주(일봉 ≈ 30봉).
+    그보다 늘어진 구조는 두 개의 독립된 움직임이지 하나의 패턴이 아니다.
+    삼각형·H&S 등 다점 구조는 stale 한도까지 허용.
+    """
+    _, okay, stale = _RECENCY_THRESHOLDS.get(timeframe, (5, 20, 45))
+    if pattern_type in {"double_bottom", "double_top"}:
+        return int(okay * 1.5)
+    return stale
+
+
+def _formation_span_bars(df: pd.DataFrame, pattern: PatternResult) -> int | None:
+    """첫 구조 포인트 ~ 마지막 구조 포인트 사이 경과 바 수."""
+    timestamps = _timestamp_series(df)
+    positions: list[int] = []
+    for point in pattern.key_points:
+        dt = point.get("dt")
+        if not dt:
+            continue
+        ts = pd.to_datetime(dt, errors="coerce")
+        if pd.isna(ts):
+            continue
+        if getattr(ts, "tzinfo", None):
+            ts = ts.tz_localize(None)
+        candidates = timestamps[timestamps <= ts]
+        if candidates.empty:
+            continue
+        positions.append(int(candidates.index[-1]))
+    if len(positions) < 2:
+        return None
+    return max(positions) - min(positions)
+
+
 def _bars_since_trigger(df: pd.DataFrame, pattern: PatternResult) -> int | None:
     """돌파(트리거) 발생 시점 이후 경과 바 수. 돌파가 아직 없으면 None."""
     neckline = pattern.neckline
@@ -3259,6 +3294,10 @@ async def analyze_symbol_dataframe(
         bars_since_signal = _bars_since_pattern(df, refreshed)
         # 마지막 구조 포인트가 stale 한도를 넘긴 패턴은 과거 기록 — 결과에서 제외
         if bars_since_signal > max_age_bars:
+            continue
+        # 형성 기간이 한도(이중 천장/바닥 30봉, 그 외 45봉)를 넘긴 늘어진 구조 제외
+        formation_span = _formation_span_bars(df, refreshed)
+        if formation_span is not None and formation_span > _max_formation_span_bars(timeframe, refreshed.pattern_type):
             continue
         # 트리거(돌파)가 이미 발생한 패턴: 돌파 후 okay 한도(일봉 20봉)를 넘기면
         # 반응 구간이 끝난 셋업이므로 제외 — 구조 나이가 한도 이내라도 마찬가지.

@@ -165,7 +165,7 @@ async def get_analysis(
     timeframe: str = Query(default=DEFAULT_TIMEFRAME),
 ) -> AnalysisResult:
     timeframe = _validate_timeframe(timeframe)
-    cache_key = f"analysis:v12:{symbol}:{timeframe}"
+    cache_key = f"analysis:v13:{symbol}:{timeframe}"
     cached = await cache_get(cache_key)
     if cached:
         return AnalysisResult(**cached)
@@ -329,7 +329,7 @@ async def get_money_flow_endpoint(
     from ...services.money_flow_service import get_money_flow
 
     if pattern_type is None:
-        cached_analysis = await cache_get(f"analysis:v12:{symbol}:{timeframe}")
+        cached_analysis = await cache_get(f"analysis:v13:{symbol}:{timeframe}")
         if isinstance(cached_analysis, dict) and cached_analysis.get("patterns"):
             pats = cached_analysis["patterns"]
             if pats and isinstance(pats[0], dict):

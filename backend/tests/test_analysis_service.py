@@ -180,6 +180,58 @@ async def test_old_breakout_pattern_is_dropped(monkeypatch):
     assert result.patterns == []
 
 
+def _wide_span_double_bottom_df() -> pd.DataFrame:
+    """저점 간격이 50봉인 늘어진 W. 신선하고(구조 나이 ~1봉) 돌파 전이지만,
+    이중 바닥 저점 간격이 교과서 범위(2~6주 ≈ 30봉)를 한참 벗어난 구조다."""
+    rng = np.random.default_rng(0)
+    closes = (
+        list(np.linspace(10_000, 9_000, 30))
+        + list(np.linspace(9_000, 8_000, 15))
+        + list(np.linspace(8_000, 9_000, 25))   # 느린 반등 (저점 간격을 벌림)
+        + list(np.linspace(9_000, 8_050, 25))   # 두 번째 저점이 첫 저점 50봉 뒤
+        + list(np.linspace(8_050, 8_900, 12))   # 넥라인 직전까지 회복 (돌파 전, 신선)
+    )
+    dates = pd.bdate_range("2023-01-02", periods=len(closes))
+    rows = []
+    for dt, close in zip(dates, closes):
+        open_px = close * (1 + rng.normal(0, 0.002))
+        high = max(open_px, close) * (1 + abs(rng.normal(0, 0.003)))
+        low = min(open_px, close) * (1 - abs(rng.normal(0, 0.003)))
+        rows.append(
+            {
+                "date": dt,
+                "open": round(open_px),
+                "high": round(high),
+                "low": round(low),
+                "close": round(close),
+                "volume": 1_000_000,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+@pytest.mark.anyio
+async def test_wide_formation_span_pattern_is_dropped(monkeypatch):
+    """이중 바닥/천장의 구조 포인트 간격이 한도(일봉 30봉)를 넘으면 제외.
+
+    신선도(구조 나이·트리거 나이)와 별개로, 몇 달에 걸쳐 느슨하게 그려진
+    구조는 교과서 패턴으로 보지 않는다.
+    """
+    monkeypatch.setattr("app.services.analysis_service.get_pattern_stats", _fixed_stats)
+
+    symbol = SymbolInfo(
+        code="005930",
+        name="Test",
+        market="KOSPI",
+        sector=None,
+        market_cap=1e12,
+        is_in_universe=True,
+    )
+    result = await analyze_symbol_dataframe(symbol, "1d", _wide_span_double_bottom_df())
+
+    assert all(p.pattern_type != "double_bottom" for p in result.patterns)
+
+
 def _spent_pullback_double_bottom_df() -> pd.DataFrame:
     """돌파가 한참 전에 일어났고, 이후 가격이 넥라인 아래로 되돌아온 케이스.
 
