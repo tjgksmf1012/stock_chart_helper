@@ -127,6 +127,18 @@ async def _fetch_daily_rows_kis(code: str) -> list[dict] | None:
     if not trends:
         return None
 
+    # 투자자 데이터는 T+1 — 당일 행이 미정산 0/0이면 제외해 3일/10일 합산 희석 방지
+    today_str = date.today().strftime("%Y-%m-%d")
+    last = trends[-1]
+    if (
+        last["date"] == today_str
+        and not last["foreign_value_million"]
+        and not last["institution_value_million"]
+    ):
+        trends = trends[:-1]
+    if not trends:
+        return None
+
     # KIS 거래대금은 백만원 단위 → 억원 = /100
     return [
         {
