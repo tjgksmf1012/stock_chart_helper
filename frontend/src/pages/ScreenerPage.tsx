@@ -21,6 +21,10 @@ type IntradayView = 'all' | 'live' | 'stored' | 'public' | 'mixed' | 'cooldown'
 type IntradayPreset = 'all' | 'ready-now' | 'watch' | 'recheck' | 'cooling'
 type QuickPresetId = 'daily-ready' | 'daily-fresh' | 'weekly-alignment' | 'reentry-focus'
 
+// 기본값 원칙: 핵심 품질 필터(유사도·신뢰도·품질·준비도·신선도)만 기본 적용하고,
+// 재진입 계열·활성 셋업·백테스트 우위 같은 전문 필터는 기본 0 — 프리셋에서만 올린다.
+// 재진입 점수는 재진입 구조가 없는 신선한 forming 패턴에서 0이라, 기본으로 걸면
+// 첫 실행이 0건으로 끝나는 문제가 있었다 (실데이터 A/B로 확인).
 const DEFAULT_SCREENER_REQUEST: ScreenerRequest = {
   min_textbook_similarity: 0.25,
   min_p_up: 0.0,
@@ -31,15 +35,15 @@ const DEFAULT_SCREENER_REQUEST: ScreenerRequest = {
   min_trade_readiness_score: 0.25,
   min_entry_window_score: 0.15,
   min_freshness_score: 0.15,
-  min_reentry_score: 0.1,
-  min_reentry_compression_score: 0.1,
-  min_reentry_volume_recovery_score: 0.1,
-  min_reentry_trigger_hold_score: 0.1,
-  min_reentry_wick_absorption_score: 0.1,
-  min_reentry_failure_burden_score: 0.1,
-  min_active_setup_score: 0.15,
+  min_reentry_score: 0.0,
+  min_reentry_compression_score: 0.0,
+  min_reentry_volume_recovery_score: 0.0,
+  min_reentry_trigger_hold_score: 0.0,
+  min_reentry_wick_absorption_score: 0.0,
+  min_reentry_failure_burden_score: 0.0,
+  min_active_setup_score: 0.0,
   min_confluence_score: 0.0,
-  min_historical_edge_score: 0.15,
+  min_historical_edge_score: 0.0,
   exclude_no_signal: true,
   sort_by: 'composite_score',
   limit: 20,

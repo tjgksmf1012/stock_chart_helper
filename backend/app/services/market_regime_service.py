@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 
 KOSPI_TICKER = "1001"
 KOSDAQ_TICKER = "2001"
+# pykrx 인덱스 티커 → FDR 심볼 (pykrx는 KRX 로그인 필수화로 무인증 환경에서 실패)
+_FDR_INDEX_SYMBOLS = {KOSPI_TICKER: "KS11", KOSDAQ_TICKER: "KQ11"}
 _CACHE_KEY = "market:regime:v1"
 _CACHE_TTL = 1800  # 30분
 
@@ -88,25 +90,52 @@ def _classify_regime(close: pd.Series) -> dict:
     }
 
 
-async def _fetch_index_df(ticker: str, days: int = 180) -> pd.DataFrame | None:
-    """pykrx 인덱스 OHLCV 비동기 수집."""
+async def _fetch_index_df_fdr(ticker: str, days: int = 180) -> pd.DataFrame:
+    """FDR 인덱스 OHLCV (KS11/KQ11) — pykrx 실패 시 주 폴백."""
+    symbol = _FDR_INDEX_SYMBOLS.get(ticker)
+    if not symbol:
+        return pd.DataFrame()
     try:
-        from pykrx import stock as krx
+        import FinanceDataReader as fdr
+
         end = date.today()
         start = end - timedelta(days=days)
         df = await asyncio.wait_for(
-            asyncio.to_thread(
-                krx.get_index_ohlcv_by_date,
-                start.strftime("%Y%m%d"),
-                end.strftime("%Y%m%d"),
-                ticker,
-            ),
-            timeout=10.0,  # 15→10초로 단축해 thread pool 빨리 반환
+            asyncio.to_thread(fdr.DataReader, symbol, start.isoformat(), end.isoformat()),
+            timeout=20.0,
         )
         return df if df is not None else pd.DataFrame()
     except Exception as exc:
-        logger.warning("index OHLCV fetch failed for %s: %s", ticker, exc)
+        logger.warning("FDR index fetch failed for %s(%s): %s", ticker, symbol, exc)
         return pd.DataFrame()
+
+
+async def _fetch_index_df(ticker: str, days: int = 180) -> pd.DataFrame | None:
+    """인덱스 OHLCV 수집 — pykrx 우선, 실패/쿨다운 시 FDR(KS11/KQ11) 폴백."""
+    from .data_fetcher import krx_in_cooldown, mark_krx_cooldown
+
+    if not await krx_in_cooldown():
+        try:
+            from pykrx import stock as krx
+            end = date.today()
+            start = end - timedelta(days=days)
+            df = await asyncio.wait_for(
+                asyncio.to_thread(
+                    krx.get_index_ohlcv_by_date,
+                    start.strftime("%Y%m%d"),
+                    end.strftime("%Y%m%d"),
+                    ticker,
+                ),
+                timeout=10.0,  # thread pool 빨리 반환
+            )
+            if df is not None and not df.empty:
+                return df
+            await mark_krx_cooldown(f"index {ticker}: empty response")
+        except Exception as exc:
+            await mark_krx_cooldown(f"index {ticker}: {exc}")
+            logger.warning("pykrx index fetch failed for %s: %s; trying FDR", ticker, exc)
+
+    return await _fetch_index_df_fdr(ticker, days)
 
 
 def _close_series(df: pd.DataFrame | None) -> pd.Series:

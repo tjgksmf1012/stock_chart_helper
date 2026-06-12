@@ -40,7 +40,15 @@ export default function AiRecommendationsPage() {
   })
 
   const data = recommendationsQ.data
-  const topItems = useMemo(() => sortAiItems(data?.items ?? [], isWatched).slice(0, 4), [data?.items, isWatched])
+  // "빠른 진입 후보"에는 진입 가치가 있는 것만 — 리스크 점검 종목이나 점수가
+  // 바닥인 종목이 53점 옆에 10점으로 나란히 서는 혼란 방지 (리스크는 아래 섹션에서)
+  const topItems = useMemo(
+    () =>
+      sortAiItems(data?.items ?? [], isWatched)
+        .filter(item => item.stance !== 'risk_review' && item.score >= 30)
+        .slice(0, 4),
+    [data?.items, isWatched],
+  )
   const priorityItems = useMemo(() => sortAiItems(data?.priority_items ?? [], isWatched), [data?.priority_items, isWatched])
   const watchItems = useMemo(() => sortAiItems(data?.watch_items ?? [], isWatched), [data?.watch_items, isWatched])
   const riskItems = useMemo(() => sortAiItems(data?.risk_items ?? [], isWatched), [data?.risk_items, isWatched])
@@ -237,7 +245,10 @@ function buildLlmBadge(data: { llm_enabled?: boolean; llm_status?: string; llm_c
   if (data.llm_status === 'refreshing') {
     return {
       className: 'border-sky-500/20 bg-sky-500/5 text-sky-100',
-      text: 'OpenAI 브리핑을 백그라운드에서 생성 중입니다. 완료되면 새로고침 시 반영됩니다.',
+      // "완료되면 반영" 같은 약속은 하지 않는다 — 생성이 실패해도 규칙 기반으로 충분히 동작
+      text: data.llm_error
+        ? `OpenAI 코멘트 생성이 계속 실패해 규칙 기반 코멘트를 표시 중입니다 (재시도 중 · 최근 오류: ${data.llm_error}).`
+        : '지금 보이는 내용은 규칙 기반 코멘트입니다. OpenAI 코멘트 생성을 백그라운드에서 시도 중이며, 실패해도 이 화면은 그대로 사용 가능합니다.',
       spinning: true,
     }
   }
