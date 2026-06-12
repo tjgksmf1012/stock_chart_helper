@@ -24,6 +24,22 @@ logger = logging.getLogger(__name__)
 _CACHE_PREFIX = "deep:v1"
 _CACHE_TTL = 43200  # 12시간
 
+# 동시 실행 1개 제한 — 리플레이는 CPU 집약적이라 free tier(0.1 CPU)에서
+# 여러 건이 겹치면 헬스체크까지 밀려 서비스가 재시작될 수 있다.
+_replay_semaphore = asyncio.Semaphore(1)
+
+# 진행률 추적 (단일 인스턴스 전제 — Render free tier는 1대)
+# {code: {"done": int, "total": int}} — 리플레이 스레드가 직접 갱신
+_replay_progress: dict[str, dict[str, int]] = {}
+
+
+def get_deep_progress(symbol_code: str) -> dict[str, Any]:
+    """진행 중인 정밀분석의 리플레이 진행률. 미실행이면 running=False."""
+    progress = _replay_progress.get(symbol_code)
+    if not progress:
+        return {"running": False, "done": 0, "total": 0}
+    return {"running": True, **progress}
+
 # 일봉 리플레이 설정 — 백테스트(window 60/step 10)보다 촘촘하게, 단 중복은 시그니처로 제거
 _LOOKBACK_DAYS = 2200      # ~6년 달력일 ≈ 1,500 거래일
 _WINDOW = 120              # 패턴 탐지 구간 (봉)
@@ -42,14 +58,19 @@ def _case_signature(pattern: PatternResult) -> tuple[str, str]:
     return (pattern.pattern_type, last_dt[:10])
 
 
-def _replay_pattern_cases_sync(bars_df: pd.DataFrame) -> list[dict[str, Any]]:
+def _replay_pattern_cases_sync(bars_df: pd.DataFrame, progress_code: str | None = None) -> list[dict[str, Any]]:
     """과거 이력을 슬라이딩 윈도우로 리플레이해 확정 패턴의 결과를 수집."""
     engine = PatternEngine()
     n = len(bars_df)
     cases: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
 
-    for start_idx in range(0, max(0, n - _WINDOW - 1), _STEP):
+    window_starts = list(range(0, max(0, n - _WINDOW - 1), _STEP))
+    total_windows = max(1, len(window_starts))
+
+    for window_no, start_idx in enumerate(window_starts, start=1):
+        if progress_code is not None:
+            _replay_progress[progress_code] = {"done": window_no, "total": total_windows}
         window_df = bars_df.iloc[start_idx:start_idx + _WINDOW].copy().reset_index(drop=True)
         try:
             patterns = engine.detect_all(window_df, timeframe="1d")
@@ -212,7 +233,11 @@ async def build_deep_analysis(symbol_code: str) -> dict[str, Any]:
         }
 
     bars_df = bars_df.reset_index(drop=True)
-    cases = await asyncio.to_thread(_replay_pattern_cases_sync, bars_df)
+    async with _replay_semaphore:
+        try:
+            cases = await asyncio.to_thread(_replay_pattern_cases_sync, bars_df, symbol_code)
+        finally:
+            _replay_progress.pop(symbol_code, None)
 
     result = {
         "symbol_code": symbol_code,

@@ -41,6 +41,18 @@ export function DeepAnalysisPanel({ symbol }: { symbol: string }) {
     retry: 0,
   })
 
+  // 분석이 도는 동안만 1초 간격으로 리플레이 진행률 폴링 (서버 캐시 적중 시엔 안 뜸)
+  const progressQ = useQuery({
+    queryKey: ['deep-analysis-progress', symbol],
+    queryFn: () => symbolsApi.getDeepAnalysisProgress(symbol),
+    enabled: deepQ.isLoading,
+    refetchInterval: deepQ.isLoading ? 1_000 : false,
+    retry: 0,
+  })
+  const progress = progressQ.data
+  const progressPct =
+    progress?.running && progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : null
+
   return (
     <Card className="space-y-4 p-4">
       <div className="flex items-start justify-between gap-3">
@@ -57,9 +69,23 @@ export function DeepAnalysisPanel({ symbol }: { symbol: string }) {
       </div>
 
       {deepQ.isLoading ? (
-        <div className="flex h-32 flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
+        <div className="flex h-36 flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
           <Loader2 size={18} className="animate-spin" />
-          <p>과거 이력을 리플레이하는 중입니다 (첫 분석은 수십 초 걸릴 수 있어요).</p>
+          <p>
+            {progressPct !== null
+              ? `과거 이력 리플레이 중 — ${progress!.done} / ${progress!.total} 구간 (${progressPct}%)`
+              : '과거 이력을 불러오는 중입니다 (첫 분석은 수십 초 걸릴 수 있어요).'}
+          </p>
+          <div className="h-1.5 w-full max-w-sm overflow-hidden rounded-full bg-muted/40">
+            {progressPct !== null ? (
+              <div
+                className="h-full rounded-full bg-primary transition-all duration-500"
+                style={{ width: `${progressPct}%` }}
+              />
+            ) : (
+              <div className="h-full w-1/3 animate-pulse rounded-full bg-primary/60" />
+            )}
+          </div>
         </div>
       ) : deepQ.isError ? (
         <QueryError message="정밀분석에 실패했습니다." onRetry={() => deepQ.refetch()} />

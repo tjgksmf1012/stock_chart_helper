@@ -4,7 +4,7 @@ import type {
   AiRecommendationItem, AiRecommendationResponse, DashboardOverviewResponse, DashboardResponse, PatternLibraryEntry, ScreenerRequest, DashboardItem, ReferenceCaseResponse, ScanStatusResponse, Timeframe,
   IntradayCandidateWarmupRequest, IntradayWarmupJobStatus, IntradayWarmupRequest, IntradayWarmupResponse, KisPrimeStatus, PatternStatsResponse, RuntimeStatusResponse, ScanHistoryRunSummary, ScanQualityReportResponse,
   WatchlistItem, OutcomeEvaluationResponse, OutcomeRecord, OutcomesSummary, OutcomeStatus, CalibrationReport, OfflineCalibrationResponse,
-  MarketRegimeResponse, SectorHeatmapResponse, MoneyFlowData, DeepAnalysisResponse,
+  MarketRegimeResponse, SectorHeatmapResponse, MoneyFlowData, DeepAnalysisResponse, DeepAnalysisProgress,
 } from '@/types/api'
 
 function resolveApiBase() {
@@ -50,7 +50,9 @@ api.interceptors.response.use(undefined, async error => {
     return Promise.reject(error)
   }
 
-  if ((config.baseURL ?? _base) === '/api/v1' && !config.__directFallbackTried) {
+  // 503 = 백엔드 자체가 다운/재시작 중 — 직접 호출도 똑같이 실패하고
+  // CORS 콘솔 노이즈 + 죽은 서버에 부하만 가중되므로 폴백하지 않는다.
+  if ((config.baseURL ?? _base) === '/api/v1' && !config.__directFallbackTried && status !== 503) {
     config.__directFallbackTried = true
     config.__retryCount = 0
     config.baseURL = _directBase
@@ -80,6 +82,8 @@ export const symbolsApi = {
     api.get<PriceInfo>(`/symbols/${symbol}/price`).then(r => r.data),
   getDeepAnalysis: (symbol: string) =>
     api.get<DeepAnalysisResponse>(`/symbols/${symbol}/deep-analysis`, { timeout: 95_000 }).then(r => r.data),
+  getDeepAnalysisProgress: (symbol: string) =>
+    api.get<DeepAnalysisProgress>(`/symbols/${symbol}/deep-analysis/progress`).then(r => r.data),
   getMoneyFlow: (symbol: string, timeframe: Timeframe, patternType?: string | null) =>
     api
       .get<MoneyFlowData>(`/symbols/${symbol}/money-flow`, {

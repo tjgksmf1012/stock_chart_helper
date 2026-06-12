@@ -499,11 +499,18 @@ export interface ScanStatusResponse {
   intraday_live_phase: string | null
   cached_result_count: number
   universe_size: number | null
+  scanned_count?: number | null
   last_started_at: string | null
   last_finished_at: string | null
   last_error: string | null
   duration_ms: number | null
   trigger_accepted?: boolean | null
+}
+
+export interface DeepAnalysisProgress {
+  running: boolean
+  done: number
+  total: number
 }
 
 export interface PatternLibraryEntry {

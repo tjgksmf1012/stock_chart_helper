@@ -422,6 +422,7 @@ class ScanStatusResponse(BaseModel):
     intraday_live_phase: str | None = None
     cached_result_count: int = 0
     universe_size: int | None = None
+    scanned_count: int | None = None  # 진행 중 스캔이 처리한 종목 수 (진행률 표시용)
     last_started_at: str | None = None
     last_finished_at: str | None = None
     last_error: str | None = None

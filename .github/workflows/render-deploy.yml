@@ -8,6 +8,12 @@ name: Trigger Render deploy
 on:
   push:
     branches: [main]
+    # 백엔드 관련 변경에만 발동 — 프론트 전용 커밋이 백엔드를 재배포시키면
+    # Render free tier는 무중단 전환이 없어 재시작 동안 503이 발생한다.
+    paths:
+      - "backend/**"
+      - "render.yaml"
+      - ".github/workflows/render-deploy.yml"
 
 jobs:
   trigger:

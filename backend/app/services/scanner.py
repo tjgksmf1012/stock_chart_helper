@@ -1432,6 +1432,7 @@ async def run_scan(
                 universe_size=len(universe),
                 candidate_source=candidate_source,
                 candidate_count=len(universe),
+                scanned_count=0,  # 진행률 초기화
                 intraday_live_candidate_limit=(len(live_codes) if timeframe in {"1m", "15m", "30m", "60m"} else None),
                 intraday_live_candidate_count=(len(live_codes) if timeframe in {"1m", "15m", "30m", "60m"} else None),
                 intraday_live_phase=(live_phase if timeframe in {"1m", "15m", "30m", "60m"} else None),
@@ -1470,6 +1471,8 @@ async def run_scan(
                         if timeframe in {"1m", "15m", "30m", "60m"}:
                             item = _decorate_intraday_result(item, timeframe, live_codes=live_codes, live_phase=live_phase)
                         results.append(item)
+                # 진행률 보고 — 프론트가 scan-status 폴링으로 진행 바를 그린다
+                _update_scan_status(timeframe, scanned_count=min(index + effective_batch_size, len(universe)))
                 await asyncio.sleep(0.12 if timeframe in {"1m", "15m", "30m", "60m"} else 0.08)
 
             results.sort(key=_scan_row_sort_key, reverse=True)

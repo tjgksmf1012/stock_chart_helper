@@ -328,6 +328,14 @@ async def get_deep_analysis(symbol: str) -> dict:
         raise HTTPException(status_code=504, detail="정밀분석 시간 초과 — 잠시 후 다시 시도해 주세요.")
 
 
+@router.get("/{symbol}/deep-analysis/progress")
+async def get_deep_analysis_progress(symbol: str) -> dict:
+    """진행 중인 정밀분석의 리플레이 진행률 (프론트 진행 바 폴링용)."""
+    from ...services.deep_analysis_service import get_deep_progress
+
+    return get_deep_progress(symbol)
+
+
 @router.get("/{symbol}/money-flow")
 async def get_money_flow_endpoint(
     symbol: str,

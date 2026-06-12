@@ -444,6 +444,26 @@ export default function DashboardPage() {
             <StatusCell label="후보 생성 방식" value={candidateSourceLabel(status?.candidate_source)} />
           </div>
 
+          {/* 스캔 진행률 바 — 백엔드가 배치마다 scanned_count를 보고 (5초 폴링으로 갱신) */}
+          {isScanActive && (status?.universe_size ?? 0) > 0 && (
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                <span>스캔 진행</span>
+                <span className="font-mono">
+                  {status?.scanned_count ?? 0} / {status?.universe_size}종목
+                </span>
+              </div>
+              <div className="h-1.5 overflow-hidden rounded-full bg-muted/40">
+                <div
+                  className="h-full rounded-full bg-primary transition-all duration-700"
+                  style={{
+                    width: `${Math.min(100, Math.round(((status?.scanned_count ?? 0) / Math.max(status?.universe_size ?? 1, 1)) * 100))}%`,
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
           <button
             onClick={triggerScan}
             disabled={Boolean(isScanActive)}
