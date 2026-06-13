@@ -539,6 +539,8 @@ export interface PatternStatsEntry {
   avg_mae_pct: number
   avg_bars_to_outcome: number
   historical_edge_score: number
+  timeouts?: number
+  resolution_rate?: number | null
 }
 
 export interface PatternStatsResponse {

@@ -92,3 +92,26 @@ class TestUniverseExpansion:
     def test_config_covers_timeframes(self):
         for tf in _BACKTEST_TIMEFRAMES:
             assert tf in _BACKTEST_CONFIG
+
+
+class TestBacktestStockSync:
+    """_backtest_stock_sync 결과 계약 — timeout 포함, win_rate 분리 검증."""
+
+    def test_every_row_has_outcome(self, sample_ohlcv_df_long):
+        from app.services.backtest_engine import _backtest_stock_sync
+
+        rows = _backtest_stock_sync("1d", sample_ohlcv_df_long)
+        for row in rows:
+            assert row["outcome"] in {"win", "loss", "timeout"}
+            # resolved 행은 win 불리언이 outcome과 일치
+            if row["outcome"] != "timeout":
+                assert row["win"] == (row["outcome"] == "win")
+
+    def test_timeout_reachable_on_realistic_walk(self, sample_ohlcv_df_long):
+        from app.services.backtest_engine import _backtest_stock_sync
+
+        # 랜덤워크 300봉에서는 목표·손절 어디에도 안 닿는 timeout이 실제로 발생한다.
+        # (이 표본이 win_rate 분모에서 빠지므로 해소율 표기가 필요해진 이유)
+        rows = _backtest_stock_sync("1d", sample_ohlcv_df_long)
+        assert any(r["outcome"] == "timeout" for r in rows)
+        assert any(r["outcome"] in {"win", "loss"} for r in rows)

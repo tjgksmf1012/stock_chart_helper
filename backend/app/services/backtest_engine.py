@@ -204,17 +204,20 @@ def _backtest_stock_sync(timeframe: str, bars_df: Any) -> list[dict[str, Any]]:
                         bars_to_outcome = step
                         break
 
-            if win is not None and bars_to_outcome is not None:
-                results.append(
-                    {
-                        "pattern_type": pattern.pattern_type,
-                        "win": win,
-                        "timeframe": timeframe,
-                        "mfe_pct": round(favorable_excursion, 4),
-                        "mae_pct": round(adverse_excursion, 4),
-                        "bars_to_outcome": bars_to_outcome,
-                    }
-                )
+            # timeout(목표·손절 미도달)도 별도 outcome으로 기록 — 해소율 계산용.
+            # win_rate는 resolved(win/loss)만으로 계산하므로 영향 없음.
+            outcome = "timeout" if win is None else ("win" if win else "loss")
+            results.append(
+                {
+                    "pattern_type": pattern.pattern_type,
+                    "outcome": outcome,
+                    "win": bool(win),  # outcome != timeout일 때만 의미 있음
+                    "timeframe": timeframe,
+                    "mfe_pct": round(favorable_excursion, 4),
+                    "mae_pct": round(adverse_excursion, 4),
+                    "bars_to_outcome": bars_to_outcome if bars_to_outcome is not None else max_forward,
+                }
+            )
 
     return results
 
@@ -242,13 +245,17 @@ async def run_backtest() -> dict[str, dict[str, dict[str, float | int | str]]]:
                     for result in stock_results:
                         bucket = aggregated[timeframe].setdefault(
                             result["pattern_type"],
-                            {"wins": 0, "total": 0, "mfe_sum": 0.0, "mae_sum": 0.0, "bars_sum": 0.0},
+                            {"wins": 0, "total": 0, "timeouts": 0, "mfe_sum": 0.0, "mae_sum": 0.0, "bars_sum": 0.0},
                         )
+                        # timeout은 해소율 분모에만 반영 — win_rate/평균은 resolved만 사용
+                        if result.get("outcome") == "timeout":
+                            bucket["timeouts"] += 1
+                            continue
                         bucket["total"] += 1
                         bucket["mfe_sum"] += float(result["mfe_pct"])
                         bucket["mae_sum"] += float(result["mae_pct"])
                         bucket["bars_sum"] += float(result["bars_to_outcome"])
-                        if result["win"]:
+                        if result.get("outcome") == "win" or result.get("win"):
                             bucket["wins"] += 1
                     await asyncio.sleep(0.05)
                 except Exception as exc:
@@ -261,10 +268,12 @@ async def run_backtest() -> dict[str, dict[str, dict[str, float | int | str]]]:
                 total = int(bucket["total"])
                 if total < 5:
                     continue
+                timeouts = int(bucket["timeouts"])
                 avg_mfe_pct = round(float(bucket["mfe_sum"]) / total, 4)
                 avg_mae_pct = round(float(bucket["mae_sum"]) / total, 4)
                 avg_bars_to_outcome = round(float(bucket["bars_sum"]) / total, 2)
                 win_rate = round(wins / total, 3)
+                resolution_rate = round(total / (total + timeouts), 3) if (total + timeouts) else None
                 stats[timeframe][pattern_type] = {
                     "pattern_type": pattern_type,
                     "timeframe": timeframe,
@@ -272,6 +281,8 @@ async def run_backtest() -> dict[str, dict[str, dict[str, float | int | str]]]:
                     "sample_size": total,
                     "wins": wins,
                     "total": total,
+                    "timeouts": timeouts,
+                    "resolution_rate": resolution_rate,
                     "avg_mfe_pct": avg_mfe_pct,
                     "avg_mae_pct": avg_mae_pct,
                     "avg_bars_to_outcome": avg_bars_to_outcome,

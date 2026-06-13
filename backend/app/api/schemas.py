@@ -712,6 +712,10 @@ class PatternStatsEntry(BaseModel):
     avg_mae_pct: float
     avg_bars_to_outcome: float
     historical_edge_score: float
+    # 해소율 — win_rate는 '해소된 표본 중 승률'이므로, 목표·손절 어디에도 닿지
+    # 않고 흐지부지 끝난(timeout) 표본 비중을 함께 봐야 오해가 없다.
+    timeouts: int = 0
+    resolution_rate: float | None = None
 
 
 class PatternStatsResponse(BaseModel):

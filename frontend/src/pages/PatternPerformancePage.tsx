@@ -295,8 +295,14 @@ function PatternStatCard({ item, rank }: { item: PatternStatsEntry; rank: number
           평균 결과 도달 {item.avg_bars_to_outcome.toFixed(1)}바
         </span>
         <span className="text-right">
-          {item.wins}승 / 전체 {item.total}건
+          {item.wins}승 / 해소 {item.total}건
         </span>
+        {item.resolution_rate != null && (item.timeouts ?? 0) > 0 && (
+          <span className="col-span-2 text-[11px] text-muted-foreground/80">
+            * 승률은 목표·손절에 닿은 해소 표본 기준입니다. 해소율 {fmtPct(item.resolution_rate, 0)} (미해소 {item.timeouts}건은
+            흐지부지 끝나 제외).
+          </span>
+        )}
       </div>
 
       <div className="rounded-lg border border-border bg-background/60 p-2.5 text-xs leading-relaxed text-muted-foreground">

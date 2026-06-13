@@ -284,6 +284,10 @@ async def get_pattern_stats() -> PatternStatsResponse:
                     avg_mae_pct=float(stats.get("avg_mae_pct", 0.0)),
                     avg_bars_to_outcome=float(stats.get("avg_bars_to_outcome", 0.0)),
                     historical_edge_score=float(stats.get("historical_edge_score", 0.0)),
+                    timeouts=int(stats.get("timeouts", 0)),
+                    resolution_rate=(
+                        float(stats["resolution_rate"]) if stats.get("resolution_rate") is not None else None
+                    ),
                 )
             )
 
