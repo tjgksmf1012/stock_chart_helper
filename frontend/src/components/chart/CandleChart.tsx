@@ -100,9 +100,20 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
   const redrawFrameRef = useRef<number | null>(null)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
 
-  // 오버레이 그룹 표시 토글 — 차트가 빽빽할 때 필요한 것만 남길 수 있게
-  const [hiddenGroups, setHiddenGroups] = useState<OverlayGroup[]>([])
-  const hiddenGroupsRef = useRef<Set<OverlayGroup>>(new Set())
+  // 오버레이 그룹 표시 토글 — 차트가 빽빽할 때 필요한 것만 남길 수 있게.
+  // localStorage에 저장해 새로고침·종목 전환에도 설정 유지.
+  const [hiddenGroups, setHiddenGroups] = useState<OverlayGroup[]>(() => {
+    try {
+      const saved = window.localStorage.getItem('chart-hidden-overlays')
+      if (!saved) return []
+      const parsed = JSON.parse(saved)
+      if (!Array.isArray(parsed)) return []
+      return parsed.filter((g): g is OverlayGroup => g in OVERLAY_GROUP_LABELS)
+    } catch {
+      return []
+    }
+  })
+  const hiddenGroupsRef = useRef<Set<OverlayGroup>>(new Set(hiddenGroups))
 
   // Ordinal time mapping — built once per bars update
   const indexToDateRef = useRef<string[]>([])
@@ -207,6 +218,11 @@ export function CandleChart({ bars, analysis, height = 400 }: CandleChartProps) 
 
   useEffect(() => {
     hiddenGroupsRef.current = new Set(hiddenGroups)
+    try {
+      window.localStorage.setItem('chart-hidden-overlays', JSON.stringify(hiddenGroups))
+    } catch {
+      // storage 접근 불가 환경(시크릿 모드 등)에서는 저장만 건너뜀
+    }
     applyOverlayVisibility()
     // applyOverlayVisibility는 ref 기반이라 의존성에 넣지 않는다
     // eslint-disable-next-line react-hooks/exhaustive-deps
