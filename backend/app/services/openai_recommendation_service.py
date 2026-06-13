@@ -24,6 +24,7 @@ logger = structlog.get_logger()
 
 _OVERLAY_CACHE_PREFIX = "ai:recommendation-overlay:v7"
 _IN_FLIGHT_REFRESHES: set[str] = set()
+_BACKGROUND_TASKS: set[asyncio.Task] = set()
 
 
 async def apply_openai_recommendation_overlay(response: AiRecommendationResponse) -> AiRecommendationResponse:
@@ -64,13 +65,14 @@ async def apply_openai_recommendation_overlay(response: AiRecommendationResponse
                 "llm_error": cached.get("last_error"),
                 "llm_status": "cached_refreshing" if stale else "cached",
                 "llm_cached_at": cached.get("cached_at"),
-                "llm_refreshing": bool(stale or cached.get("refreshing")),
+                "llm_refreshing": bool(stale or _refresh_in_flight(cached)),
                 "llm_source": "openai_cache",
             }
         )
 
     retry_after = 60 if cached.get("last_error") in {"openai_output_parse_error", "openai_timeout", "openai_provider_error"} else refresh_after
-    should_retry = _is_stale(cached.get("last_attempt_at"), retry_after)
+    in_flight = _refresh_in_flight(cached)
+    should_retry = not in_flight and _is_stale(cached.get("last_attempt_at"), retry_after)
     scheduled = False
     if should_retry:
         scheduled = await _schedule_overlay_refresh(cache_key=cache_key, payload=payload, cache_ttl=cache_ttl)
@@ -79,9 +81,9 @@ async def apply_openai_recommendation_overlay(response: AiRecommendationResponse
             "llm_enabled": False,
             "llm_model": settings.openai_model or None,
             "llm_error": cached.get("last_error"),
-            "llm_status": "refreshing" if scheduled or cached.get("refreshing") else "rule_only",
+            "llm_status": "refreshing" if scheduled or in_flight else "rule_only",
             "llm_cached_at": cached.get("cached_at"),
-            "llm_refreshing": bool(scheduled or cached.get("refreshing")),
+            "llm_refreshing": bool(scheduled or in_flight),
             "llm_source": "rule_based",
         }
     )
@@ -356,11 +358,21 @@ async def _schedule_overlay_refresh(*, cache_key: str, payload: dict[str, Any], 
         finally:
             _IN_FLIGHT_REFRESHES.discard(cache_key)
 
-    asyncio.create_task(_runner())
+    # 강한 참조 유지 — 참조 없는 Task는 GC로 중간에 사라질 수 있다 (asyncio 공식 권고)
+    task = asyncio.create_task(_runner())
+    _BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_TASKS.discard)
     return True
 
 
 def _overlay_cache_key(payload: dict[str, Any]) -> str:
+    """오버레이 캐시 키 — 종목 구성·스탠스·점수 밴드만 반영.
+
+    소수점 점수(p_up·readiness 등)를 그대로 넣으면 스캔이 돌 때마다 키가
+    바뀌어 캐시가 영원히 miss되고(사용자는 항상 'refreshing'만 봄) OpenAI
+    호출도 데이터가 흔들릴 때마다 낭비된다. 코멘트는 정성적이므로 라인업이
+    실질적으로 바뀔 때만 재생성하면 충분하다.
+    """
     items = payload.get("items", [])
     signature = {
         "timeframe": payload.get("timeframe"),
@@ -368,19 +380,25 @@ def _overlay_cache_key(payload: dict[str, Any]) -> str:
             {
                 "symbol_code": item.get("symbol_code"),
                 "stance": item.get("stance"),
-                "score": item.get("score"),
-                "confidence": item.get("confidence"),
-                "p_up": item.get("p_up"),
-                "trade_readiness": item.get("trade_readiness"),
-                "entry_window": item.get("entry_window"),
-                "rule_do_now": item.get("rule_do_now"),
-                "rule_review_price": item.get("rule_review_price"),
+                "score_band": int(float(item.get("score") or 0) // 10),  # 10점 단위 밴드
             }
             for item in items
         ],
     }
     digest = hashlib.sha1(json.dumps(signature, sort_keys=True, ensure_ascii=True).encode("utf-8")).hexdigest()[:16]
     return f"{_OVERLAY_CACHE_PREFIX}:{payload.get('timeframe', '1d')}:{digest}"
+
+
+def _refresh_in_flight(cached: dict[str, Any]) -> bool:
+    """refreshing 플래그가 '살아있는' 진행 중 표시인지 판단.
+
+    배포/재시작으로 백그라운드 태스크가 죽으면 플래그가 캐시 TTL(최대 30분)
+    동안 고아로 남아 사용자에게 영구 '생성 중'으로 보인다. 생성은 1분 내외로
+    끝나므로, 마지막 시도가 3분을 넘겼으면 고아로 보고 무시한다.
+    """
+    if not cached.get("refreshing"):
+        return False
+    return not _is_stale(cached.get("last_attempt_at"), 180)
 
 
 def _is_stale(timestamp: str | None, refresh_after_seconds: int) -> bool:

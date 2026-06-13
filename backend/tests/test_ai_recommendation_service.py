@@ -49,3 +49,56 @@ def test_overlap_risk_mentions_pattern_and_watchlist_crowding():
 
     assert "패턴 후보가 많아" in items[0].overlap_risk
     assert "관심종목이 여러 개" in items[0].overlap_risk
+
+
+class TestOverlayCacheKey:
+    """오버레이 캐시 키 안정성 — 점수 소수점 흔들림에 키가 바뀌면 안 된다."""
+
+    @staticmethod
+    def _payload(score: float, codes: tuple[str, ...] = ("282330", "032830")) -> dict:
+        return {
+            "timeframe": "1d",
+            "items": [
+                {"symbol_code": code, "stance": "priority_watch", "score": score,
+                 "p_up": 0.59 + score / 1000, "trade_readiness": 0.7}
+                for code in codes
+            ],
+        }
+
+    def test_stable_within_score_band(self):
+        from app.services.openai_recommendation_service import _overlay_cache_key
+
+        # 같은 10점 밴드(50~59.9) 안에서는 키가 같아야 함 — 스캔마다 흔들리는
+        # 소수점이 키를 바꾸면 캐시가 영원히 miss돼 항상 'refreshing'으로 보인다
+        assert _overlay_cache_key(self._payload(53.2)) == _overlay_cache_key(self._payload(57.9))
+
+    def test_changes_on_band_or_lineup_change(self):
+        from app.services.openai_recommendation_service import _overlay_cache_key
+
+        base = _overlay_cache_key(self._payload(53.2))
+        assert _overlay_cache_key(self._payload(63.0)) != base          # 밴드 변경
+        assert _overlay_cache_key(self._payload(53.2, ("282330",))) != base  # 라인업 변경
+
+
+class TestRefreshInFlight:
+    """고아 refreshing 플래그 판별 — 재시작으로 죽은 태스크의 플래그는 무시."""
+
+    def test_fresh_attempt_is_in_flight(self):
+        from datetime import datetime
+
+        from app.services.openai_recommendation_service import _refresh_in_flight
+
+        assert _refresh_in_flight({"refreshing": True, "last_attempt_at": datetime.utcnow().isoformat()}) is True
+
+    def test_orphaned_flag_is_ignored(self):
+        from datetime import datetime, timedelta
+
+        from app.services.openai_recommendation_service import _refresh_in_flight
+
+        old = (datetime.utcnow() - timedelta(minutes=10)).isoformat()
+        assert _refresh_in_flight({"refreshing": True, "last_attempt_at": old}) is False
+
+    def test_no_flag(self):
+        from app.services.openai_recommendation_service import _refresh_in_flight
+
+        assert _refresh_in_flight({}) is False
