@@ -65,6 +65,11 @@ class Settings(BaseSettings):
     kis_failure_cooldown_seconds: int = 900
     yahoo_failure_cooldown_seconds: int = 600
 
+    # Telegram 알림 — 관심종목이 돌파선/손절/익절에 도달하면 발송.
+    # 토큰·chat_id는 Render 환경변수로 설정 (둘 다 있어야 활성화)
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+
     # Universe filters
     min_market_cap_billion: float = 500.0   # 5,000억 원
     min_avg_volume_billion: float = 3.0     # 30억 원 (20일 평균 거래대금)

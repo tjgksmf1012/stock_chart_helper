@@ -12,7 +12,7 @@ _logger = logging.getLogger(__name__)
 from ..schemas import AnalysisResult, OHLCVBar, PriceInfo, ReferenceCaseResponse, SymbolInfo
 from ...core.config import get_settings
 from ...core.redis import cache_get, cache_set
-from ...services.analysis_service import analyze_symbol_dataframe, build_no_signal_snapshot
+from ...services.analysis_service import ANALYSIS_CACHE_PREFIX, analyze_symbol_dataframe, build_no_signal_snapshot
 import pandas as pd
 
 from ...services.data_fetcher import UNIVERSE_CACHE_KEY, get_data_fetcher
@@ -23,10 +23,6 @@ from ...services.timeframe_service import DEFAULT_TIMEFRAME, SUPPORTED_TIMEFRAME
 router = APIRouter(prefix="/symbols", tags=["symbols"])
 settings = get_settings()
 POPULAR_SEARCH_CODES = {code for code, _, _ in FALLBACK_CODES}
-
-# 분석 동작이 바뀔 때마다 버전을 올려 이전 캐시를 무효화한다 (bump는 여기 한 곳만)
-ANALYSIS_CACHE_PREFIX = "analysis:v14"
-
 
 def _validate_timeframe(timeframe: str) -> str:
     if timeframe not in SUPPORTED_TIMEFRAMES:

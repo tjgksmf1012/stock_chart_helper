@@ -57,6 +57,7 @@ def _start_scheduler() -> None:
 
         from .api.routes.outcomes import run_scheduled_outcome_evaluation
         from .api.routes.system import run_scheduled_intraday_warmup
+        from .services.alert_service import run_watchlist_alert_check
         from .services.backtest_engine import run_backtest
         from .services.scan_history_service import prune_scan_history
         from .services.scanner import run_scan
@@ -113,6 +114,13 @@ def _start_scheduler() -> None:
             run_scheduled_outcome_evaluation,
             CronTrigger(day_of_week="mon-fri", hour=16, minute=20, timezone="Asia/Seoul"),
             id="close_outcome_evaluation",
+            replace_existing=True,
+        )
+        # 관심종목 가격 알림 — 장중 10분 간격 (텔레그램 미설정 시 내부에서 no-op)
+        scheduler.add_job(
+            run_watchlist_alert_check,
+            CronTrigger(day_of_week="mon-fri", hour="9-15", minute="*/10", timezone="Asia/Seoul"),
+            id="watchlist_alert_check",
             replace_existing=True,
         )
         # 주봉/월봉 자동 스캔 — 일봉 리샘플 기반이라 장 마감 후 하루 1회면 충분.
@@ -202,6 +210,7 @@ def _start_scheduler() -> None:
             "close_scan",
             "weekly_timeframe_scan",
             "monthly_timeframe_scan",
+            "watchlist_alert_check",
             "close_outcome_evaluation",
             "weekly_backtest",
             "weekly_scan_history_prune",

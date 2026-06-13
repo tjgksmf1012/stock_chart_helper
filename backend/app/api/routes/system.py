@@ -619,6 +619,29 @@ async def prime_kis_runtime(symbol: str | None = None, timeframe: str = "1m") ->
     return await _prime_kis_once(symbol=symbol, timeframe=timeframe, triggered_by="manual")
 
 
+@router.post("/alerts/test")
+async def send_test_alert() -> dict:
+    """텔레그램 알림 연결 확인 — 설정돼 있으면 테스트 메시지를 발송."""
+    from ...services.notification_service import send_telegram_message, telegram_configured
+
+    if not telegram_configured():
+        return {
+            "configured": False,
+            "sent": False,
+            "guidance": "Render 환경변수에 TELEGRAM_BOT_TOKEN과 TELEGRAM_CHAT_ID를 설정하세요.",
+        }
+    sent = await send_telegram_message("✅ Stock Chart Helper 알림 연결 테스트 — 관심종목이 돌파선/손절/익절에 도달하면 여기로 알려드립니다.")
+    return {"configured": True, "sent": sent}
+
+
+@router.post("/alerts/run-check")
+async def run_alert_check_now() -> dict:
+    """관심종목 알림 점검을 즉시 1회 실행 (스케줄 기다리지 않고 확인용)."""
+    from ...services.alert_service import run_watchlist_alert_check
+
+    return await run_watchlist_alert_check()
+
+
 async def _run_warmup_background(
     *,
     source: str,

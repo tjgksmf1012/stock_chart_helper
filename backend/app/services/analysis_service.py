@@ -16,6 +16,10 @@ from .pattern_engine import PatternEngine, PatternResult, _breakout_index as _pe
 from .probability_engine import compute_probability
 from .timeframe_service import get_timeframe_spec, is_intraday_timeframe, timeframe_label
 
+# 분석 결과 캐시 키 접두사 — 분석 동작이 바뀌면 여기 한 곳만 올린다.
+# (routes/symbols.py와 alert_service가 함께 사용 — 순환 import 없는 위치)
+ANALYSIS_CACHE_PREFIX = "analysis:v14"
+
 _BULLISH_PATTERNS = {
     "double_bottom",
     "inverse_head_and_shoulders",
