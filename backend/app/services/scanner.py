@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -148,17 +148,23 @@ _KST = ZoneInfo("Asia/Seoul")
 WATCHLIST_CACHE_KEY = "watchlist:v1:default"
 
 
+# 스캔 캐시 버전 — 분석/필터 동작이 바뀌면 여기 한 곳만 올린다.
+# 집계(full)와 종목별(single) 캐시가 같은 버전을 쓰므로, 배포 시 옛 필터
+# 기준으로 만들어진 행이 대시보드에 남는 문제가 자동으로 해소된다.
+SCAN_CACHE_VERSION = "v16"
+
+
 def _full_scan_cache_key(timeframe: str) -> str:
-    return f"scanner:v10:full_results:{timeframe}"
+    return f"scanner:{SCAN_CACHE_VERSION}:full_results:{timeframe}"
 
 
 def _single_scan_cache_key(timeframe: str, code: str, allow_live_intraday: bool = True) -> str:
     mode = "live" if allow_live_intraday else "budget"
-    return f"scan:v15:result:{timeframe}:{code}:{mode}"
+    return f"scan:{SCAN_CACHE_VERSION}:result:{timeframe}:{code}:{mode}"
 
 
 def _utc_now_iso() -> str:
-    return datetime.utcnow().isoformat()
+    return datetime.now(UTC).replace(tzinfo=None).isoformat()
 
 
 def _kst_now() -> datetime:
@@ -754,7 +760,7 @@ def _merge_scan_results(
         merged = list(fresh)
     else:
         fresh_codes = {str(row.get("code")) for row in fresh}
-        cutoff = datetime.utcnow() - timedelta(hours=max_age_hours)
+        cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=max_age_hours)
         carried: list[dict[str, Any]] = []
         for row in previous:
             if not isinstance(row, dict):
@@ -1364,7 +1370,7 @@ async def run_scan(
     force_refresh: bool = False,
     source: str = "scheduled",
 ) -> list[dict[str, Any]]:
-    started_at = datetime.utcnow()
+    started_at = datetime.now(UTC).replace(tzinfo=None)
     cache_key = _full_scan_cache_key(timeframe)
     default_limit, default_batch_size = _scan_workload_defaults(source)
     scan_limit = max(1, int(limit or default_limit))
@@ -1416,7 +1422,7 @@ async def run_scan(
                 is_running=False,
                 cached_result_count=len(cached),
                 last_finished_at=_utc_now_iso(),
-                duration_ms=int((datetime.utcnow() - started_at).total_seconds() * 1000),
+                duration_ms=int((datetime.now(UTC).replace(tzinfo=None) - started_at).total_seconds() * 1000),
             )
             return cached
 
@@ -1441,7 +1447,7 @@ async def run_scan(
             effective_batch_size = _effective_batch_size(timeframe, scan_batch_size)
             results: list[dict[str, Any]] = []
             for index in range(0, len(universe), effective_batch_size):
-                elapsed = (datetime.utcnow() - started_at).total_seconds()
+                elapsed = (datetime.now(UTC).replace(tzinfo=None) - started_at).total_seconds()
                 if elapsed >= max_duration_seconds and results:
                     logger.warning(
                         "Market scan reached runtime cap for %s after %d/%d candidates; saving partial results",
@@ -1487,7 +1493,7 @@ async def run_scan(
             if timeframe in {"1d", "1wk", "1mo"}:
                 results = _merge_scan_results(previous_cached, fresh_results)
             await cache_set(cache_key, results, ttl=settings.scan_results_ttl)
-            finished_at = datetime.utcnow()
+            finished_at = datetime.now(UTC).replace(tzinfo=None)
             reference_day, reference_reason = resolve_daily_reference_date()
             if timeframe in {"1m", "15m", "30m", "60m"}:
                 reference_date = _kst_now().date().isoformat()
@@ -1530,7 +1536,7 @@ async def run_scan(
             )
             return results
         except Exception as exc:
-            finished_at = datetime.utcnow()
+            finished_at = datetime.now(UTC).replace(tzinfo=None)
             _update_scan_status(
                 timeframe,
                 status="error",

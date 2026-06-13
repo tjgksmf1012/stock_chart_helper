@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import pandas as pd
@@ -224,7 +224,7 @@ async def build_deep_analysis(symbol_code: str) -> dict[str, Any]:
     if bars_df is None or bars_df.empty or len(bars_df) < _WINDOW + 20:
         return {
             "symbol_code": symbol_code,
-            "generated_at": datetime.utcnow().isoformat(),
+            "generated_at": datetime.now(UTC).replace(tzinfo=None).isoformat(),
             "available_bars": 0 if bars_df is None else len(bars_df),
             "cases": [],
             "stats": [],
@@ -241,7 +241,7 @@ async def build_deep_analysis(symbol_code: str) -> dict[str, Any]:
 
     result = {
         "symbol_code": symbol_code,
-        "generated_at": datetime.utcnow().isoformat(),
+        "generated_at": datetime.now(UTC).replace(tzinfo=None).isoformat(),
         "available_bars": len(bars_df),
         "case_count": len(cases),
         "cases": cases[-_MAX_CASES_RETURNED:][::-1],  # 최근순

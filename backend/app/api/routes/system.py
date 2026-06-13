@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -235,7 +235,7 @@ async def get_runtime_status() -> RuntimeStatusResponse:
     token_remaining = token_status["token_expires_in_seconds"]
 
     return RuntimeStatusResponse(
-        generated_at=datetime.utcnow().isoformat(),
+        generated_at=datetime.now(UTC).replace(tzinfo=None).isoformat(),
         app_name=settings.app_name,
         debug=settings.debug,
         kis=KisRuntimeStatus(
@@ -307,7 +307,7 @@ async def _prime_kis_once(
     timeframe: str,
     triggered_by: str,
 ) -> KisPrimeStatus:
-    requested_at = datetime.utcnow().isoformat()
+    requested_at = datetime.now(UTC).replace(tzinfo=None).isoformat()
     kis = get_kis_client()
     if timeframe not in {"1m", "15m", "30m", "60m"}:
         raise HTTPException(status_code=422, detail=f"Unsupported intraday timeframe: {timeframe}")
@@ -346,7 +346,7 @@ async def _prime_kis_once(
             status="error",
             is_running=False,
             requested_at=requested_at,
-            finished_at=datetime.utcnow().isoformat(),
+            finished_at=datetime.now(UTC).replace(tzinfo=None).isoformat(),
             triggered_by=triggered_by,
             symbol=resolved_symbol,
             timeframe=timeframe,
@@ -386,7 +386,7 @@ async def _prime_kis_once(
             status="ready",
             is_running=False,
             requested_at=requested_at,
-            finished_at=datetime.utcnow().isoformat(),
+            finished_at=datetime.now(UTC).replace(tzinfo=None).isoformat(),
             triggered_by=triggered_by,
             symbol=resolved_symbol,
             timeframe=timeframe,
@@ -415,7 +415,7 @@ async def _prime_kis_once(
             status="error",
             is_running=False,
             requested_at=requested_at,
-            finished_at=datetime.utcnow().isoformat(),
+            finished_at=datetime.now(UTC).replace(tzinfo=None).isoformat(),
             triggered_by=triggered_by,
             symbol=resolved_symbol,
             timeframe=timeframe,
@@ -563,7 +563,7 @@ async def _run_intraday_warmup(
     success_count = sum(1 for result in results if result.ok)
 
     return IntradayWarmupResponse(
-        requested_at=datetime.utcnow().isoformat(),
+        requested_at=datetime.now(UTC).replace(tzinfo=None).isoformat(),
         allow_live=allow_live,
         symbols=symbols,
         timeframes=timeframes,
@@ -627,7 +627,7 @@ async def _run_warmup_background(
     allow_live: bool,
     lookback_days: int | None,
 ) -> None:
-    started_at = datetime.utcnow().isoformat()
+    started_at = datetime.now(UTC).replace(tzinfo=None).isoformat()
     total_requests = len(symbols) * len(timeframes)
     _set_warmup_status(
         status="running",
@@ -670,7 +670,7 @@ async def _run_warmup_background(
         _set_warmup_status(
             status="ready",
             is_running=False,
-            finished_at=datetime.utcnow().isoformat(),
+            finished_at=datetime.now(UTC).replace(tzinfo=None).isoformat(),
             total_requests=response.total_requests,
             completed_count=response.total_requests,
             success_count=response.success_count,
@@ -681,7 +681,7 @@ async def _run_warmup_background(
         _set_warmup_status(
             status="error",
             is_running=False,
-            finished_at=datetime.utcnow().isoformat(),
+            finished_at=datetime.now(UTC).replace(tzinfo=None).isoformat(),
             last_error=str(exc),
         )
 
@@ -703,7 +703,7 @@ def _trigger_background_warmup(
         is_running=True,
         source=source,
         allow_live=allow_live,
-        started_at=datetime.utcnow().isoformat(),
+        started_at=datetime.now(UTC).replace(tzinfo=None).isoformat(),
         finished_at=None,
         total_requests=len(symbols) * len(timeframes),
         completed_count=0,

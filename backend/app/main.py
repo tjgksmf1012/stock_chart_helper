@@ -115,6 +115,32 @@ def _start_scheduler() -> None:
             id="close_outcome_evaluation",
             replace_existing=True,
         )
+        # 주봉/월봉 자동 스캔 — 일봉 리샘플 기반이라 장 마감 후 하루 1회면 충분.
+        # 일봉 close_scan(16:00)과 시간을 띄워 free tier 부하 분산.
+        scheduler.add_job(
+            run_scan,
+            CronTrigger(day_of_week="mon-fri", hour=16, minute=40, timezone="Asia/Seoul"),
+            kwargs={
+                "timeframe": "1wk",
+                "limit": settings.background_scan_limit,
+                "batch_size": settings.background_scan_batch_size,
+                "force_refresh": True,
+            },
+            id="weekly_timeframe_scan",
+            replace_existing=True,
+        )
+        scheduler.add_job(
+            run_scan,
+            CronTrigger(day_of_week="mon-fri", hour=16, minute=55, timezone="Asia/Seoul"),
+            kwargs={
+                "timeframe": "1mo",
+                "limit": settings.background_scan_limit,
+                "batch_size": settings.background_scan_batch_size,
+                "force_refresh": True,
+            },
+            id="monthly_timeframe_scan",
+            replace_existing=True,
+        )
         scheduler.add_job(
             run_backtest,
             CronTrigger(day_of_week="sun", hour=2, minute=0, timezone="Asia/Seoul"),
@@ -174,6 +200,8 @@ def _start_scheduler() -> None:
             "morning_scan",
             "midday_scan",
             "close_scan",
+            "weekly_timeframe_scan",
+            "monthly_timeframe_scan",
             "close_outcome_evaluation",
             "weekly_backtest",
             "weekly_scan_history_prune",

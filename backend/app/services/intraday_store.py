@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -82,7 +82,7 @@ class IntradayStore:
 
     def _upsert_bars_sync(self, symbol: str, timeframe: str, df: pd.DataFrame, source: str) -> None:
         rows: list[tuple[object, ...]] = []
-        fetched_at = datetime.utcnow().isoformat()
+        fetched_at = datetime.now(UTC).replace(tzinfo=None).isoformat()
         for _, row in df.iterrows():
             stamp = pd.Timestamp(row["datetime"]).to_pydatetime().replace(tzinfo=None).isoformat()
             amount = row.get("amount")
@@ -102,7 +102,7 @@ class IntradayStore:
                 )
             )
 
-        retention_cutoff = (datetime.utcnow() - timedelta(days=self._retention_days)).isoformat()
+        retention_cutoff = (datetime.now(UTC).replace(tzinfo=None) - timedelta(days=self._retention_days)).isoformat()
         with self._connect() as conn:
             conn.executemany(
                 """
@@ -129,7 +129,7 @@ class IntradayStore:
         return await asyncio.to_thread(self._load_bars_sync, symbol, timeframe, lookback_days)
 
     def _load_bars_sync(self, symbol: str, timeframe: str, lookback_days: int) -> pd.DataFrame:
-        cutoff = (datetime.utcnow() - timedelta(days=max(1, lookback_days) + 2)).isoformat()
+        cutoff = (datetime.now(UTC).replace(tzinfo=None) - timedelta(days=max(1, lookback_days) + 2)).isoformat()
         with self._connect() as conn:
             rows = conn.execute(
                 """
@@ -153,7 +153,7 @@ class IntradayStore:
         latest_fetch = pd.to_datetime(frame["fetched_at"]).max()
         age_minutes = None
         if latest_fetch is not None and not pd.isna(latest_fetch):
-            age_minutes = int(max(0, (datetime.utcnow() - latest_fetch.to_pydatetime()).total_seconds() // 60))
+            age_minutes = int(max(0, (datetime.now(UTC).replace(tzinfo=None) - latest_fetch.to_pydatetime()).total_seconds() // 60))
 
         source = str(frame["source"].dropna().iloc[-1]) if frame["source"].notna().any() else "intraday_store"
         result = frame[["datetime", "open", "high", "low", "close", "volume", "amount"]].copy()

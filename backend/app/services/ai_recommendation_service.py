@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import Counter
-from datetime import datetime
+from datetime import UTC, datetime
 
 from ..api.schemas import AiRecommendationItem, AiRecommendationResponse, SymbolInfo
 from ..core.redis import cache_get, cache_set
@@ -94,7 +94,7 @@ async def build_ai_recommendations(timeframe: str = DEFAULT_TIMEFRAME, limit: in
         )
 
         response = AiRecommendationResponse(
-            generated_at=datetime.utcnow().isoformat(),
+            generated_at=datetime.now(UTC).replace(tzinfo=None).isoformat(),
             timeframe=timeframe,
             timeframe_label=timeframe_label(timeframe),
             market_brief=_market_brief(ranked, timeframe, watchlist_focus_items),

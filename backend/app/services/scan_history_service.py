@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from statistics import mean
 from typing import Any
 
@@ -87,7 +87,7 @@ def _empty_quality_payload(
     notes: list[str],
 ) -> dict[str, Any]:
     return {
-        "generated_at": datetime.utcnow().isoformat(),
+        "generated_at": datetime.now(UTC).replace(tzinfo=None).isoformat(),
         "timeframe": timeframe,
         "lookback_days": lookback_days,
         "forward_bars": forward_bars,
@@ -274,7 +274,7 @@ async def prune_scan_history(keep_days: int = 400) -> int:
     from ..core.database import AsyncSessionLocal
 
     await ensure_scan_history_schema()
-    cutoff = datetime.utcnow() - timedelta(days=keep_days)
+    cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=keep_days)
     async with AsyncSessionLocal() as session:
         stmt = delete(ScanRun).where(ScanRun.finished_at.is_not(None), ScanRun.finished_at < cutoff)
         result = await session.execute(stmt)
@@ -483,7 +483,7 @@ async def build_scan_quality_report(
         notes.append("표본 수가 아직 작아 통계 해석은 보수적으로 보는 편이 좋습니다.")
 
     payload = {
-        "generated_at": datetime.utcnow().isoformat(),
+        "generated_at": datetime.now(UTC).replace(tzinfo=None).isoformat(),
         "timeframe": timeframe,
         "lookback_days": lookback_days,
         "forward_bars": forward_bars,

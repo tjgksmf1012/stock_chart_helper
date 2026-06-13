@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import pandas as pd
 
@@ -47,7 +47,7 @@ def _unknown_regime() -> dict:
         "kospi": unk,
         "kosdaq": unk,
         "overall_regime": "unknown",
-        "generated_at": datetime.utcnow().isoformat(),
+        "generated_at": datetime.now(UTC).replace(tzinfo=None).isoformat(),
     }
 
 
@@ -175,7 +175,7 @@ async def _do_fetch_market_regime() -> None:
             "kospi": kospi_regime,
             "kosdaq": kosdaq_regime,
             "overall_regime": overall,
-            "generated_at": datetime.utcnow().isoformat(),
+            "generated_at": datetime.now(UTC).replace(tzinfo=None).isoformat(),
         }
         await cache_set(_CACHE_KEY, result, ttl=_CACHE_TTL)
         logger.info("market regime cached: %s", overall)

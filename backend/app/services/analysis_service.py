@@ -4,7 +4,7 @@ Shared analysis pipeline for symbol detail pages and scanner snapshots.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import pandas as pd
@@ -3151,7 +3151,7 @@ def build_no_signal_snapshot(
         projection_summary="활성 패턴이 부족해 미래 경로는 보수적인 중립 시나리오로 처리했습니다.",
         projected_path=[],
         is_provisional=True,
-        updated_at=datetime.utcnow().isoformat(),
+        updated_at=datetime.now(UTC).replace(tzinfo=None).isoformat(),
         data_source=profile["data_source"],
         data_quality=profile["data_quality"],
         source_note=profile["source_note"],
@@ -3669,7 +3669,7 @@ async def analyze_symbol_dataframe(
         projected_path=projected_path,
         projection_scenarios=projection_scenarios,
         is_provisional=best_pattern.is_provisional,
-        updated_at=datetime.utcnow().isoformat(),
+        updated_at=datetime.now(UTC).replace(tzinfo=None).isoformat(),
         data_source=profile["data_source"],
         data_quality=profile["data_quality"],
         source_note=profile["source_note"],

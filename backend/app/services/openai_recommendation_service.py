@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from json import JSONDecodeError
 from typing import Any
 
@@ -410,11 +410,11 @@ def _is_stale(timestamp: str | None, refresh_after_seconds: int) -> bool:
             cached_at = cached_at.astimezone(timezone.utc).replace(tzinfo=None)
     except ValueError:
         return True
-    return cached_at < datetime.utcnow() - timedelta(seconds=refresh_after_seconds)
+    return cached_at < datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=refresh_after_seconds)
 
 
 def _utcnow_iso() -> str:
-    return datetime.utcnow().isoformat()
+    return datetime.now(UTC).replace(tzinfo=None).isoformat()
 
 
 def _extract_output_text(data: dict[str, Any]) -> str:

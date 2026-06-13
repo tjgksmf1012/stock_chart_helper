@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import pandas as pd
 
@@ -142,7 +142,7 @@ class KRXDataFetcher:
     async def _mark_kis_cooldown(self, code: str, timeframe: str, reason: str) -> None:
         await cache_set(
             self._kis_cooldown_key(code, timeframe),
-            {"reason": reason, "at": datetime.utcnow().isoformat()},
+            {"reason": reason, "at": datetime.now(UTC).replace(tzinfo=None).isoformat()},
             ttl=max(60, int(settings.kis_failure_cooldown_seconds)),
         )
 
@@ -152,7 +152,7 @@ class KRXDataFetcher:
     async def _mark_yahoo_cooldown(self, timeframe: str, reason: str) -> None:
         await cache_set(
             self._yahoo_cooldown_key(timeframe),
-            {"reason": reason, "at": datetime.utcnow().isoformat()},
+            {"reason": reason, "at": datetime.now(UTC).replace(tzinfo=None).isoformat()},
             ttl=max(60, int(settings.yahoo_failure_cooldown_seconds)),
         )
 

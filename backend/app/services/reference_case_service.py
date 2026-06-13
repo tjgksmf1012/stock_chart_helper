@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import pandas as pd
@@ -547,7 +547,7 @@ async def build_reference_cases(
     best_pattern = analysis.patterns[0] if analysis.patterns else None
     if best_pattern is None:
         response = ReferenceCaseResponse(
-            generated_at=datetime.utcnow().isoformat(),
+            generated_at=datetime.now(UTC).replace(tzinfo=None).isoformat(),
             symbol_code=symbol_code,
             symbol_name=analysis.symbol.name,
             timeframe=timeframe,
@@ -564,7 +564,7 @@ async def build_reference_cases(
     current_df = await fetcher.get_stock_ohlcv_by_timeframe(symbol_code, timeframe)
     if current_df.empty:
         response = ReferenceCaseResponse(
-            generated_at=datetime.utcnow().isoformat(),
+            generated_at=datetime.now(UTC).replace(tzinfo=None).isoformat(),
             symbol_code=symbol_code,
             symbol_name=analysis.symbol.name,
             timeframe=timeframe,
@@ -665,7 +665,7 @@ async def build_reference_cases(
 
     sample_count = len(unique_items)
     response = ReferenceCaseResponse(
-        generated_at=datetime.utcnow().isoformat(),
+        generated_at=datetime.now(UTC).replace(tzinfo=None).isoformat(),
         symbol_code=symbol_code,
         symbol_name=analysis.symbol.name,
         timeframe=timeframe,

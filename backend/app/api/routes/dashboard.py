@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Query
 
@@ -127,7 +127,7 @@ def _response(category: str, timeframe: str, items: list[DashboardItem]) -> Dash
         timeframe=timeframe,
         timeframe_label=timeframe_label(timeframe),
         items=items,
-        generated_at=datetime.utcnow().isoformat(),
+        generated_at=datetime.now(UTC).replace(tzinfo=None).isoformat(),
     )
 
 
@@ -422,7 +422,7 @@ async def dashboard_overview(
     return DashboardOverviewResponse(
         timeframe=timeframe,
         timeframe_label=timeframe_label(timeframe),
-        generated_at=datetime.utcnow().isoformat(),
+        generated_at=datetime.now(UTC).replace(tzinfo=None).isoformat(),
         long_high_probability=_long_response(timeframe, data, limit),
         pattern_armed=_armed_response(timeframe, data, limit),
         live_intraday_candidates=await _live_intraday_response(timeframe, data, limit, status=status),
@@ -461,5 +461,5 @@ async def dashboard_sector_heatmap(
     return SectorHeatmapResponse(
         sectors=[SectorEntry(**s) for s in sector_rows],
         code_to_sector=code_to_sector,
-        generated_at=datetime.utcnow().isoformat(),
+        generated_at=datetime.now(UTC).replace(tzinfo=None).isoformat(),
     )
