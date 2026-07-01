@@ -251,6 +251,28 @@ export default function SystemStatusPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
+                  <KeyRound size={15} className="text-primary" />
+                  토스증권 API 상태
+                </CardTitle>
+              </CardHeader>
+              <div className="space-y-2">
+                <StatRow label="설정 여부" value={data.toss.configured ? '연결됨' : '미설정'} />
+                <StatRow label="토큰 캐시" value={data.toss.token_cached ? '있음' : '없음'} />
+                <StatRow label="Base URL" value={data.toss.base_url} />
+                <StatRow label="실시간 소스 우선순위" value={data.toss.live_intraday_provider_order} />
+              </div>
+              <div className="mt-3 space-y-1.5">
+                {data.toss.guidance.map((item, index) => (
+                  <p key={index} className="text-xs leading-relaxed text-muted-foreground">
+                    {item}
+                  </p>
+                ))}
+              </div>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
                   <ServerCog size={15} className="text-primary" />
                   캐시와 데이터 저장
                 </CardTitle>

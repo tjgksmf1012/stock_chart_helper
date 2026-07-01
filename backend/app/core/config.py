@@ -50,6 +50,18 @@ class Settings(BaseSettings):
     kis_max_concurrent_requests: int = 2
     kis_request_spacing_ms: int = 350
 
+    # Toss Securities Open API (optional, alternative real-time source alongside KIS)
+    toss_client_id: str = ""
+    toss_client_secret: str = ""
+    toss_base_url: str = "https://openapi.tossinvest.com"
+    toss_token_cache_path: str = "data/toss_token_cache.json"
+    toss_max_concurrent_requests: int = 3
+    toss_request_spacing_ms: int = 150
+    toss_failure_cooldown_seconds: int = 900
+    # 실시간 분봉/현재가 소스 우선순위 (콤마 구분). 설정되지 않았거나 미구성된
+    # provider는 건너뛴다. 예: "kis,toss"로 바꾸면 KIS를 우선 시도.
+    live_intraday_provider_order: str = "toss,kis"
+
     # Cache TTL (seconds)
     daily_bars_ttl: int = 3600
     intraday_bars_ttl: int = 300

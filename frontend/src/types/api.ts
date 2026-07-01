@@ -562,6 +562,14 @@ export interface KisRuntimeStatus {
   last_prime?: KisPrimeStatus | null
 }
 
+export interface TossRuntimeStatus {
+  configured: boolean
+  token_cached: boolean
+  base_url: string
+  live_intraday_provider_order: string
+  guidance: string[]
+}
+
 export interface CacheRuntimeStatus {
   backend: string
   redis_available: boolean
@@ -615,6 +623,7 @@ export interface RuntimeStatusResponse {
   app_name: string
   debug: boolean
   kis: KisRuntimeStatus
+  toss: TossRuntimeStatus
   cache: CacheRuntimeStatus
   intraday_store: IntradayStoreStatus
   scheduler_enabled: boolean

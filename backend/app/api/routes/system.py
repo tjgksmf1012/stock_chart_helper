@@ -23,12 +23,14 @@ from ..schemas import (
     StorageRoleStatus,
     ScanHistoryRunSummary,
     ScanQualityReportResponse,
+    TossRuntimeStatus,
 )
 from ...core.config import get_settings
 from ...core.redis import cache_backend_status
 from ...services.data_fetcher import get_data_fetcher
 from ...services.intraday_store import get_intraday_store
 from ...services.kis_client import get_kis_client
+from ...services.toss_client import get_toss_client
 from ...services.scan_history_service import build_scan_quality_report, list_recent_scan_runs, prune_scan_history
 from ...services.scanner import get_scan_results
 from ...services.timeframe_service import get_timeframe_spec, is_intraday_timeframe
@@ -223,11 +225,21 @@ def _kis_guidance(configured: bool, token_cached: bool, token_remaining: int | N
     return guidance
 
 
+def _toss_guidance(configured: bool, token_cached: bool) -> list[str]:
+    if not configured:
+        return ["토스증권 Open API Client ID/Secret이 설정되지 않았습니다. TOSS_CLIENT_ID/TOSS_CLIENT_SECRET을 설정하면 사용됩니다."]
+    if not token_cached:
+        return ["아직 활성 토스증권 토큰이 없습니다. 첫 실시간 요청 시 토큰이 발급됩니다."]
+    return ["토스증권 토큰이 캐시되어 있어 잦은 재발급 없이 시세/분봉 요청을 처리할 수 있습니다."]
+
+
 @router.get("/status", response_model=RuntimeStatusResponse)
 async def get_runtime_status() -> RuntimeStatusResponse:
     kis = get_kis_client()
+    toss = get_toss_client()
     token_status = _read_token_cache_status(settings.kis_token_cache_path)
     runtime_token_status = await kis.get_cached_token_status()
+    toss_token_status = await toss.get_cached_token_status()
     cache_status = await cache_backend_status()
     intraday_store_status = await get_intraday_store().get_status()
     configured = kis.configured
@@ -251,6 +263,13 @@ async def get_runtime_status() -> RuntimeStatusResponse:
             guidance=_kis_guidance(configured, token_cached, token_remaining),
             last_prime=_get_kis_prime_status(),
         ),
+        toss=TossRuntimeStatus(
+            configured=toss.configured,
+            token_cached=toss_token_status["token_cached"],
+            base_url=settings.toss_base_url,
+            live_intraday_provider_order=settings.live_intraday_provider_order,
+            guidance=_toss_guidance(toss.configured, toss_token_status["token_cached"]),
+        ),
         cache=CacheRuntimeStatus(**cache_status),
         intraday_store=IntradayStoreStatus(**intraday_store_status),
         scheduler_enabled=True,
@@ -259,7 +278,7 @@ async def get_runtime_status() -> RuntimeStatusResponse:
         storage_roles=_storage_roles(cache_status, intraday_store_status),
         data_notes=[
             "월봉·주봉·일봉은 KRX 일봉 데이터를 기준으로 집계합니다.",
-            "분봉은 KIS 당일 분봉, Yahoo 공개 분봉, 로컬 저장 캐시를 조합해 사용합니다.",
+            f"분봉은 실시간 소스({settings.live_intraday_provider_order} 우선순위), Yahoo 공개 분봉, 로컬 저장 캐시를 조합해 사용합니다.",
             "운영 중에는 모든 분봉 후보를 실시간 호출하지 않고, 우선순위가 높은 후보부터 예열하는 방식으로 비용과 호출 수를 관리합니다.",
         ],
     )

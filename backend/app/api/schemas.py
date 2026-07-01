@@ -444,6 +444,14 @@ class KisRuntimeStatus(BaseModel):
     last_prime: KisPrimeStatus | None = None
 
 
+class TossRuntimeStatus(BaseModel):
+    configured: bool
+    token_cached: bool
+    base_url: str
+    live_intraday_provider_order: str
+    guidance: list[str] = Field(default_factory=list)
+
+
 class CacheRuntimeStatus(BaseModel):
     backend: str
     redis_available: bool
@@ -497,6 +505,7 @@ class RuntimeStatusResponse(BaseModel):
     app_name: str
     debug: bool
     kis: KisRuntimeStatus
+    toss: TossRuntimeStatus
     cache: CacheRuntimeStatus
     intraday_store: IntradayStoreStatus
     scheduler_enabled: bool

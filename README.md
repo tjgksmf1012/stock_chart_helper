@@ -107,11 +107,25 @@ KIS_ACCOUNT_NO=12345678-01
 KIS_ENV=auto
 ```
 
+## Toss Securities Open API Setup
+
+토스증권 Open API(시세/캔들 조회, OAuth2 client_credentials)를 KIS와 나란히 쓸 수 있습니다.
+발급: [corp.tossinvest.com/ko/open-api](https://corp.tossinvest.com/ko/open-api)
+
+```env
+TOSS_CLIENT_ID=your_client_id
+TOSS_CLIENT_SECRET=your_client_secret
+# 실시간 분봉/현재가 소스 우선순위. 기본값은 토스 우선.
+LIVE_INTRADAY_PROVIDER_ORDER=toss,kis
+```
+
 현재 연동 방향:
 
-- 당일 1분 데이터는 KIS 우선 사용
+- 실시간 1분 데이터는 `LIVE_INTRADAY_PROVIDER_ORDER`에 설정된 순서대로 토스/KIS를 시도 (기본: 토스 우선, 실패 시 KIS)
 - 15분 / 30분 / 60분 차트는 1분 데이터를 리샘플링하거나 저장 분봉을 재사용
-- KIS가 없으면 공개 분봉 소스와 로컬 저장 캐시를 fallback으로 사용
+- 둘 다 없으면 공개 분봉 소스와 로컬 저장 캐시를 fallback으로 사용
+- 토스는 계좌 조회·매매(Account/Asset/Order)는 사용하지 않음 — 이 앱은 시세 조회 전용
+- `/system/status`에서 두 소스의 설정/토큰 캐시 상태를 확인할 수 있습니다.
 
 ## Useful URLs
 
