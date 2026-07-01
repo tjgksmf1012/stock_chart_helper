@@ -12,7 +12,13 @@ from pandas.tseries.offsets import BDay, DateOffset
 
 from ..api.schemas import AnalysisResult, PatternInfo, ProjectionPoint, ProjectionScenario, SymbolInfo
 from .backtest_engine import get_pattern_stats
-from .pattern_engine import PatternEngine, PatternResult, _breakout_index as _pe_breakout_index
+from .pattern_engine import (
+    BEARISH_PATTERNS as _BEARISH_PATTERNS,
+    BULLISH_PATTERNS as _BULLISH_PATTERNS,
+    PatternEngine,
+    PatternResult,
+    _breakout_index as _pe_breakout_index,
+)
 from .probability_engine import compute_probability
 from .timeframe_service import get_timeframe_spec, is_intraday_timeframe, timeframe_label
 
@@ -20,20 +26,6 @@ from .timeframe_service import get_timeframe_spec, is_intraday_timeframe, timefr
 # (routes/symbols.py와 alert_service가 함께 사용 — 순환 import 없는 위치)
 ANALYSIS_CACHE_PREFIX = "analysis:v14"
 
-_BULLISH_PATTERNS = {
-    "double_bottom",
-    "inverse_head_and_shoulders",
-    "ascending_triangle",
-    "rectangle",
-    "cup_and_handle",
-    "rounding_bottom",
-    "vcp",
-}
-_BEARISH_PATTERNS = {
-    "double_top",
-    "head_and_shoulders",
-    "descending_triangle",
-}
 _REENTRY_REVERSAL_PATTERNS = {
     "double_bottom",
     "double_top",
@@ -68,6 +60,10 @@ _FETCH_STATUS_LABELS = {
     "kis_not_configured": "KIS 설정 없음",
     "kis_error": "KIS 호출 실패",
     "kis_empty": "KIS 데이터 없음",
+    "toss_not_configured": "토스증권 API 설정 없음",
+    "toss_error": "토스증권 API 호출 실패",
+    "toss_empty": "토스증권 데이터 없음",
+    "toss_cooldown": "토스증권 쿨다운 중",
     "daily_ok": "일봉 수집 성공",
     "daily_empty": "일봉 데이터 없음",
     "daily_error": "일봉 수집 실패",

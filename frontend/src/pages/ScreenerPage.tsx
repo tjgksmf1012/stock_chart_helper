@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { QueryError } from '@/components/ui/QueryError'
 import { screenerApi } from '@/lib/api'
+import { filterIntradayItems, INTRADAY_PRESET_OPTIONS, INTRADAY_VIEW_OPTIONS, type IntradayPreset, type IntradayView } from '@/lib/intradayFilters'
 import { TIMEFRAME_OPTIONS } from '@/lib/timeframes'
 import {
   fmtPct,
@@ -17,8 +18,6 @@ import {
 } from '@/lib/utils'
 import type { DashboardItem, ScreenerRequest, Timeframe } from '@/types/api'
 
-type IntradayView = 'all' | 'live' | 'stored' | 'public' | 'mixed' | 'cooldown'
-type IntradayPreset = 'all' | 'ready-now' | 'watch' | 'recheck' | 'cooling'
 type QuickPresetId = 'daily-ready' | 'daily-fresh' | 'weekly-alignment' | 'reentry-focus'
 
 // 기본값 원칙: 핵심 품질 필터(유사도·신뢰도·품질·준비도·신선도)만 기본 적용하고,
@@ -121,23 +120,6 @@ const MARKET_CAP_OPTIONS = [
   { value: '5000', label: '5,000억 이상' },
   { value: '10000', label: '1조 이상' },
   { value: '30000', label: '3조 이상' },
-]
-
-const INTRADAY_VIEW_OPTIONS: Array<[IntradayView, string]> = [
-  ['all', '전체'],
-  ['live', 'live'],
-  ['stored', '저장'],
-  ['public', '공개'],
-  ['mixed', '혼합'],
-  ['cooldown', '쿨다운'],
-]
-
-const INTRADAY_PRESET_OPTIONS: Array<[IntradayPreset, string]> = [
-  ['all', '프리셋 전체'],
-  ['ready-now', '지금 볼 종목'],
-  ['watch', '관찰 후보'],
-  ['recheck', '재확인 필요'],
-  ['cooling', '관망 후보'],
 ]
 
 const QUICK_PRESETS: Array<{
@@ -292,29 +274,8 @@ export default function ScreenerPage() {
   const intradayMode = (req.timeframes ?? []).some(value => ['60m', '30m', '15m', '1m'].includes(value))
 
   const filteredData = useMemo(() => {
-    if (!data || !intradayMode) return data
-
-    return data.filter(item => {
-      const matchesView =
-        intradayView === 'all'
-          ? true
-          : intradayView === 'live'
-            ? item.live_intraday_candidate
-            : !item.live_intraday_candidate && item.intraday_collection_mode === intradayView
-
-      const matchesPreset =
-        intradayPreset === 'all'
-          ? true
-          : intradayPreset === 'ready-now'
-            ? item.live_intraday_candidate && !item.no_signal_flag && ['confirmed', 'trigger_ready', 'breakout_watch'].includes(item.setup_stage)
-            : intradayPreset === 'watch'
-              ? !item.no_signal_flag && ['late_base', 'early_trigger_watch', 'base_building'].includes(item.setup_stage)
-              : intradayPreset === 'recheck'
-                ? (item.freshness_score ?? 0) >= 0.35 && (item.data_quality ?? 0) >= 0.45
-                : item.intraday_collection_mode === 'cooldown' || item.no_signal_flag
-
-      return matchesView && matchesPreset
-    })
+    if (!data) return data
+    return filterIntradayItems(data, intradayMode, intradayView, intradayPreset)
   }, [data, intradayMode, intradayPreset, intradayView])
 
   const results = filteredData ?? data ?? []

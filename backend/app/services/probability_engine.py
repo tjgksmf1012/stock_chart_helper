@@ -7,7 +7,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 
-from .pattern_engine import PatternResult
+from .pattern_engine import (
+    BEARISH_PATTERNS as _BEARISH_PATTERNS,
+    BULLISH_PATTERNS as _BULLISH_PATTERNS,
+    PatternResult,
+)
 from .timeframe_service import probability_threshold_profile
 
 
@@ -65,21 +69,6 @@ _PATTERN_NAMES_KR: dict[str, str] = {
     "vcp": "VCP",
     "cup_and_handle": "컵앤핸들",
     "rounding_bottom": "원형 바닥",
-}
-
-_BULLISH_PATTERNS = {
-    "double_bottom",
-    "inverse_head_and_shoulders",
-    "ascending_triangle",
-    "rectangle",
-    "cup_and_handle",
-    "rounding_bottom",
-    "vcp",
-}
-_BEARISH_PATTERNS = {
-    "double_top",
-    "head_and_shoulders",
-    "descending_triangle",
 }
 
 

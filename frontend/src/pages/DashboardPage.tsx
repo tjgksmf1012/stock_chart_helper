@@ -41,10 +41,14 @@ import {
   statusLabel,
   statusSubline,
 } from '@/lib/dashboardStatus'
+import {
+  INTRADAY_PRESET_OPTIONS,
+  INTRADAY_VIEW_OPTIONS,
+  filterIntradayItems,
+  type IntradayPreset,
+  type IntradayView,
+} from '@/lib/intradayFilters'
 import type { DashboardItem, DashboardResponse, OutcomeEvaluationResponse, OutcomeRecord, OutcomesSummary, OutcomeStatus, PriceInfo, ScanStatusResponse, Timeframe } from '@/types/api'
-
-type IntradayView = 'all' | 'live' | 'stored' | 'public' | 'mixed' | 'cooldown'
-type IntradayPreset = 'all' | 'ready-now' | 'watch' | 'recheck' | 'cooling'
 
 type RoutineMode = 'premarket' | 'intraday' | 'afterMarket'
 type RoutineModeSelection = 'auto' | RoutineMode
@@ -57,23 +61,6 @@ interface RoutineColumnDef {
   items: DashboardItem[]
   empty: string
 }
-
-const INTRADAY_VIEW_OPTIONS: Array<[IntradayView, string]> = [
-  ['all', '전체'],
-  ['live', 'Live'],
-  ['stored', '저장'],
-  ['public', '공개'],
-  ['mixed', '혼합'],
-  ['cooldown', '쿨다운'],
-]
-
-const INTRADAY_PRESET_OPTIONS: Array<[IntradayPreset, string]> = [
-  ['all', '전체'],
-  ['ready-now', '지금 볼 후보'],
-  ['watch', '지켜볼 후보'],
-  ['recheck', '재확인 필요'],
-  ['cooling', '관망'],
-]
 
 export default function DashboardPage() {
   const nav = useNavigate()
@@ -1414,31 +1401,7 @@ function filterDashboard(
   intradayView: IntradayView,
   intradayPreset: IntradayPreset,
 ): DashboardResponse | undefined {
-  if (!intradayMode || !data) return data
-
-  return {
-    ...data,
-    items: data.items.filter(item => {
-      const matchesView =
-        intradayView === 'all'
-          ? true
-          : intradayView === 'live'
-            ? item.live_intraday_candidate
-            : !item.live_intraday_candidate && item.intraday_collection_mode === intradayView
-
-      const matchesPreset =
-        intradayPreset === 'all'
-          ? true
-          : intradayPreset === 'ready-now'
-            ? item.live_intraday_candidate && !item.no_signal_flag && ['confirmed', 'trigger_ready', 'breakout_watch'].includes(item.setup_stage)
-            : intradayPreset === 'watch'
-              ? !item.no_signal_flag && ['late_base', 'early_trigger_watch', 'base_building'].includes(item.setup_stage) && item.formation_quality >= 0.5
-              : intradayPreset === 'recheck'
-                ? ['stored', 'public', 'mixed', 'budget'].includes(item.intraday_collection_mode) && item.data_quality >= 0.45
-                : item.intraday_collection_mode === 'cooldown' || item.no_signal_flag
-
-      return matchesView && matchesPreset
-    }),
-  }
+  if (!data) return data
+  return { ...data, items: filterIntradayItems(data.items, intradayMode, intradayView, intradayPreset) }
 }
 

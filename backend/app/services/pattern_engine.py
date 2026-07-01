@@ -37,6 +37,23 @@ PatternType = Literal[
     "vcp",
 ]
 
+# 방향성 분류의 단일 소스. 새 패턴을 추가/변경할 때 이 두 세트만 갱신하면
+# analysis_service/probability_engine/sector_service/money_flow_service에 모두 반영된다.
+BULLISH_PATTERNS: frozenset[str] = frozenset({
+    "double_bottom",
+    "inverse_head_and_shoulders",
+    "ascending_triangle",
+    "rectangle",
+    "cup_and_handle",
+    "rounding_bottom",
+    "vcp",
+})
+BEARISH_PATTERNS: frozenset[str] = frozenset({
+    "double_top",
+    "head_and_shoulders",
+    "descending_triangle",
+})
+
 
 @dataclass
 class PatternResult:
