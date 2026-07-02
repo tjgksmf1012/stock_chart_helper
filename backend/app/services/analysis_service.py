@@ -1197,35 +1197,56 @@ def _entry_window_profile(
             "entry_window_summary": f"{label} 기준 손절 여유가 너무 좁아 실전 체결 잡음에 취약합니다. 진입보다는 기준 재정비가 먼저입니다.",
         }
 
+    # 세 상태(confirmed/armed/forming) 모두, 거리(%)가 임계값을 살짝 넘는 순간 점수가
+    # 뚝 떨어지는 "절벽"이 있었다. 예: 일봉 기준 돌파 2.5%는 0.80점, 2.6%는 0.64점으로
+    # 하루 변동폭 안에서도 흔히 넘나드는 경계에서 20점 가까이 급락 — 이 때문에 실제로는
+    # 확인 완료(confirmed) + 신선한 돌파가 동시에 걸리는 경우가 거의 없었다(하루 4번
+    # 예약 스캔 주기 + 흔한 하루 변동폭 3~5%를 감안하면 2.5% 창을 맞추기 어려움).
+    # 절벽 대신 완만하게 감쇠하는 연속 곡선으로 바꿔, 임계값을 살짝 넘어도 점수가
+    # 급락하지 않게 한다.
     if pattern.state == "confirmed":
-        if breakout_extension_pct <= (0.012 if is_intraday_timeframe(timeframe) else 0.025) and reward_risk_ratio >= 1.15:
-            score = max(score, 0.74)
-            entry_label = "초기 돌파"
-            summary = "돌파 직후 구간으로 해석할 수 있어 추격 부담이 아직 크지 않습니다. 다만 손절 기준가와 거래대금은 함께 확인해야 합니다."
-        elif breakout_extension_pct <= (0.024 if is_intraday_timeframe(timeframe) else 0.045) and reward_risk_ratio >= 1.0:
-            score = max(min(score, 0.64), 0.52)
-            entry_label = "확장 추격"
-            summary = "이미 일부 확장이 진행되어 초기 진입보다 불리합니다. 재돌파 확인이나 눌림 확인 후 접근하는 편이 낫습니다."
+        max_extension = 0.05 if is_intraday_timeframe(timeframe) else 0.10
+        fresh_cutoff = 0.025 if is_intraday_timeframe(timeframe) else 0.05
+        if reward_risk_ratio >= 1.0 and breakout_extension_pct <= max_extension:
+            decay = min(1.0, breakout_extension_pct / max_extension)
+            bonus = 0.86 - 0.34 * decay
+            if reward_risk_ratio < 1.15:
+                bonus -= 0.06
+            score = max(score, bonus)
+            if breakout_extension_pct <= fresh_cutoff:
+                entry_label = "초기 돌파"
+                summary = "돌파 직후 구간으로 해석할 수 있어 추격 부담이 아직 크지 않습니다. 다만 손절 기준가와 거래대금은 함께 확인해야 합니다."
+            else:
+                entry_label = "확장 추격"
+                summary = "이미 일부 확장이 진행되어 초기 진입보다 불리합니다. 재돌파 확인이나 눌림 확인 후 접근하는 편이 낫습니다."
         else:
             score = min(score, 0.34)
             entry_label = "관망"
             summary = "확인 완료 이후 가격이 너무 앞서가 있어 지금 구간은 추격 위험이 큽니다."
     elif pattern.state == "armed":
-        if distance_to_trigger_pct <= (0.008 if is_intraday_timeframe(timeframe) else 0.015) and reward_risk_ratio >= 1.1:
-            score = max(score, 0.72)
-            entry_label = "트리거 임박"
-            summary = "돌파선 또는 트리거 가격대 근처로, 확인만 붙으면 실전 진입 후보가 될 수 있습니다."
-        elif distance_to_trigger_pct <= (0.02 if is_intraday_timeframe(timeframe) else 0.035):
-            score = max(min(score, 0.58), 0.46)
-            entry_label = "트리거 대기"
-            summary = "아직 확인 직전 단계이므로 성급한 진입보다 돌파 확인 여부를 보는 편이 좋습니다."
+        max_distance = 0.03 if is_intraday_timeframe(timeframe) else 0.06
+        imminent_cutoff = 0.008 if is_intraday_timeframe(timeframe) else 0.015
+        if distance_to_trigger_pct <= max_distance:
+            decay = min(1.0, distance_to_trigger_pct / max_distance)
+            bonus = 0.82 - 0.36 * decay
+            if reward_risk_ratio < 1.1:
+                bonus -= 0.08
+            score = max(score, bonus)
+            entry_label = "트리거 임박" if distance_to_trigger_pct <= imminent_cutoff else "트리거 대기"
+            summary = (
+                "돌파선 또는 트리거 가격대 근처로, 확인만 붙으면 실전 진입 후보가 될 수 있습니다."
+                if distance_to_trigger_pct <= imminent_cutoff
+                else "아직 확인 직전 단계이므로 성급한 진입보다 돌파 확인 여부를 보는 편이 좋습니다."
+            )
         else:
             score = min(score, 0.40)
             entry_label = "관망"
             summary = "활성 직전이지만 아직 트리거까지 거리가 남아 있어 기다리는 편이 낫습니다."
     else:
-        if completion_proximity >= 0.66 and distance_to_trigger_pct <= (0.025 if is_intraday_timeframe(timeframe) else 0.04):
-            score = max(min(score, 0.54), 0.42)
+        max_distance = 0.05 if is_intraday_timeframe(timeframe) else 0.08
+        if completion_proximity >= 0.66 and distance_to_trigger_pct <= max_distance:
+            decay = min(1.0, distance_to_trigger_pct / max_distance)
+            score = max(min(score, 0.60), 0.60 - 0.18 * decay)
             entry_label = "기준선 접근"
             summary = "형성 중 패턴이지만 핵심 가격대에 가까워지고 있어 관찰 가치가 있습니다."
         else:
