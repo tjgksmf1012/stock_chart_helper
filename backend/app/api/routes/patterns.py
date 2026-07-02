@@ -429,6 +429,7 @@ async def get_pattern_stats() -> PatternStatsResponse:
                     resolution_rate=(
                         float(stats["resolution_rate"]) if stats.get("resolution_rate") is not None else None
                     ),
+                    is_synthetic=bool(stats.get("is_synthetic", False)),
                 )
             )
 

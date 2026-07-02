@@ -30,7 +30,13 @@ def _token_response() -> httpx.Response:
 
 
 @pytest.mark.anyio
-async def test_not_configured_returns_empty():
+async def test_not_configured_returns_empty(monkeypatch):
+    # Explicitly blank out credentials rather than relying on ambient settings —
+    # a real .env with live Toss keys (e.g. set for local manual testing) would
+    # otherwise silently flip `configured` to True and break this assumption.
+    monkeypatch.setattr(settings, "toss_client_id", "")
+    monkeypatch.setattr(settings, "toss_client_secret", "")
+
     client = TossClient()
     assert client.configured is False
     assert await client.fetch_current_prices(["005930"]) == {}

@@ -530,16 +530,24 @@ def _setup_stage(row: dict[str, Any]) -> str:
     formation_quality = _formation_quality_from_row(row)
     confluence = float(row.get("confluence_score", 0.5))
 
+    # 두 개 이상의 독립 지표에 각각 하드 AND 임계값을 걸면(둘 다 >=0.62 같은 식) 실제로는
+    # 둘 다 강하게 동시에 맞아떨어지는 경우가 드물어 상위 티어가 만성적으로 비게 된다 —
+    # 이미 고친 entry_window/trade_readiness 절벽과 같은 "AND 게이트 붕괴" 패턴이다.
+    # 대신 가중 평균(하나가 특히 강하면 다른 하나의 약점을 어느 정도 상쇄)에 최소 바닥
+    # (둘 다 형편없는 경우까지 구제하지는 않도록)을 함께 요구하는 방식으로 완화한다.
     if state == "confirmed":
         return "confirmed"
     if state == "armed":
-        if formation_quality >= 0.62 and confluence >= 0.62:
+        readiness = 0.55 * formation_quality + 0.45 * confluence
+        if readiness >= 0.60 and min(formation_quality, confluence) >= 0.50:
             return "trigger_ready"
         return "breakout_watch"
     if state == "forming":
-        if completion >= 0.72 and formation_quality >= 0.55 and confluence >= 0.58:
+        late_readiness = 0.42 * completion + 0.34 * formation_quality + 0.24 * confluence
+        if late_readiness >= 0.62 and min(completion, formation_quality, confluence) >= 0.48:
             return "late_base"
-        if completion >= 0.52 and formation_quality >= 0.45:
+        early_readiness = 0.55 * completion + 0.45 * formation_quality
+        if early_readiness >= 0.50 and min(completion, formation_quality) >= 0.35:
             return "early_trigger_watch"
         return "base_building"
     return "neutral"

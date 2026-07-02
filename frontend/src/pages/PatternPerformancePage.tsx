@@ -280,6 +280,7 @@ function PatternStatCard({ item, rank }: { item: PatternStatsEntry; rank: number
             <span className="text-sm font-semibold">{PATTERN_NAMES[item.pattern_type] ?? item.pattern_type}</span>
             <Badge variant={badgeVariant}>우위 {fmtPct(item.historical_edge_score, 0)}</Badge>
             <Badge variant="muted">{item.timeframe_label}</Badge>
+            {item.is_synthetic && <Badge variant="warning">추정치</Badge>}
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
             승률 {fmtPct(item.win_rate, 0)} / 표본 {item.sample_size.toLocaleString('ko-KR')}건 / 성공 {item.wins}건
@@ -299,8 +300,15 @@ function PatternStatCard({ item, rank }: { item: PatternStatsEntry; rank: number
         </span>
         {item.resolution_rate != null && (item.timeouts ?? 0) > 0 && (
           <span className="col-span-2 text-[11px] text-muted-foreground/80">
-            * 승률은 목표·손절에 닿은 해소 표본 기준입니다. 해소율 {fmtPct(item.resolution_rate, 0)} (미해소 {item.timeouts}건은
-            흐지부지 끝나 제외).
+            * 승률은 목표·손절 중 하나에 닿은 경우뿐 아니라 미해소(흐지부지 끝난) 표본까지
+            포함한 전체 시도 기준입니다. 해소율 {fmtPct(item.resolution_rate, 0)} (미해소 {item.timeouts}건은
+            승률 분모에는 포함되지만 평균 MFE/MAE 계산에서는 제외).
+          </span>
+        )}
+        {item.is_synthetic && (
+          <span className="col-span-2 text-[11px] text-amber-600 dark:text-amber-400">
+            * 아직 실제 백테스트 표본이 부족해 개발자가 추정한 기본값입니다. 실제 검증된
+            수치가 아니니 참고용으로만 보세요.
           </span>
         )}
       </div>

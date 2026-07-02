@@ -164,6 +164,9 @@ def _default_stat_line(pattern_type: str, timeframe: str, win_rate: float, sampl
         "avg_mae_pct": avg_mae_pct,
         "avg_bars_to_outcome": avg_bars_to_outcome,
         "historical_edge_score": _edge_score(win_rate, avg_mfe_pct, avg_mae_pct, avg_bars_to_outcome, _BACKTEST_CONFIG[timeframe]["max_forward"]),
+        # 실제 백테스트가 아니라 손으로 튜닝한 기본값이라는 표시 — real vs guessed를
+        # 구분할 방법이 없으면 둘 다 똑같이 신뢰도 있어 보이는 화면으로 나간다.
+        "is_synthetic": True,
     }
 
 
@@ -181,7 +184,36 @@ def _is_bullish(pattern_type: str) -> bool:
     return pattern_type in BULLISH_PATTERNS
 
 
-def _bucket_to_stat_line(pattern_type: str, timeframe: str, bucket: dict[str, float | int]) -> dict[str, float | int | str] | None:
+def _resolve_bar_outcome(
+    high: float, low: float, target: float, invalidation: float, *, bullish: bool
+) -> bool | None:
+    """단일 봉이 목표가/손절가 중 무엇을 먼저 건드렸는지 판정한다.
+
+    일봉/주봉 OHLC만으로는 봉 안에서 고가와 저가 중 어느 쪽이 먼저 찍혔는지 알 수 없다.
+    목표가를 먼저 체크하면 두 값을 모두 건드리는 변동성 큰 봉(돌파 직후 흔함)이 항상
+    승리로 집계되어 승률이 구조적으로 부풀려진다. offline_calibration.py의
+    simulate_window_outcome()과 동일하게, 손절을 먼저 확인하는 보수적 관행을 따른다.
+    Returns True(승)/False(패)/None(둘 다 미도달).
+    """
+    if bullish:
+        if low <= invalidation:
+            return False
+        if high >= target:
+            return True
+    else:
+        if high >= invalidation:
+            return False
+        if low <= target:
+            return True
+    return None
+
+
+def _bucket_to_stat_line(
+    pattern_type: str,
+    timeframe: str,
+    bucket: dict[str, float | int],
+    distinct_stock_count: int | None = None,
+) -> dict[str, float | int | str] | None:
     """집계된 wins/total/timeouts 버킷을 통계 라인으로 변환. 표본이 너무 적으면 None."""
     wins = int(bucket["wins"])
     resolved = int(bucket["total"])
@@ -205,7 +237,7 @@ def _bucket_to_stat_line(pattern_type: str, timeframe: str, bucket: dict[str, fl
         # 독립표본이 아니다 — 신뢰구간 계산(sample_reliability)에 쓰이는
         # "표본수"는 그 중첩을 감안해 할인한 값을 쓴다. win_rate 자체(점 추정치)는
         # 원래 카운트(wins/total)를 그대로 쓴다 — 편향 문제가 아니라 분산 과소평가 문제이므로.
-        "sample_size": _effective_sample_size(attempts, timeframe),
+        "sample_size": _effective_sample_size(attempts, timeframe, distinct_stock_count),
         "wins": wins,
         "total": attempts,
         "timeouts": timeouts,
@@ -220,22 +252,31 @@ def _bucket_to_stat_line(pattern_type: str, timeframe: str, bucket: dict[str, fl
             avg_bars_to_outcome,
             int(_BACKTEST_CONFIG[timeframe]["max_forward"]),
         ),
+        "is_synthetic": False,
     }
 
 
-def _effective_sample_size(total: int, timeframe: str) -> int:
+def _effective_sample_size(total: int, timeframe: str, distinct_stock_count: int | None = None) -> int:
     """겹치는 슬라이딩 윈도우 표본수를 신뢰구간 계산용으로 할인한다.
 
     window=60/step=10처럼 연속 표본끼리 대부분 겹치면 "표본수"가 부풀려져
     실제보다 신뢰구간이 좁게(과신하게) 나온다. step/window 비율만큼 할인하되,
-    유니버스 내 서로 다른 종목 수만큼은 독립 관측으로 인정해 바닥을 둔다.
+    이 (패턴, 타임프레임) 버킷에 실제로 기여한 서로 다른 종목 수만큼은 독립 관측으로
+    인정해 바닥을 둔다.
+
+    예전엔 이 바닥값으로 항상 전체 유니버스 크기(len(_BACKTEST_UNIVERSE), 79)를 썼다 —
+    79종목 중 실제로는 4종목만 어떤 희귀 패턴(예: 월봉 symmetric_triangle)을 만들어냈어도
+    마치 79종목 전부가 그 패턴을 확인해준 것처럼 신뢰도가 부풀려지는 문제가 있었다.
+    distinct_stock_count를 넘기지 않으면(개별 단위 테스트 등) 기존처럼 유니버스 전체
+    크기를 바닥으로 쓴다.
     """
     if total <= 0:
         return 0
     cfg = _BACKTEST_CONFIG.get(timeframe, _BACKTEST_CONFIG["1d"])
     overlap_factor = min(1.0, cfg["step"] / cfg["window"])
     discounted = round(total * overlap_factor)
-    floor = min(total, len(_BACKTEST_UNIVERSE))
+    universe_floor = len(_BACKTEST_UNIVERSE) if distinct_stock_count is None else max(0, distinct_stock_count)
+    floor = min(total, universe_floor)
     return max(1, max(discounted, floor))
 
 
@@ -265,31 +306,22 @@ def _backtest_stock_sync(timeframe: str, bars_df: Any) -> list[dict[str, Any]]:
             adverse_excursion = 0.0
             bars_to_outcome: int | None = None
 
-            for step, (_, bar) in enumerate(forward_bars.iterrows(), start=1):
+            for bar_step, (_, bar) in enumerate(forward_bars.iterrows(), start=1):
                 high = float(bar["high"])
                 low = float(bar["low"])
                 if bullish:
                     favorable_excursion = max(favorable_excursion, max(0.0, (high - entry_price) / max(entry_price, 1e-9)))
                     adverse_excursion = max(adverse_excursion, max(0.0, (entry_price - low) / max(entry_price, 1e-9)))
-                    if high >= pattern.target_level:
-                        win = True
-                        bars_to_outcome = step
-                        break
-                    if low <= pattern.invalidation_level:
-                        win = False
-                        bars_to_outcome = step
-                        break
                 else:
                     favorable_excursion = max(favorable_excursion, max(0.0, (entry_price - low) / max(entry_price, 1e-9)))
                     adverse_excursion = max(adverse_excursion, max(0.0, (high - entry_price) / max(entry_price, 1e-9)))
-                    if low <= pattern.target_level:
-                        win = True
-                        bars_to_outcome = step
-                        break
-                    if high >= pattern.invalidation_level:
-                        win = False
-                        bars_to_outcome = step
-                        break
+                outcome_here = _resolve_bar_outcome(
+                    high, low, pattern.target_level, pattern.invalidation_level, bullish=bullish
+                )
+                if outcome_here is not None:
+                    win = outcome_here
+                    bars_to_outcome = bar_step
+                    break
 
             # timeout(목표·손절 미도달)도 별도 outcome으로 기록 — win_rate 집계 단계에서
             # 시도 횟수(분모)에 포함되고, MFE/MAE/bars 평균에서만 제외된다.
@@ -320,6 +352,9 @@ async def run_backtest() -> dict[str, dict[str, dict[str, float | int | str]]]:
 
         fetcher = get_data_fetcher()
         aggregated: dict[str, dict[str, dict[str, float | int]]] = {timeframe: {} for timeframe in _BACKTEST_TIMEFRAMES}
+        # (패턴, 타임프레임) 버킷마다 실제로 기여한 서로 다른 종목을 추적한다 —
+        # _effective_sample_size()가 유니버스 전체 크기 대신 이 값을 신뢰도 바닥으로 쓴다.
+        contributing_stocks: dict[str, dict[str, set[str]]] = {timeframe: {} for timeframe in _BACKTEST_TIMEFRAMES}
 
         for timeframe in _BACKTEST_TIMEFRAMES:
             cfg = _BACKTEST_CONFIG[timeframe]
@@ -330,10 +365,12 @@ async def run_backtest() -> dict[str, dict[str, dict[str, float | int | str]]]:
                         continue
                     stock_results = await asyncio.to_thread(_backtest_stock_sync, timeframe, df)
                     for result in stock_results:
+                        pattern_type = result["pattern_type"]
                         bucket = aggregated[timeframe].setdefault(
-                            result["pattern_type"],
+                            pattern_type,
                             {"wins": 0, "total": 0, "timeouts": 0, "mfe_sum": 0.0, "mae_sum": 0.0, "bars_sum": 0.0},
                         )
+                        contributing_stocks[timeframe].setdefault(pattern_type, set()).add(code)
                         # timeout은 wins/mfe/mae/bars 집계에선 빠지지만, 아래 _bucket_to_stat_line
                         # 에서 win_rate 분모(attempts)에는 포함된다.
                         if result.get("outcome") == "timeout":
@@ -352,7 +389,8 @@ async def run_backtest() -> dict[str, dict[str, dict[str, float | int | str]]]:
         stats = _default_stats()
         for timeframe, pattern_counts in aggregated.items():
             for pattern_type, bucket in pattern_counts.items():
-                stat_line = _bucket_to_stat_line(pattern_type, timeframe, bucket)
+                distinct_stock_count = len(contributing_stocks[timeframe].get(pattern_type, ()))
+                stat_line = _bucket_to_stat_line(pattern_type, timeframe, bucket, distinct_stock_count)
                 if stat_line is not None:
                     stats[timeframe][pattern_type] = stat_line
 

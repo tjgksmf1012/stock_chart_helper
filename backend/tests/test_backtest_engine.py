@@ -16,7 +16,38 @@ from app.services.backtest_engine import (
     _edge_score,
     _effective_sample_size,
     _is_bullish,
+    _resolve_bar_outcome,
 )
+
+
+class TestResolveBarOutcome:
+    """Regression: a bar that touches both the target and the stop in the same
+    day/week must resolve as a loss (conservative -- we can't know from OHLC alone
+    which was hit first), not always a win. Mirrors offline_calibration.py's
+    simulate_window_outcome(), which already got this right.
+    """
+
+    def test_bullish_bar_touching_both_target_and_stop_resolves_as_loss(self):
+        # target=110, stop=95; a wide bar with low=90 (below stop) and high=115 (above target).
+        outcome = _resolve_bar_outcome(high=115, low=90, target=110, invalidation=95, bullish=True)
+        assert outcome is False
+
+    def test_bearish_bar_touching_both_target_and_stop_resolves_as_loss(self):
+        # target=90 (price falling to it), stop=105; wide bar high=110, low=85.
+        outcome = _resolve_bar_outcome(high=110, low=85, target=90, invalidation=105, bullish=False)
+        assert outcome is False
+
+    def test_bullish_bar_hitting_only_target_is_a_win(self):
+        outcome = _resolve_bar_outcome(high=112, low=101, target=110, invalidation=95, bullish=True)
+        assert outcome is True
+
+    def test_bullish_bar_hitting_only_stop_is_a_loss(self):
+        outcome = _resolve_bar_outcome(high=100, low=93, target=110, invalidation=95, bullish=True)
+        assert outcome is False
+
+    def test_bar_hitting_neither_is_none(self):
+        outcome = _resolve_bar_outcome(high=103, low=98, target=110, invalidation=95, bullish=True)
+        assert outcome is None
 
 
 class TestEdgeScore:
@@ -56,6 +87,20 @@ class TestDefaultStatLine:
             for tf in _BACKTEST_TIMEFRAMES:
                 stat = _default_stat_line(pt, tf, wr, 16)
                 assert 0.0 <= stat["historical_edge_score"] <= 1.0
+
+    def test_flagged_as_synthetic(self):
+        # A hand-tuned default must be distinguishable from a real backtest result --
+        # otherwise a UI showing both renders them with identical apparent confidence.
+        stat = _default_stat_line("double_bottom", "1d", 0.58, 20)
+        assert stat["is_synthetic"] is True
+
+
+class TestBucketToStatLineIsSynthetic:
+    def test_real_backtest_result_is_not_flagged_as_synthetic(self):
+        bucket = {"wins": 12, "total": 20, "timeouts": 5, "mfe_sum": 0.08 * 20, "mae_sum": 0.03 * 20, "bars_sum": 10.0 * 20}
+        line = _bucket_to_stat_line("double_bottom", "1d", bucket)
+        assert line is not None
+        assert line["is_synthetic"] is False
 
 
 class TestDefaultStats:
@@ -114,6 +159,22 @@ class TestEffectiveSampleSize:
 
     def test_small_total_floors_at_least_one(self):
         assert _effective_sample_size(1, "1d") >= 1
+
+    def test_distinct_stock_count_overrides_universe_wide_floor(self):
+        # Regression: the floor used to always be len(_BACKTEST_UNIVERSE) (79) regardless
+        # of how many distinct stocks actually produced this specific pattern/timeframe
+        # bucket -- a rare pattern seen on only 4 stocks would get its reliability floored
+        # as if all 79 confirmed it. Passing the real per-bucket count should use that
+        # instead.
+        total = 300
+        effective_with_few_stocks = _effective_sample_size(total, "1d", distinct_stock_count=4)
+        assert effective_with_few_stocks < len(_BACKTEST_UNIVERSE)
+        assert effective_with_few_stocks >= 4
+
+    def test_omitting_distinct_stock_count_keeps_old_universe_wide_floor(self):
+        total = 300
+        effective = _effective_sample_size(total, "1d")
+        assert effective >= min(total, len(_BACKTEST_UNIVERSE))
 
 
 class TestBucketToStatLine:

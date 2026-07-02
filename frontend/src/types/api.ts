@@ -541,6 +541,7 @@ export interface PatternStatsEntry {
   historical_edge_score: number
   timeouts?: number
   resolution_rate?: number | null
+  is_synthetic?: boolean
 }
 
 export interface PatternStatsResponse {
@@ -850,6 +851,7 @@ export interface CalibrationBin {
   predicted: number
   observed: number
   gap: number
+  low_confidence?: boolean
 }
 
 export interface CalibrationReport {
