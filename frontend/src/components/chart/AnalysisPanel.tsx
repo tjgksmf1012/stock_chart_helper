@@ -126,21 +126,31 @@ export function AnalysisPanel({ analysis, symbol, timeframe, bars = [], currentP
 }
 
 function DecisionSummaryGrid({ analysis }: { analysis: AnalysisResult }) {
+  const rows: Array<{ key: string; title: string; body: string; tone: 'emerald' | 'sky' | 'violet' | 'amber' }> = [
+    { key: 'readiness', title: analysis.trade_readiness_label, body: analysis.trade_readiness_summary, tone: 'emerald' },
+    { key: 'window', title: analysis.entry_window_label, body: analysis.entry_window_summary, tone: 'sky' },
+    { key: 'freshness', title: analysis.freshness_label, body: analysis.freshness_summary, tone: 'violet' },
+    {
+      key: 'reentry',
+      title: analysis.reentry_case_label || analysis.reentry_label,
+      body: analysis.reentry_summary,
+      tone: 'amber',
+    },
+  ]
+
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      <MiniSummaryCard title={analysis.trade_readiness_label} tone="emerald" body={analysis.trade_readiness_summary} />
-      <MiniSummaryCard title={analysis.entry_window_label} tone="sky" body={analysis.entry_window_summary} />
-      <MiniSummaryCard title={analysis.freshness_label} tone="violet" body={analysis.freshness_summary} />
-      <MiniSummaryCard
-        title={analysis.reentry_case_label || analysis.reentry_label}
-        tone="amber"
-        body={analysis.reentry_summary}
-      />
-    </div>
+    <Card className="space-y-3">
+      <div className="text-sm font-semibold">진입 판단 요약</div>
+      <div className="divide-y divide-border/60">
+        {rows.map(row => (
+          <MiniSummaryRow key={row.key} title={row.title} body={row.body} tone={row.tone} />
+        ))}
+      </div>
+    </Card>
   )
 }
 
-function MiniSummaryCard({
+function MiniSummaryRow({
   title,
   body,
   tone,
@@ -149,18 +159,21 @@ function MiniSummaryCard({
   body: string
   tone: 'emerald' | 'sky' | 'violet' | 'amber'
 }) {
-  const toneClass = {
-    emerald: 'border-emerald-400/20 bg-emerald-400/6',
-    sky: 'border-sky-400/20 bg-sky-400/6',
-    violet: 'border-violet-400/20 bg-violet-400/6',
-    amber: 'border-amber-400/20 bg-amber-400/6',
+  const dotClass = {
+    emerald: 'bg-emerald-400',
+    sky: 'bg-sky-400',
+    violet: 'bg-violet-400',
+    amber: 'bg-amber-400',
   }[tone]
 
   return (
-    <Card className={cn('space-y-2', toneClass)}>
-      <div className="text-sm font-semibold">{title}</div>
-      <p className="text-xs leading-relaxed text-muted-foreground">{body}</p>
-    </Card>
+    <div className="flex gap-2.5 py-2.5 first:pt-0 last:pb-0">
+      <span className={cn('mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full', dotClass)} />
+      <div className="min-w-0 space-y-0.5">
+        <div className="text-xs font-semibold">{title}</div>
+        <p className="text-xs leading-relaxed text-muted-foreground">{body}</p>
+      </div>
+    </div>
   )
 }
 
@@ -464,17 +477,14 @@ function ActionPlanCard({ analysis }: { analysis: AnalysisResult }) {
       <div className="flex items-center gap-2 text-sm font-semibold">
         <Activity size={15} className="text-primary" />
         실전 행동 가이드
-        <Badge variant={actionPlanVariant(analysis.action_plan)} className="ml-auto">
-          {analysis.action_plan_label}
-        </Badge>
+        <span className="ml-auto flex items-center gap-2">
+          <span className="text-[11px] font-normal text-muted-foreground">
+            우선순위 {fmtPct(analysis.action_priority_score, 0)}
+          </span>
+          <Badge variant={actionPlanVariant(analysis.action_plan)}>{analysis.action_plan_label}</Badge>
+        </span>
       </div>
       <p className="text-sm leading-relaxed text-foreground/95">{analysis.action_plan_summary}</p>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <CompactMetric label="진입 준비도" value={fmtPct(analysis.trade_readiness_score ?? 0, 0)} />
-        <CompactMetric label="진입 구간" value={fmtPct(analysis.entry_window_score ?? 0, 0)} />
-        <CompactMetric label="신선도" value={fmtPct(analysis.freshness_score ?? 0, 0)} />
-        <CompactMetric label="행동 우선순위" value={fmtPct(analysis.action_priority_score, 0)} />
-      </div>
     </Card>
   )
 }

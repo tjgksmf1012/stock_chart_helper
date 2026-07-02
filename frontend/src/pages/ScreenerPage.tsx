@@ -1,6 +1,6 @@
 import { useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Download, FilterX, Loader2, Search, SlidersHorizontal, Sparkles } from 'lucide-react'
+import { ChevronDown, ChevronUp, Download, FilterX, Loader2, Search, SlidersHorizontal, Sparkles } from 'lucide-react'
 
 import { DashboardCard } from '@/components/dashboard/DashboardCard'
 import { Badge } from '@/components/ui/Badge'
@@ -121,6 +121,8 @@ const MARKET_CAP_OPTIONS = [
   { value: '10000', label: '1조 이상' },
   { value: '30000', label: '3조 이상' },
 ]
+
+const ADVANCED_SLIDER_COUNT = 12
 
 const QUICK_PRESETS: Array<{
   id: QuickPresetId
@@ -263,6 +265,7 @@ export default function ScreenerPage() {
   const [intradayView, setIntradayView] = useState<IntradayView>('all')
   const [intradayPreset, setIntradayPreset] = useState<IntradayPreset>('all')
   const [activeQuickPreset, setActiveQuickPreset] = useState<QuickPresetId | null>(null)
+  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false)
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['screener', req],
@@ -574,66 +577,81 @@ export default function ScreenerPage() {
           value={req.min_data_quality ?? 0}
           onChange={value => updateReq(setReq, setActiveQuickPreset, { min_data_quality: value })}
         />
-        <SliderGroup
-          label="최소 거래 준비도"
-          value={req.min_trade_readiness_score ?? 0}
-          onChange={value => updateReq(setReq, setActiveQuickPreset, { min_trade_readiness_score: value })}
-        />
-        <SliderGroup
-          label="최소 진입 구간"
-          value={req.min_entry_window_score ?? 0}
-          onChange={value => updateReq(setReq, setActiveQuickPreset, { min_entry_window_score: value })}
-        />
-        <SliderGroup
-          label="최소 패턴 신선도"
-          value={req.min_freshness_score ?? 0}
-          onChange={value => updateReq(setReq, setActiveQuickPreset, { min_freshness_score: value })}
-        />
-        <SliderGroup
-          label="최소 재진입 구조"
-          value={req.min_reentry_score ?? 0}
-          onChange={value => updateReq(setReq, setActiveQuickPreset, { min_reentry_score: value })}
-        />
-        <SliderGroup
-          label="최소 박스 수축도"
-          value={req.min_reentry_compression_score ?? 0}
-          onChange={value => updateReq(setReq, setActiveQuickPreset, { min_reentry_compression_score: value })}
-        />
-        <SliderGroup
-          label="최소 거래량 복원"
-          value={req.min_reentry_volume_recovery_score ?? 0}
-          onChange={value => updateReq(setReq, setActiveQuickPreset, { min_reentry_volume_recovery_score: value })}
-        />
-        <SliderGroup
-          label="최소 기준선 유지력"
-          value={req.min_reentry_trigger_hold_score ?? 0}
-          onChange={value => updateReq(setReq, setActiveQuickPreset, { min_reentry_trigger_hold_score: value })}
-        />
-        <SliderGroup
-          label="최소 꼬리 흡수력"
-          value={req.min_reentry_wick_absorption_score ?? 0}
-          onChange={value => updateReq(setReq, setActiveQuickPreset, { min_reentry_wick_absorption_score: value })}
-        />
-        <SliderGroup
-          label="최소 실패 부담 관리"
-          value={req.min_reentry_failure_burden_score ?? 0}
-          onChange={value => updateReq(setReq, setActiveQuickPreset, { min_reentry_failure_burden_score: value })}
-        />
-        <SliderGroup
-          label="최소 활성 셋업"
-          value={req.min_active_setup_score ?? 0}
-          onChange={value => updateReq(setReq, setActiveQuickPreset, { min_active_setup_score: value })}
-        />
-        <SliderGroup
-          label="최소 멀티 타임프레임 정렬"
-          value={req.min_confluence_score ?? 0}
-          onChange={value => updateReq(setReq, setActiveQuickPreset, { min_confluence_score: value })}
-        />
-        <SliderGroup
-          label="최소 백테스트 우위"
-          value={req.min_historical_edge_score ?? 0}
-          onChange={value => updateReq(setReq, setActiveQuickPreset, { min_historical_edge_score: value })}
-        />
+
+        <div className="col-span-full">
+          <button
+            onClick={() => setAdvancedFiltersOpen(v => !v)}
+            className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+          >
+            {advancedFiltersOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            고급 필터 {advancedFiltersOpen ? '접기' : `펼치기 (${ADVANCED_SLIDER_COUNT}개)`}
+          </button>
+        </div>
+
+        {advancedFiltersOpen && (
+          <>
+            <SliderGroup
+              label="최소 거래 준비도"
+              value={req.min_trade_readiness_score ?? 0}
+              onChange={value => updateReq(setReq, setActiveQuickPreset, { min_trade_readiness_score: value })}
+            />
+            <SliderGroup
+              label="최소 진입 구간"
+              value={req.min_entry_window_score ?? 0}
+              onChange={value => updateReq(setReq, setActiveQuickPreset, { min_entry_window_score: value })}
+            />
+            <SliderGroup
+              label="최소 패턴 신선도"
+              value={req.min_freshness_score ?? 0}
+              onChange={value => updateReq(setReq, setActiveQuickPreset, { min_freshness_score: value })}
+            />
+            <SliderGroup
+              label="최소 재진입 구조"
+              value={req.min_reentry_score ?? 0}
+              onChange={value => updateReq(setReq, setActiveQuickPreset, { min_reentry_score: value })}
+            />
+            <SliderGroup
+              label="최소 박스 수축도"
+              value={req.min_reentry_compression_score ?? 0}
+              onChange={value => updateReq(setReq, setActiveQuickPreset, { min_reentry_compression_score: value })}
+            />
+            <SliderGroup
+              label="최소 거래량 복원"
+              value={req.min_reentry_volume_recovery_score ?? 0}
+              onChange={value => updateReq(setReq, setActiveQuickPreset, { min_reentry_volume_recovery_score: value })}
+            />
+            <SliderGroup
+              label="최소 기준선 유지력"
+              value={req.min_reentry_trigger_hold_score ?? 0}
+              onChange={value => updateReq(setReq, setActiveQuickPreset, { min_reentry_trigger_hold_score: value })}
+            />
+            <SliderGroup
+              label="최소 꼬리 흡수력"
+              value={req.min_reentry_wick_absorption_score ?? 0}
+              onChange={value => updateReq(setReq, setActiveQuickPreset, { min_reentry_wick_absorption_score: value })}
+            />
+            <SliderGroup
+              label="최소 실패 부담 관리"
+              value={req.min_reentry_failure_burden_score ?? 0}
+              onChange={value => updateReq(setReq, setActiveQuickPreset, { min_reentry_failure_burden_score: value })}
+            />
+            <SliderGroup
+              label="최소 활성 셋업"
+              value={req.min_active_setup_score ?? 0}
+              onChange={value => updateReq(setReq, setActiveQuickPreset, { min_active_setup_score: value })}
+            />
+            <SliderGroup
+              label="최소 멀티 타임프레임 정렬"
+              value={req.min_confluence_score ?? 0}
+              onChange={value => updateReq(setReq, setActiveQuickPreset, { min_confluence_score: value })}
+            />
+            <SliderGroup
+              label="최소 백테스트 우위"
+              value={req.min_historical_edge_score ?? 0}
+              onChange={value => updateReq(setReq, setActiveQuickPreset, { min_historical_edge_score: value })}
+            />
+          </>
+        )}
 
         <FilterGroup label="최소 시가총액">
           <select
