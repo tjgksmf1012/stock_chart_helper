@@ -159,6 +159,30 @@ export default function DashboardPage() {
     }
   }
 
+  // 스캔 결과가 오래됐으면(기본 90분) 사용자가 직접 "빠른 갱신"을 누르지 않아도
+  // 자동으로 한 번 새로고침한다. 하루 1회(타임프레임별)로 제한해 예약 스캔과
+  // 겹치지 않는 시간대에도 방문 시점 기준으로 어느 정도 신선함을 보장하면서,
+  // 방문할 때마다 스캔을 새로 돌려 API/서버 부하를 키우지는 않게 한다.
+  const autoScanTriggeredRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    const status = statusQ.data
+    if (!status || status.is_running || isTriggeringScan) return
+    if (!status.last_finished_at) return
+
+    const lastFinishedMs = new Date(status.last_finished_at).getTime()
+    if (Number.isNaN(lastFinishedMs)) return
+    const AUTO_SCAN_STALE_MS = 90 * 60 * 1000
+    if (Date.now() - lastFinishedMs < AUTO_SCAN_STALE_MS) return
+
+    const guardKey = `autoScan:${timeframe}:${new Date().toISOString().slice(0, 10)}`
+    if (autoScanTriggeredRef.current.has(guardKey) || sessionStorage.getItem(guardKey)) return
+
+    autoScanTriggeredRef.current.add(guardKey)
+    sessionStorage.setItem(guardKey, '1')
+    triggerScan()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusQ.data, timeframe, isTriggeringScan])
+
   const refreshBoards = () => {
     overviewQ.refetch()
     statusQ.refetch()
