@@ -239,13 +239,14 @@ function IchimokuCard({ analysis }: { analysis: AnalysisResult }) {
         <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{analysis.ichimoku.summary}</p>
       </div>
 
-      <div className="space-y-2">
+      <ul className="space-y-1.5">
         {analysis.ichimoku.signals.map(signal => (
-          <div key={signal} className="rounded-lg border border-border bg-background/50 px-3 py-2 text-xs text-muted-foreground">
+          <li key={signal} className="flex gap-2 text-xs leading-relaxed text-muted-foreground">
+            <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-primary/60" />
             {signal}
-          </div>
+          </li>
         ))}
-      </div>
+      </ul>
 
       {analysis.ichimoku.caution && (
         <div className="rounded-lg border border-amber-400/20 bg-amber-400/8 p-3 text-xs leading-relaxed text-amber-100">
@@ -644,24 +645,26 @@ function DecisionSupportCard({ analysis }: { analysis: AnalysisResult }) {
         실전 체크
       </div>
       {analysis.next_trigger && (
-        <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs leading-relaxed text-muted-foreground">
-          <span className="font-medium text-primary">다음 트리거:</span> {analysis.next_trigger}
-        </div>
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          <span className="font-medium text-primary">다음 트리거</span> · {analysis.next_trigger}
+        </p>
       )}
       {flags.length > 0 && (
-        <div className="space-y-2">
+        <ul className="space-y-1.5">
           {flags.slice(0, 4).map((flag, index) => (
-            <div key={`${flag}-${index}`} className="rounded-lg border border-orange-400/15 bg-orange-400/5 px-3 py-2 text-xs text-orange-100">
+            <li key={`${flag}-${index}`} className="flex gap-2 text-xs leading-relaxed text-orange-100">
+              <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-orange-400" />
               {flag}
-            </div>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
       {checklist.length > 0 && (
-        <ol className="space-y-2 text-xs text-muted-foreground">
+        <ol className="space-y-1.5 text-xs leading-relaxed text-muted-foreground">
           {checklist.map((item, index) => (
-            <li key={`${item}-${index}`} className="rounded-lg border border-border bg-background/55 px-3 py-2">
-              {index + 1}. {item}
+            <li key={`${item}-${index}`} className="flex gap-2">
+              <span className="shrink-0 font-medium text-foreground/70">{index + 1}.</span>
+              {item}
             </li>
           ))}
         </ol>

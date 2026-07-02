@@ -1,10 +1,12 @@
-import { type ReactNode, useMemo } from 'react'
+import { type ReactNode, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   AlertTriangle,
   BarChart2,
   BrainCircuit,
+  ChevronDown,
+  ChevronUp,
   Loader2,
   RefreshCw,
   ShieldCheck,
@@ -417,15 +419,17 @@ function RecommendationBand({
 function RecommendationCard({ item }: { item: AiRecommendationItem }) {
   const nav = useNavigate()
   const { isWatched } = useAppStore()
+  const [detailsOpen, setDetailsOpen] = useState(false)
   const watched = isWatched(item.symbol.code)
   const patternName = item.pattern_type ? PATTERN_NAMES[item.pattern_type] ?? item.pattern_type : '패턴 없음'
   const fitStyle = fitToneClass(item.personal_fit_score ?? 0)
+  const hasRisk = item.risk_flags.length > 0 || Boolean(item.overlap_risk)
 
   return (
-    <Card className="space-y-4" onClick={() => nav(item.chart_path)}>
+    <Card className="space-y-3">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <div className="flex items-center gap-2">
+        <button className="min-w-0 text-left" onClick={() => nav(item.chart_path)}>
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs text-muted-foreground">#{item.rank}</span>
             <h2 className="text-lg font-bold">{item.symbol.name}</h2>
             <span className="text-xs text-muted-foreground">{item.symbol.code}</span>
@@ -439,7 +443,7 @@ function RecommendationCard({ item }: { item: AiRecommendationItem }) {
           <div className="mt-1 text-xs text-muted-foreground">
             {patternName} / {item.timeframe_label} / {STATE_LABELS[item.state ?? ''] ?? item.state ?? '스캔'}
           </div>
-        </div>
+        </button>
 
         <div className="flex flex-wrap items-center gap-2">
           <span className={cn('rounded-md border px-2 py-1 text-xs font-medium', fitStyle.chip)}>
@@ -460,45 +464,56 @@ function RecommendationCard({ item }: { item: AiRecommendationItem }) {
         {item.action_line || item.next_actions[0] || '지금은 핵심 가격대만 확인하고 재평가'}
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <Metric label="상승 확률" value={fmtPct(item.p_up)} />
-        <Metric label="신뢰도" value={fmtPct(item.confidence)} />
-        <Metric label="진입 구간" value={fmtPct(item.entry_window_score, 0)} />
-        <Metric label="손익비" value={item.reward_risk_ratio.toFixed(2)} />
-        <Metric label="개인 적합도" value={`${Math.round(item.personal_fit_score ?? 0)}점`} />
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs">
+        <StatInline label="상승 확률" value={fmtPct(item.p_up)} />
+        <StatInline label="신뢰도" value={fmtPct(item.confidence)} />
+        <StatInline label="진입 구간" value={fmtPct(item.entry_window_score, 0)} />
+        <StatInline label="손익비" value={item.reward_risk_ratio.toFixed(2)} />
+        <StatInline label="개인 적합도" value={`${Math.round(item.personal_fit_score ?? 0)}점`} />
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-2">
-        <ActionDetail title="지금 할 일" body={item.do_now || item.action_line} tone="primary" />
-        <ActionDetail title="진입 금지 조건" body={item.avoid_if || item.risk_flags[0] || '리스크 신호가 정리될 때까지 대기'} tone="danger" />
-        <ActionDetail title="다시 볼 가격" body={item.review_price || item.next_trigger || '핵심 가격대를 확인한 뒤 재평가'} tone="sky" />
-        <ActionDetail title="오늘 안 봐도 되는 이유" body={item.skip_reason || '트리거가 아직 완성되지 않았습니다.'} tone="muted" />
-      </div>
+      <button
+        onClick={() => setDetailsOpen(value => !value)}
+        className="flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+      >
+        {detailsOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+        {detailsOpen ? '판단 근거 접기' : '판단 근거 더보기'}
+        {hasRisk && !detailsOpen && <span className="ml-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-200">리스크 있음</span>}
+      </button>
 
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-        <InfoList title="판단 근거" items={item.reasons} />
-        <InfoList title="내 기록 기준" items={item.personal_fit_reasons ?? []} />
-      </div>
-
-      {(item.risk_flags.length > 0 || item.overlap_risk) && (
-        <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
-          <div className="mb-2 text-xs font-semibold text-amber-200">리스크 / 중복 노출</div>
-          <div className="flex flex-wrap gap-1.5">
-            {item.risk_flags.map(flag => (
-              <span key={flag} className="rounded-md bg-amber-500/10 px-2 py-1 text-xs text-amber-100">
-                {flag}
-              </span>
-            ))}
-            {item.overlap_risk && (
-              <span className="rounded-md bg-amber-500/10 px-2 py-1 text-xs text-amber-100">{item.overlap_risk}</span>
-            )}
+      {detailsOpen && (
+        <div className="space-y-3 border-t border-border pt-3">
+          <div className="grid gap-3 lg:grid-cols-2">
+            <ActionDetail title="지금 할 일" body={item.do_now || item.action_line} tone="primary" />
+            <ActionDetail title="진입 금지 조건" body={item.avoid_if || item.risk_flags[0] || '리스크 신호가 정리될 때까지 대기'} tone="danger" />
+            <ActionDetail title="다시 볼 가격" body={item.review_price || item.next_trigger || '핵심 가격대를 확인한 뒤 재평가'} tone="sky" />
+            <ActionDetail title="오늘 안 봐도 되는 이유" body={item.skip_reason || '트리거가 아직 완성되지 않았습니다.'} tone="muted" />
           </div>
+
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+            <InfoList title="판단 근거" items={item.reasons} />
+            <InfoList title="내 기록 기준" items={item.personal_fit_reasons ?? []} />
+          </div>
+
+          {hasRisk && (
+            <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
+              <div className="mb-2 text-xs font-semibold text-amber-200">리스크 / 중복 노출</div>
+              <div className="flex flex-wrap gap-1.5">
+                {item.risk_flags.map(flag => (
+                  <span key={flag} className="rounded-md bg-amber-500/10 px-2 py-1 text-xs text-amber-100">
+                    {flag}
+                  </span>
+                ))}
+                {item.overlap_risk && (
+                  <span className="rounded-md bg-amber-500/10 px-2 py-1 text-xs text-amber-100">{item.overlap_risk}</span>
+                )}
+              </div>
+            </div>
+          )}
+
+          <p className="text-xs leading-relaxed text-muted-foreground">{item.position_hint}</p>
         </div>
       )}
-
-      <div className="rounded-lg border border-border bg-background/60 p-3 text-xs leading-relaxed text-muted-foreground">
-        {item.position_hint}
-      </div>
     </Card>
   )
 }
@@ -509,6 +524,14 @@ function Metric({ label, value }: { label: string; value: string }) {
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className="mt-1 text-sm font-semibold">{value}</div>
     </div>
+  )
+}
+
+function StatInline({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="text-muted-foreground">
+      {label} <span className="font-semibold text-foreground">{value}</span>
+    </span>
   )
 }
 

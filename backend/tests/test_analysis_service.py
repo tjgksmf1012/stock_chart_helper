@@ -61,6 +61,22 @@ async def _fixed_stats(pattern_type: str, timeframe: str) -> dict:
     }
 
 
+@pytest.fixture(autouse=True)
+def _neutral_market_regime(monkeypatch):
+    # analyze_symbol_dataframe() now calls get_market_regime() for real (regime_fit/rs_fit
+    # used to be dead-wired to a hardcoded 0.5). Pin it to "unknown" so this pinned
+    # characterization test doesn't silently drift if a real regime happens to be cached
+    # in Redis by something else (e.g. a manually-run dev server sharing the same instance).
+    async def _fixed_regime():
+        return {
+            "kospi": {"regime": "unknown", "return_63d_pct": None},
+            "kosdaq": {"regime": "unknown", "return_63d_pct": None},
+            "overall_regime": "unknown",
+        }
+
+    monkeypatch.setattr("app.services.analysis_service.get_market_regime", _fixed_regime)
+
+
 def _stale_double_bottom_df() -> pd.DataFrame:
     """Same W as `_double_bottom_df` but followed by a ~70-bar flat tail.
 
