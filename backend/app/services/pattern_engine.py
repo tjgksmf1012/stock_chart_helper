@@ -24,7 +24,7 @@ import numpy as np
 import pandas as pd
 
 from .swing_points import SwingPoint, get_significant_swings, alternating_swings
-from .timeframe_service import pattern_threshold_profile
+from .timeframe_service import is_intraday_timeframe, pattern_threshold_profile
 
 PatternType = Literal[
     "double_bottom", "double_top",
@@ -745,6 +745,9 @@ class PatternEngine:
             self._detect_inverse_head_and_shoulders,
             self._detect_triangles,
             self._detect_rectangle,
+            self._detect_cup_and_handle,
+            self._detect_rounding_bottom,
+            self._detect_channels,
         ]:
             found = detector(df, swings, regime_fit, timeframe)
             if found:
@@ -1071,6 +1074,7 @@ class PatternEngine:
     ) -> list[PatternResult]:
         highs = [s for s in swings if s.kind == "high"]
         lows = [s for s in swings if s.kind == "low"]
+        results = []
         dates = df["date"].values if "date" in df.columns else df["datetime"].values
         profile = pattern_threshold_profile(timeframe)
 
@@ -1174,15 +1178,16 @@ class PatternEngine:
                 is_provisional=(state != "confirmed"),
             )
             r.textbook_similarity = _finalize_textbook_similarity(r)
-            return [r]
+            results.append(r)
 
-        return []
+        return results[-1:] if results else []  # return most recent only
 
     def _detect_inverse_head_and_shoulders(
         self, df: pd.DataFrame, swings: list[SwingPoint], regime_fit: float, timeframe: str | None = None
     ) -> list[PatternResult]:
         lows = [s for s in swings if s.kind == "low"]
         highs = [s for s in swings if s.kind == "high"]
+        results = []
         dates = df["date"].values if "date" in df.columns else df["datetime"].values
         profile = pattern_threshold_profile(timeframe)
 
@@ -1280,8 +1285,9 @@ class PatternEngine:
                 is_provisional=(state != "confirmed"),
             )
             r.textbook_similarity = _finalize_textbook_similarity(r)
-            return [r]
-        return []
+            results.append(r)
+
+        return results[-1:] if results else []  # return most recent only
 
     # ── Triangles ────────────────────────────────────────────────────────────
 
@@ -1311,9 +1317,21 @@ class PatternEngine:
         if high_descending and low_ascending:
             pattern_type = "symmetric_triangle"
             apex = (h_series[-1].price + l_series[-1].price) / 2
-            state = "armed" if abs(current_close - apex) / apex < 0.03 else "forming"
+            # 대칭삼각형은 방향이 미리 정해져 있지 않아 위/아래 어느 쪽으로든 돌파할 수 있다.
+            # armed/forming만 있고 confirmed 분기가 없으면 아무리 깔끔하게 돌파해도 항상
+            # 상단(A) 등급을 받을 수 없는 dead state가 된다 — 이미 고친 다른 절벽들과
+            # 같은 계열의 버그였다.
+            breakout_buffer = apex * 0.01
+            if current_close >= apex + breakout_buffer:
+                state = "confirmed"
+                bullish_breakout = True
+            elif current_close <= apex - breakout_buffer:
+                state = "confirmed"
+                bullish_breakout = False
+            else:
+                state = "armed" if abs(current_close - apex) / apex < 0.03 else "forming"
+                bullish_breakout = current_close >= apex
             breakout_level = apex
-            bullish_breakout = current_close >= apex
         elif high_flat and low_ascending:
             pattern_type = "ascending_triangle"
             resistance = sum(h.price for h in h_series) / len(h_series)
@@ -1391,7 +1409,11 @@ class PatternEngine:
         highs = [item[0] for item in segment]
         lows = [item[1] for item in segment]
         depths = [item[2] for item in segment]
-        pivot = max(high.price for high in highs)
+        # VCP는 수축이 진행될수록 고점도 대체로 낮아지는데, 세 고점 중 max()를 쓰면
+        # (흔히 가장 오래되고 넓은) 초기 고점이 돌파 기준가가 되어 실제로 지금 시험받고
+        # 있는 저항선(가장 최근 수축의 고점)보다 훨씬 높은 곳에 트리거가 걸린다.
+        # 미너비니 VCP 방법론의 피벗은 마지막(가장 타이트한) 베이스의 고점이다.
+        pivot = highs[-1].price
         high_tightness = float(
             np.clip(
                 1.0 - ((max(high.price for high in highs) - min(high.price for high in highs)) / max(pivot, 1.0)) / 0.14,
@@ -1432,9 +1454,17 @@ class PatternEngine:
         else:
             state = "forming"
         # 상대강도(RS)가 뚜렷하게 시장을 하회하는 종목은 진짜 VCP 셋업으로 보지 않는다 —
-        # 미너비니 방법론에서 RS는 돌파 신뢰도의 전제조건이지 보조지표가 아니다.
-        if rs_fit < 0.35 and state != "forming":
+        # 미너비니 방법론에서 RS는 돌파 신뢰도의 전제조건이지 보조지표가 아니다. 다만
+        # 단일 임계값(0.35)에서 무조건 forming으로 되돌리면 rs_fit 0.349 vs 0.351 같은
+        # 근소한 차이로 등급이 통째로 바뀌는 절벽이 생긴다. 대신 단계적으로 한 단계씩만
+        # 낮추고, 정말 RS가 약한 경우(<0.20)에만 완전히 forming으로 되돌린다.
+        if rs_fit < 0.20:
             state = "forming"
+        elif rs_fit < 0.35:
+            if state == "confirmed":
+                state = "armed"
+            elif state == "armed":
+                state = "forming"
 
         vol_score = _volume_context_score(df, highs[0].index, latest_low.index)
         volat_score = _volatility_context_score(df, highs[0].index, latest_low.index)
@@ -1581,6 +1611,409 @@ class PatternEngine:
                 {"price": resistance, "type": "resistance"},
                 {"price": support, "type": "support"},
             ],
+            is_provisional=(state != "confirmed"),
+        )
+        r.textbook_similarity = _finalize_textbook_similarity(r)
+        return [r]
+
+    # ── Cup and Handle ───────────────────────────────────────────────────────
+    # 고전적 정의(오닐): 왼쪽 고점(rim) → 둥근 바닥(V자가 아닌 U자) → 왼쪽 고점 근처까지
+    # 회복하는 오른쪽 고점(rim) → 오른쪽 고점의 상단 절반 안에서 형성되는 얕고 짧은
+    # 눌림(handle) → handle/rim을 돌파. 컵 깊이는 보통 12~55%, handle 깊이는 그보다
+    # 훨씬 얕고(2~18%) 짧다(컵 기간의 절반 이내).
+
+    def _detect_cup_and_handle(
+        self, df: pd.DataFrame, swings: list[SwingPoint], regime_fit: float, timeframe: str | None = None
+    ) -> list[PatternResult]:
+        highs = [s for s in swings if s.kind == "high"]
+        lows = [s for s in swings if s.kind == "low"]
+        if len(highs) < 2 or len(lows) < 2:
+            return []
+
+        dates = df["date"].values if "date" in df.columns else df["datetime"].values
+        current_close = float(df["close"].iloc[-1])
+        last_dt = pd.Timestamp(dates[-1]).to_pydatetime()
+        min_cup_bars = 10 if timeframe and is_intraday_timeframe(timeframe) else 20
+
+        results: list[PatternResult] = []
+        for i in range(len(highs) - 1):
+            left_rim = highs[i]
+            for j in range(i + 1, len(highs)):
+                right_rim = highs[j]
+                if right_rim.index - left_rim.index < min_cup_bars:
+                    continue
+                # 오른쪽 고점이 왼쪽 고점을 크게 웃돌면 그냥 상승 추세지 컵이 아니다 —
+                # 회복은 왼쪽 고점 근처(-8%~+3%)까지만 인정한다.
+                rim_ratio = _safe_ratio(right_rim.price - left_rim.price, left_rim.price)
+                if not (-0.08 <= rim_ratio <= 0.03):
+                    continue
+
+                between_lows = [l for l in lows if left_rim.index < l.index < right_rim.index]
+                if not between_lows:
+                    continue
+                cup_bottom = min(between_lows, key=lambda l: l.price)
+                cup_depth = _safe_ratio(left_rim.price - cup_bottom.price, left_rim.price)
+                if not (0.12 <= cup_depth <= 0.55):
+                    continue
+
+                left_span = cup_bottom.index - left_rim.index
+                right_span = right_rim.index - cup_bottom.index
+                if left_span <= 0 or right_span <= 0:
+                    continue
+                # V자(급락 후 급반등)가 아니라 U자에 가깝도록, 양쪽 구간이 한쪽으로
+                # 지나치게 치우치지 않아야 한다.
+                roundness = _time_symmetry_score(left_span, right_span)
+                if roundness < 0.25:
+                    continue
+
+                handle_candidates = [l for l in lows if l.index > right_rim.index]
+                if not handle_candidates:
+                    continue
+                handle_low = handle_candidates[-1]
+                handle_depth = _safe_ratio(right_rim.price - handle_low.price, right_rim.price)
+                if not (0.02 <= handle_depth <= 0.18):
+                    continue
+                cup_mid = cup_bottom.price + 0.5 * (right_rim.price - cup_bottom.price)
+                if handle_low.price < cup_mid:
+                    continue  # 손잡이는 컵 상단 절반 안에서 형성돼야 한다
+                handle_bars = handle_low.index - right_rim.index
+                cup_bars = right_rim.index - left_rim.index
+                if handle_bars <= 0 or handle_bars > max(6, cup_bars * 0.5):
+                    continue  # 손잡이가 컵 자체만큼 길게 끌면 별도의 새 구조로 본다
+
+                pivot = max(left_rim.price, right_rim.price)
+                if current_close >= pivot * 1.005:
+                    state = "confirmed"
+                elif current_close >= pivot * 0.985:
+                    state = "armed"
+                else:
+                    state = "forming"
+                if _too_far_from_trigger(
+                    df,
+                    timeframe,
+                    current_close,
+                    pivot,
+                    state,
+                    bullish=True,
+                    formation_height_pct=cup_depth,
+                ):
+                    continue
+
+                invalidation = handle_low.price * 0.97
+                raw_target = pivot + (pivot - cup_bottom.price)
+                target, target_realism = _apply_realistic_target(
+                    df,
+                    timeframe,
+                    current_close,
+                    pivot,
+                    raw_target,
+                    state,
+                    bullish=True,
+                    formation_height_pct=cup_depth,
+                )
+
+                vol_score = _volume_context_score(df, left_rim.index, handle_low.index)
+                volat_score = _volatility_context_score(df, left_rim.index, handle_low.index)
+                breakout_idx = _breakout_index(df, pivot, handle_low.index, bullish=True)
+                breakout_quality = _breakout_quality_score(df, breakout_idx, pivot, bullish=True)
+                retest_quality = _retest_quality_score(df, breakout_idx, pivot, bullish=True)
+                reversal_energy = _reversal_energy_score(
+                    df,
+                    left_rim.index,
+                    right_rim.index,
+                    breakout_idx if breakout_idx is not None else len(df) - 1,
+                    bullish=True,
+                )
+                handle_quality = float(np.clip(1.0 - abs(handle_depth - 0.08) / 0.14, 0.0, 1.0))
+                geom_fit = float(
+                    np.clip(
+                        roundness * 0.30
+                        + _symmetry_score(left_rim.price, right_rim.price) * 0.28
+                        + handle_quality * 0.22
+                        + min(1.0, cup_depth / 0.30) * 0.20,
+                        0.0,
+                        1.0,
+                    )
+                )
+                geom_fit = float(np.clip(geom_fit * (0.84 + 0.16 * target_realism), 0.0, 1.0))
+                state = _normalize_state(state, breakout_quality, retest_quality)
+                grade = _grade_from_quality(geom_fit, breakout_quality, retest_quality, vol_score)
+
+                r = PatternResult(
+                    pattern_type="cup_and_handle",
+                    state=state,
+                    grade=grade,
+                    start_dt=left_rim.datetime,
+                    end_dt=last_dt if state == "confirmed" else None,
+                    neckline=pivot,
+                    invalidation_level=invalidation,
+                    target_level=target,
+                    geometry_fit=round(geom_fit, 3),
+                    swing_structure_fit=round(roundness, 3),
+                    volume_context_fit=round(vol_score, 3),
+                    volatility_context_fit=round(volat_score, 3),
+                    regime_fit=regime_fit,
+                    leg_balance_fit=round(
+                        _leg_balance_score(left_rim.price, right_rim.price, left_span, right_span), 3
+                    ),
+                    reversal_energy_fit=reversal_energy,
+                    variant_fit=round(handle_quality, 3),
+                    breakout_quality_fit=breakout_quality,
+                    retest_quality_fit=retest_quality,
+                    key_points=[
+                        {"dt": left_rim.datetime.isoformat(), "price": left_rim.price, "type": "left_rim"},
+                        {"dt": cup_bottom.datetime.isoformat(), "price": cup_bottom.price, "type": "cup_bottom"},
+                        {"dt": right_rim.datetime.isoformat(), "price": right_rim.price, "type": "right_rim"},
+                        {"dt": handle_low.datetime.isoformat(), "price": handle_low.price, "type": "handle_low"},
+                    ],
+                    is_provisional=(state != "confirmed"),
+                )
+                r.textbook_similarity = _finalize_textbook_similarity(r)
+                results.append(r)
+
+        return results[-1:] if results else []  # return most recent only
+
+    # ── Rounding Bottom ──────────────────────────────────────────────────────
+    # 컵앤핸들과 같은 U자형 바닥이지만, 아직 손잡이(오른쪽 고점 재테스트 후 얕은 눌림)가
+    # 붙지 않은 더 이른 단계다. 왼쪽 고점을 직접 돌파하면 확인으로 본다. 오른쪽에 이미
+    # 손잡이까지 갖춘 형태가 있으면 그건 cup_and_handle 쪽이 더 정확한 분류이므로 넘어간다.
+
+    def _detect_rounding_bottom(
+        self, df: pd.DataFrame, swings: list[SwingPoint], regime_fit: float, timeframe: str | None = None
+    ) -> list[PatternResult]:
+        highs = [s for s in swings if s.kind == "high"]
+        lows = [s for s in swings if s.kind == "low"]
+        if not highs or not lows:
+            return []
+
+        dates = df["date"].values if "date" in df.columns else df["datetime"].values
+        current_close = float(df["close"].iloc[-1])
+        last_dt = pd.Timestamp(dates[-1]).to_pydatetime()
+        last_idx = len(df) - 1
+        min_base_bars = 10 if timeframe and is_intraday_timeframe(timeframe) else 20
+
+        results: list[PatternResult] = []
+        for left_rim in highs:
+            after = [l for l in lows if l.index > left_rim.index]
+            if not after:
+                continue
+            cup_bottom = min(after, key=lambda l: l.price)
+            base_bars = max(0, last_idx - left_rim.index)
+            if base_bars < min_base_bars:
+                continue
+            if cup_bottom.index - left_rim.index < base_bars * 0.15:
+                continue  # 바닥이 왼쪽 초반에 몰려 있으면 라운딩이 아니라 그냥 하락 후 반등
+            depth = _safe_ratio(left_rim.price - cup_bottom.price, left_rim.price)
+            if not (0.10 <= depth <= 0.55):
+                continue
+            if current_close < cup_bottom.price * 1.03:
+                continue  # 바닥 이후 회복이 아직 시작도 안 됐으면 패턴으로 보지 않는다
+
+            has_handle = False
+            for right_rim in (h for h in highs if h.index > cup_bottom.index):
+                if _symmetry_score(left_rim.price, right_rim.price) < 0.55:
+                    continue
+                handle_candidates = [l for l in lows if l.index > right_rim.index]
+                if not handle_candidates:
+                    continue
+                handle_low = handle_candidates[-1]
+                handle_depth = _safe_ratio(right_rim.price - handle_low.price, right_rim.price)
+                if 0.02 <= handle_depth <= 0.18:
+                    has_handle = True
+                    break
+            if has_handle:
+                continue
+
+            pivot = left_rim.price
+            if current_close >= pivot * 1.005:
+                state = "confirmed"
+            elif current_close >= pivot * 0.98:
+                state = "armed"
+            else:
+                state = "forming"
+            if _too_far_from_trigger(
+                df, timeframe, current_close, pivot, state, bullish=True, formation_height_pct=depth
+            ):
+                continue
+
+            invalidation = cup_bottom.price * 0.97
+            raw_target = pivot + (pivot - cup_bottom.price)
+            target, target_realism = _apply_realistic_target(
+                df, timeframe, current_close, pivot, raw_target, state, bullish=True, formation_height_pct=depth
+            )
+
+            vol_score = _volume_context_score(df, left_rim.index, last_idx)
+            volat_score = _volatility_context_score(df, left_rim.index, last_idx)
+            breakout_idx = _breakout_index(df, pivot, cup_bottom.index, bullish=True)
+            breakout_quality = _breakout_quality_score(df, breakout_idx, pivot, bullish=True)
+            retest_quality = _retest_quality_score(df, breakout_idx, pivot, bullish=True)
+            reversal_energy = _reversal_energy_score(
+                df, left_rim.index, cup_bottom.index, breakout_idx if breakout_idx is not None else last_idx, bullish=True
+            )
+            left_span = cup_bottom.index - left_rim.index
+            right_span = max(1, last_idx - cup_bottom.index)
+            roundness = _time_symmetry_score(left_span, right_span)
+            geom_fit = float(
+                np.clip(roundness * 0.45 + min(1.0, depth / 0.30) * 0.30 + reversal_energy * 0.25, 0.0, 1.0)
+            )
+            geom_fit = float(np.clip(geom_fit * (0.84 + 0.16 * target_realism), 0.0, 1.0))
+            state = _normalize_state(state, breakout_quality, retest_quality)
+            grade = _grade_from_quality(geom_fit, breakout_quality, retest_quality, vol_score)
+
+            r = PatternResult(
+                pattern_type="rounding_bottom",
+                state=state,
+                grade=grade,
+                start_dt=left_rim.datetime,
+                end_dt=last_dt if state == "confirmed" else None,
+                neckline=pivot,
+                invalidation_level=invalidation,
+                target_level=target,
+                geometry_fit=round(geom_fit, 3),
+                swing_structure_fit=round(roundness, 3),
+                volume_context_fit=round(vol_score, 3),
+                volatility_context_fit=round(volat_score, 3),
+                regime_fit=regime_fit,
+                leg_balance_fit=round(roundness, 3),
+                reversal_energy_fit=reversal_energy,
+                breakout_quality_fit=breakout_quality,
+                retest_quality_fit=retest_quality,
+                key_points=[
+                    {"dt": left_rim.datetime.isoformat(), "price": left_rim.price, "type": "left_rim"},
+                    {"dt": cup_bottom.datetime.isoformat(), "price": cup_bottom.price, "type": "base_bottom"},
+                ],
+                is_provisional=(state != "confirmed"),
+            )
+            r.textbook_similarity = _finalize_textbook_similarity(r)
+            results.append(r)
+
+        return results[-1:] if results else []  # return most recent only
+
+    # ── Rising / Falling Channel ─────────────────────────────────────────────
+    # 대칭삼각형처럼 방향이 미리 정해지지 않은 구조다 — 상단 추세선을 위로 뚫으면
+    # 상승 가속(강세), 하단 추세선을 아래로 뚫으면 채널 붕괴(약세)로 본다. 두 추세선이
+    # 수렴/발산하지 않고 대체로 평행해야 채널이고, 그렇지 않으면 삼각형/쐐기에 가깝다.
+
+    def _detect_channels(
+        self, df: pd.DataFrame, swings: list[SwingPoint], regime_fit: float, timeframe: str | None = None
+    ) -> list[PatternResult]:
+        highs = [s for s in swings if s.kind == "high"]
+        lows = [s for s in swings if s.kind == "low"]
+        if len(highs) < 3 or len(lows) < 3:
+            return []
+
+        dates = df["date"].values if "date" in df.columns else df["datetime"].values
+        current_close = float(df["close"].iloc[-1])
+        last_dt = pd.Timestamp(dates[-1]).to_pydatetime()
+        last_idx = len(df) - 1
+
+        h_series = highs[-3:]
+        l_series = lows[-3:]
+        high_slope = (h_series[-1].price - h_series[0].price) / max(1, h_series[-1].index - h_series[0].index)
+        low_slope = (l_series[-1].price - l_series[0].price) / max(1, l_series[-1].index - l_series[0].index)
+
+        if high_slope == 0 or low_slope == 0 or high_slope * low_slope <= 0:
+            return []  # 방향이 다르거나 평평하면 채널이 아니라 삼각형/박스 쪽이다
+        slope_ratio = min(abs(high_slope), abs(low_slope)) / max(abs(high_slope), abs(low_slope))
+        if slope_ratio < 0.4:
+            return []  # 두 추세선 기울기가 너무 다르면 평행 채널이 아니라 쐐기/삼각형에 가깝다
+
+        rising = high_slope > 0
+        pattern_type: PatternType = "rising_channel" if rising else "falling_channel"
+
+        upper_at_last = h_series[-1].price + high_slope * (last_idx - h_series[-1].index)
+        lower_at_last = l_series[-1].price + low_slope * (last_idx - l_series[-1].index)
+        if upper_at_last <= lower_at_last:
+            return []
+        channel_width_pct = _safe_ratio(upper_at_last - lower_at_last, lower_at_last)
+        if channel_width_pct < 0.03:
+            return []  # 폭이 너무 좁으면 사실상 박스/삼각형
+
+        breakout_buffer = max(upper_at_last, lower_at_last) * 0.01
+        if current_close >= upper_at_last + breakout_buffer:
+            state = "confirmed"
+            bullish_breakout = True
+            breakout_level = upper_at_last
+        elif current_close <= lower_at_last - breakout_buffer:
+            state = "confirmed"
+            bullish_breakout = False
+            breakout_level = lower_at_last
+        else:
+            # 채널 내부 — 어느 경계에 더 가까운지로 방향과 armed/forming을 정한다.
+            dist_to_upper = abs(current_close - upper_at_last)
+            dist_to_lower = abs(current_close - lower_at_last)
+            bullish_breakout = dist_to_upper <= dist_to_lower
+            breakout_level = upper_at_last if bullish_breakout else lower_at_last
+            proximity = 1.0 - _safe_ratio(
+                min(dist_to_upper, dist_to_lower), max(upper_at_last - lower_at_last, 1.0)
+            )
+            state = "armed" if proximity >= 0.75 else "forming"
+
+        formation_height_pct = _safe_ratio(upper_at_last - lower_at_last, breakout_level, default=0.0)
+        if _too_far_from_trigger(
+            df,
+            timeframe,
+            current_close,
+            breakout_level,
+            state,
+            bullish=bullish_breakout,
+            formation_height_pct=formation_height_pct,
+        ):
+            return []
+
+        span_start = min(h_series[0].index, l_series[0].index)
+        invalidation = lower_at_last * 0.98 if bullish_breakout else upper_at_last * 1.02
+        raw_target = (
+            breakout_level + (upper_at_last - lower_at_last)
+            if bullish_breakout
+            else breakout_level - (upper_at_last - lower_at_last)
+        )
+        target, target_realism = _apply_realistic_target(
+            df,
+            timeframe,
+            current_close,
+            breakout_level,
+            raw_target,
+            state,
+            bullish=bullish_breakout,
+            formation_height_pct=formation_height_pct,
+        )
+
+        vol_score = _volume_context_score(df, span_start, last_idx)
+        volat_score = _volatility_context_score(df, span_start, last_idx)
+        breakout_idx = _breakout_index(
+            df, breakout_level, max(h_series[-1].index, l_series[-1].index), bullish=bullish_breakout
+        )
+        breakout_quality = _breakout_quality_score(df, breakout_idx, breakout_level, bullish=bullish_breakout)
+        retest_quality = _retest_quality_score(df, breakout_idx, breakout_level, bullish=bullish_breakout)
+        parallel_fit = float(np.clip(slope_ratio, 0.0, 1.0))
+        geom_fit = float(np.clip(parallel_fit * 0.6 + min(1.0, channel_width_pct / 0.10) * 0.4, 0.0, 1.0))
+        geom_fit = float(np.clip(geom_fit * (0.84 + 0.16 * target_realism), 0.0, 1.0))
+        state = _normalize_state(state, breakout_quality, retest_quality)
+        grade = _grade_from_quality(geom_fit, breakout_quality, retest_quality, vol_score)
+
+        r = PatternResult(
+            pattern_type=pattern_type,
+            state=state,
+            grade=grade,
+            start_dt=min(h_series[0].datetime, l_series[0].datetime),
+            end_dt=last_dt if state == "confirmed" else None,
+            neckline=breakout_level,
+            invalidation_level=invalidation,
+            target_level=target,
+            geometry_fit=round(geom_fit, 3),
+            swing_structure_fit=round(parallel_fit, 3),
+            volume_context_fit=round(vol_score, 3),
+            volatility_context_fit=round(volat_score, 3),
+            regime_fit=regime_fit,
+            leg_balance_fit=round(parallel_fit, 3),
+            reversal_energy_fit=0.5,
+            breakout_quality_fit=breakout_quality,
+            retest_quality_fit=retest_quality,
+            key_points=(
+                [{"dt": h.datetime.isoformat(), "price": h.price, "type": "upper_trendline"} for h in h_series]
+                + [{"dt": l.datetime.isoformat(), "price": l.price, "type": "lower_trendline"} for l in l_series]
+            ),
             is_provisional=(state != "confirmed"),
         )
         r.textbook_similarity = _finalize_textbook_similarity(r)

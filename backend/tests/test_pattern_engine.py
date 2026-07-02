@@ -184,3 +184,201 @@ class TestPositiveDetection:
             assert db.target_level > 0
         if db.invalidation_level is not None:
             assert db.invalidation_level > 0
+
+    def test_detects_textbook_cup_and_handle(self):
+        import numpy as np
+
+        closes = (
+            list(np.linspace(11_000, 12_000, 20))  # up to the left rim
+            + list(np.linspace(12_000, 9_000, 50))  # down into the cup
+            + list(np.linspace(9_000, 11_800, 50))  # recovery to the right rim (~left rim)
+            + list(np.linspace(11_800, 11_000, 16))  # shallow handle pullback (upper half of the cup)
+            + list(np.linspace(11_000, 12_600, 24))  # breakout above the rim
+        )
+        df = _build_ohlcv_from_closes(closes)
+        results = PatternEngine().detect_all(df, timeframe="1d")
+
+        cups = [r for r in results if r.pattern_type == "cup_and_handle"]
+        assert cups, f"expected a cup_and_handle, got {[r.pattern_type for r in results]}"
+
+        cup = cups[0]
+        assert cup.state == "confirmed"
+        assert cup.grade in VALID_GRADES
+        assert cup.neckline is not None and cup.invalidation_level is not None and cup.target_level is not None
+        assert cup.invalidation_level < cup.neckline < cup.target_level
+
+    def test_detects_textbook_rounding_bottom(self):
+        import numpy as np
+
+        closes = (
+            list(np.linspace(10_000, 11_500, 30))  # up to the left rim
+            + list(np.linspace(11_500, 8_500, 70))  # gradual decline into the base
+            + list(np.linspace(8_500, 12_200, 100))  # gradual, continuous recovery through the rim
+        )
+        df = _build_ohlcv_from_closes(closes)
+        results = PatternEngine().detect_all(df, timeframe="1d")
+
+        bottoms = [r for r in results if r.pattern_type == "rounding_bottom"]
+        assert bottoms, f"expected a rounding_bottom, got {[r.pattern_type for r in results]}"
+
+        base = bottoms[0]
+        assert base.state == "confirmed"
+        assert base.grade in VALID_GRADES
+        assert base.invalidation_level < base.neckline < base.target_level
+
+    def test_detects_textbook_rising_channel(self):
+        import numpy as np
+
+        closes = (
+            list(np.linspace(8_500, 9_800, 15))
+            + list(np.linspace(9_800, 9_000, 15))
+            + list(np.linspace(9_000, 10_300, 15))
+            + list(np.linspace(10_300, 9_500, 15))
+            + list(np.linspace(9_500, 10_800, 15))
+            + list(np.linspace(10_800, 10_000, 15))
+            + list(np.linspace(10_000, 12_000, 20))  # breaks above the upper trendline
+        )
+        df = _build_ohlcv_from_closes(closes)
+        results = PatternEngine().detect_all(df, timeframe="1d")
+
+        channels = [r for r in results if r.pattern_type == "rising_channel"]
+        assert channels, f"expected a rising_channel, got {[r.pattern_type for r in results]}"
+
+        channel = channels[0]
+        assert channel.state == "confirmed"
+        assert channel.target_level is not None and channel.neckline is not None
+        assert channel.target_level > channel.neckline  # bullish breakout above the channel
+
+    def test_detects_falling_channel_with_bullish_reversal_breakout(self):
+        import numpy as np
+
+        closes = (
+            list(np.linspace(11_000, 12_500, 15))
+            + list(np.linspace(12_500, 10_500, 15))
+            + list(np.linspace(10_500, 12_000, 15))
+            + list(np.linspace(12_000, 10_000, 15))
+            + list(np.linspace(10_000, 11_500, 15))
+            + list(np.linspace(11_500, 9_500, 15))
+            + list(np.linspace(9_500, 13_500, 20))  # breaks above the (descending) upper trendline
+        )
+        df = _build_ohlcv_from_closes(closes)
+        results = PatternEngine().detect_all(df, timeframe="1d")
+
+        channels = [r for r in results if r.pattern_type == "falling_channel"]
+        assert channels, f"expected a falling_channel, got {[r.pattern_type for r in results]}"
+
+        channel = channels[0]
+        assert channel.state == "confirmed"
+        assert channel.target_level is not None and channel.neckline is not None
+        assert channel.target_level > channel.neckline  # reversal: broke up out of the falling channel
+
+
+class TestHeadAndShouldersPicksMostRecentMatch:
+    """Regression: _detect_head_and_shoulders / _detect_inverse_head_and_shoulders used to
+    walk swing triples oldest-first and `return` on the first valid match, unlike every other
+    detector (which collects all matches and returns the most recent). A stale H&S from
+    months ago could get reported forever instead of a fresh, currently-relevant one.
+    """
+
+    def test_head_and_shoulders_returns_recent_formation_not_stale_one(self):
+        from app.services.pattern_engine import PatternEngine
+        from app.services.swing_points import SwingPoint
+
+        import numpy as np
+        import pandas as pd
+
+        # Both formations are deliberately priced close to the final close (~14,000) so
+        # BOTH pass every filter (symmetry, height, and the forming-distance check) —
+        # the only thing that should decide which one is reported is recency.
+        closes = (
+            list(np.linspace(13_000, 15_200, 10))  # up to stale LS
+            + list(np.linspace(15_200, 13_800, 5))  # down to stale neckline low
+            + list(np.linspace(13_800, 16_200, 5))  # up to stale head
+            + list(np.linspace(16_200, 13_850, 5))  # down to stale neckline low
+            + list(np.linspace(13_850, 15_100, 5))  # up to stale RS
+            + list(np.linspace(15_100, 14_200, 10))  # drift toward the recent formation
+            + list(np.linspace(14_200, 16_000, 40))  # rally to the recent LS
+            + list(np.linspace(16_000, 14_500, 5))  # down to recent neckline low
+            + list(np.linspace(14_500, 17_500, 5))  # up to recent head
+            + list(np.linspace(17_500, 14_600, 5))  # down to recent neckline low
+            + list(np.linspace(14_600, 15_900, 5))  # up to recent RS
+            + list(np.linspace(15_900, 14_000, 30))  # confirms the recent neckline (~14,550)
+        )
+        df = _build_ohlcv_from_closes(closes)
+        dates = pd.Timestamp("2023-01-02") + pd.to_timedelta(np.arange(len(df)), unit="D")
+
+        def sp(idx: int, price: float, kind: str) -> SwingPoint:
+            return SwingPoint(index=idx, datetime=dates[idx].to_pydatetime(), price=price, kind=kind, strength=5)
+
+        swings = [
+            sp(9, 15_200, "high"),   # stale LS
+            sp(14, 13_800, "low"),   # stale left neckline low
+            sp(19, 16_200, "high"),  # stale head
+            sp(24, 13_850, "low"),   # stale right neckline low
+            sp(29, 15_100, "high"),  # stale RS
+            sp(79, 16_000, "high"),  # recent LS
+            sp(84, 14_500, "low"),   # recent left neckline low
+            sp(89, 17_500, "high"),  # recent head
+            sp(94, 14_600, "low"),   # recent right neckline low
+            sp(99, 15_900, "high"),  # recent RS
+        ]
+
+        engine = PatternEngine()
+        results = engine._detect_head_and_shoulders(df, swings, regime_fit=0.6, timeframe="1d")
+
+        assert results, "expected at least the recent head-and-shoulders to be detected"
+        assert len(results) == 1, "only the most recent match should be returned, not every match"
+        result = results[0]
+        # The stale formation's neckline is ~13,825; the recent one's is ~14,550. If the
+        # bug were still present, the first (stale) match would win instead.
+        assert result.neckline is not None and result.neckline > 14_000, (
+            f"expected the recent formation's neckline (~14,550), got {result.neckline} "
+            "-- looks like the stale (oldest) match won instead of the most recent one"
+        )
+
+
+class TestSymmetricTriangleCanReachConfirmed:
+    """Regression: the symmetric_triangle branch only had armed/forming states -- a
+    dead end that made 'confirmed' (and therefore grade A) structurally unreachable
+    no matter how clean the breakout was.
+    """
+
+    def test_clean_upward_breakout_reaches_confirmed(self):
+        from app.services.pattern_engine import PatternEngine
+        from app.services.swing_points import SwingPoint
+
+        import numpy as np
+        import pandas as pd
+
+        closes = (
+            list(np.linspace(10_000, 12_000, 10))  # up to first (highest) high
+            + list(np.linspace(12_000, 9_000, 10))  # down to first (lowest) low
+            + list(np.linspace(9_000, 11_500, 10))  # up to second high (lower than first)
+            + list(np.linspace(11_500, 9_500, 10))  # down to second low (higher than first)
+            + list(np.linspace(9_500, 11_000, 10))  # up to third high (lower still -- converging)
+            + list(np.linspace(11_000, 10_000, 10))  # down to third low (higher still -- converging)
+            + list(np.linspace(10_000, 10_800, 15))  # clean breakout above the apex (~10,500)
+        )
+        df = _build_ohlcv_from_closes(closes)
+        dates = pd.Timestamp("2023-01-02") + pd.to_timedelta(np.arange(len(df)), unit="D")
+
+        def sp(idx: int, price: float, kind: str) -> SwingPoint:
+            return SwingPoint(index=idx, datetime=dates[idx].to_pydatetime(), price=price, kind=kind, strength=5)
+
+        swings = [
+            sp(10, 12_000, "high"),
+            sp(20, 9_000, "low"),
+            sp(30, 11_500, "high"),
+            sp(40, 9_500, "low"),
+            sp(50, 11_000, "high"),
+            sp(60, 10_000, "low"),
+        ]
+
+        engine = PatternEngine()
+        results = engine._detect_triangles(df, swings, regime_fit=0.6, timeframe="1d")
+
+        symmetric = [r for r in results if r.pattern_type == "symmetric_triangle"]
+        assert symmetric, f"expected a symmetric_triangle, got {[r.pattern_type for r in results]}"
+        assert symmetric[0].state == "confirmed", (
+            f"clean breakout above the apex should reach 'confirmed', got {symmetric[0].state}"
+        )

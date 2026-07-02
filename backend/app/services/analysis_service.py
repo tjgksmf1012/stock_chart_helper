@@ -2080,10 +2080,9 @@ def _action_plan_profile(
         priority -= 0.08
     elif reentry_label == "재축적 관찰":
         priority -= 0.04
-    if entry_window_label in {"확장 추격", "목표 근접"}:
-        priority -= 0.12
-    elif entry_window_label in {"트리거 대기", "관망"}:
-        priority -= 0.06
+    # 라벨 기준 이분법 대신 entry_window_score를 직접 참조해 절벽 없이 연속적으로 감점한다.
+    if entry_window_score < 0.70:
+        priority -= 0.12 * min(1.0, (0.70 - entry_window_score) / 0.70)
 
     priority = round(max(0.0, min(1.0, priority)), 3)
     bullish = p_up >= p_down
@@ -2521,18 +2520,25 @@ def _trade_readiness_profile(
     ]
 
     raw_score = sum(float(item["score"]) * float(item["weight"]) for item in factors)
-    if action_plan.get("action_plan") == "cooling":
-        raw_score = min(raw_score, 0.42)
-    elif action_plan.get("action_plan") == "recheck":
-        raw_score = min(raw_score, 0.56)
+    # action_plan 버킷(ready_now/watch/recheck/cooling)은 여러 연속 지표에 하드 AND
+    # 임계값(예: entry_window_score>=0.68)을 적용해 만들어지는 이산 라벨이라, 그 라벨로
+    # 다시 캡을 걸면 근소한 입력 차이로 버킷이 넘어가는 순간 여기서도 절벽이 생긴다.
+    # 대신 그 버킷을 만드는 데 쓰인 것과 같은 연속값인 action_priority_score를 직접 쓴다.
+    action_priority = float(action_plan.get("action_priority_score", 0.5))
+    if action_priority < 0.70:
+        decay = min(1.0, (0.70 - action_priority) / 0.70)
+        raw_score = min(raw_score, 0.85 - 0.45 * decay)
     if data_quality < 0.55:
         raw_score = min(raw_score, 0.52)
     if reward_risk_ratio < 1.0 or headroom_score < 0.15:
         raw_score = min(raw_score, 0.48)
-    if entry_window_label in {"확장 추격", "목표 근접"}:
-        raw_score = min(raw_score, 0.44)
-    elif entry_window_score < 0.28:
-        raw_score = min(raw_score, 0.50)
+    # entry_window_score 자체가 이미 절벽 없이 부드럽게 감쇠하도록 고쳐졌으므로,
+    # 여기서도 라벨(이분법 문자열)이 아니라 그 연속값을 직접 참조해 상한을 매긴다.
+    # 라벨 기준으로 캡을 걸면 entry_window_score가 거의 그대로인데 라벨만 넘어가는
+    # 순간(예: 0.691 -> 0.689) 상한이 즉시 뚝 떨어지는 절벽이 재현된다.
+    if entry_window_score < 0.55:
+        decay = min(1.0, (0.55 - entry_window_score) / 0.55)
+        raw_score = min(raw_score, 0.80 - 0.36 * decay)
     if freshness_label in {"종료 패턴", "무효 만료"}:
         raw_score = min(raw_score, 0.22)
     elif freshness_label == "재기초 관찰":

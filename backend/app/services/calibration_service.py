@@ -18,6 +18,12 @@ from typing import Any
 # Below this many resolved signals the report is not statistically meaningful.
 MIN_CALIBRATION_SAMPLES = 20
 
+# Below this many samples *within a single bin*, that bin's observed win rate is too
+# noisy to trust (e.g. 1 win out of 1 trade reads as "100% observed"). Bins under this
+# threshold are excluded from the ECE/reliability verdict, though still returned in
+# `bins` (flagged via `low_confidence`) so callers can render them distinctly.
+MIN_BIN_SAMPLES = 5
+
 # Outcomes that represent a closed trade we can score. "pending"/"cancelled"
 # are excluded because they have no realized result.
 _RESOLVED_OUTCOMES = {"win", "loss", "stopped_out"}
@@ -33,6 +39,7 @@ class CalibrationBin:
     predicted: float  # mean predicted win probability inside the bin
     observed: float  # realized win rate inside the bin
     gap: float  # observed - predicted (negative => overconfident)
+    low_confidence: bool = False  # count < MIN_BIN_SAMPLES -- observed is noisy
 
 
 @dataclass
@@ -80,10 +87,26 @@ def outcome_to_pair(record: dict[str, Any]) -> tuple[float, bool] | None:
     return predicted, won
 
 
-def _reliability_label(sample_size: int, ece: float, mean_gap: float, min_samples: int) -> str:
+def _reliability_label(
+    sample_size: int,
+    ece: float,
+    mean_gap: float,
+    min_samples: int,
+    *,
+    reliable_bin_count: int = 0,
+    thin_bin_count: int = 0,
+) -> str:
     if sample_size < min_samples:
         return f"표본 부족 (n={sample_size}, 최소 {min_samples})"
+    # 전체 표본은 min_samples를 넘겨도, bin_count(기본 10)개 구간에 고르게 나뉘면 구간당
+    # 표본이 몇 건뿐일 수 있다. 그런 상태에서 "잘 보정됨"이라고 하면 1~2건짜리 관측을
+    # 근거로 신뢰도를 보증하는 셈이다 — 신뢰할 만한 구간이 하나도 없으면 그 사실을
+    # 먼저 알린다.
+    if reliable_bin_count == 0:
+        return f"구간별 표본 부족 (전체 n={sample_size}이지만 구간당 표본이 {MIN_BIN_SAMPLES}건 미만)"
     if ece <= 0.05:
+        if thin_bin_count > 0:
+            return f"양호하나 일부 구간 표본 부족 (구간 {thin_bin_count}개는 참고용)"
         return "양호 (잘 보정됨)"
     if mean_gap <= -0.05:
         return "과신 경향 (예측 확률이 실제보다 높음)"
@@ -97,6 +120,7 @@ def build_calibration_report(
     *,
     bin_count: int = 10,
     min_samples: int = MIN_CALIBRATION_SAMPLES,
+    min_bin_samples: int = MIN_BIN_SAMPLES,
 ) -> CalibrationReport:
     """Aggregate ``(predicted, won)`` pairs into a calibration report."""
     clean = [(float(p), bool(w)) for p, w in pairs if p is not None]
@@ -126,13 +150,20 @@ def build_calibration_report(
         buckets[idx].append((p, w))
 
     bins: list[CalibrationBin] = []
-    ece = 0.0
+    # ECE는 표본이 충분한 구간만으로 계산한다 — 구간당 1~2건짜리 관측을 근거로 "잘
+    # 보정됨"을 보증하지 않기 위해서다. 얇은 구간은 제외한 만큼 남은 구간들의 가중치
+    # 합으로 다시 정규화한다(reliable_weight로 나눔).
+    ece_numerator = 0.0
+    reliable_weight = 0.0
+    reliable_bin_count = 0
+    thin_bin_count = 0
     for i, bucket in enumerate(buckets):
         if not bucket:
             continue
         count = len(bucket)
         predicted = sum(p for p, _ in bucket) / count
         observed = sum(1 for _, w in bucket if w) / count
+        low_confidence = count < min_bin_samples
         bins.append(
             CalibrationBin(
                 lower=round(i / bin_count, 4),
@@ -141,9 +172,18 @@ def build_calibration_report(
                 predicted=round(predicted, 4),
                 observed=round(observed, 4),
                 gap=round(observed - predicted, 4),
+                low_confidence=low_confidence,
             )
         )
-        ece += (count / n) * abs(observed - predicted)
+        if low_confidence:
+            thin_bin_count += 1
+            continue
+        reliable_bin_count += 1
+        weight = count / n
+        reliable_weight += weight
+        ece_numerator += weight * abs(observed - predicted)
+
+    ece = (ece_numerator / reliable_weight) if reliable_weight > 0 else 0.0
 
     mean_gap = base_rate - mean_pred
     return CalibrationReport(
@@ -154,6 +194,13 @@ def build_calibration_report(
         brier_score=round(brier, 4),
         ece=round(ece, 4),
         mean_gap=round(mean_gap, 4),
-        reliability=_reliability_label(n, round(ece, 4), round(mean_gap, 4), min_samples),
+        reliability=_reliability_label(
+            n,
+            round(ece, 4),
+            round(mean_gap, 4),
+            min_samples,
+            reliable_bin_count=reliable_bin_count,
+            thin_bin_count=thin_bin_count,
+        ),
         bins=bins,
     )

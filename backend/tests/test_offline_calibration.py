@@ -6,6 +6,7 @@ import pytest
 
 from app.api.schemas import SymbolInfo
 from app.services.offline_calibration import (
+    _select_offline_symbols,
     collect_symbol_pairs,
     simulate_window_outcome,
 )
@@ -97,3 +98,60 @@ async def test_collect_symbol_pairs_yields_valid_pairs(monkeypatch):
     for predicted, won in pairs:
         assert 0.0 <= predicted <= 1.0
         assert isinstance(won, bool)
+
+
+class TestUnresolvedWindowsCountTowardCalibration:
+    """Regression: unresolved (timeout) windows used to be dropped entirely instead of
+    counted as a non-win, inflating the offline calibration's realized win rate relative
+    to backtest_engine.py's own (already-conservative) treatment of timeouts.
+    """
+
+    @pytest.mark.anyio
+    async def test_unresolved_window_is_appended_as_a_loss_not_dropped(self, monkeypatch):
+        # Stub analyze_symbol_dataframe so every window is a confirmed signal with a
+        # target/invalidation far outside the (flat, low-volatility) forward bars --
+        # isolates the unresolved-handling fix from the real pattern engine's own gating.
+        class _FakePattern:
+            pattern_type = "double_bottom"
+            target_level = 999_999.0
+            invalidation_level = 1.0
+
+        class _FakeResult:
+            no_signal_flag = False
+            patterns = [_FakePattern()]
+            p_up = 0.6
+            p_down = 0.4
+
+        async def _fake_analyze(symbol, timeframe, window_df):
+            return _FakeResult()
+
+        monkeypatch.setattr("app.services.offline_calibration.analyze_symbol_dataframe", _fake_analyze)
+
+        symbol = SymbolInfo(code="005930", name="Test", market="KOSPI", sector=None, market_cap=1e12, is_in_universe=True)
+        df = _build_df([10_000.0] * 130)  # flat: forward bars never touch target or stop
+
+        pairs, meta = await collect_symbol_pairs(symbol, "1d", df, window=95, step=5, max_forward=30)
+
+        assert meta["signals"] > 0
+        assert meta["unresolved"] == meta["signals"]
+        # Before the fix, unresolved windows were skipped entirely (never appended), so
+        # len(pairs) would be 0 here. Now they're appended as a loss.
+        assert len(pairs) == meta["signals"]
+        assert all(won is False for _, won in pairs)
+
+
+class TestSelectOfflineSymbols:
+    def test_returns_all_when_max_exceeds_universe(self):
+        universe = ["005930", "000660", "035420"]
+        assert _select_offline_symbols(universe, 10) == universe
+
+    def test_spreads_across_the_universe_instead_of_just_the_prefix(self):
+        universe = [str(i) for i in range(100)]
+        selected = _select_offline_symbols(universe, 10)
+        assert len(selected) == 10
+        # Should not just be the first 10 (megacap-only) -- must reach well into the tail.
+        assert max(int(code) for code in selected) >= 80
+
+    def test_zero_or_negative_returns_empty(self):
+        assert _select_offline_symbols(["005930"], 0) == []
+        assert _select_offline_symbols(["005930"], -1) == []

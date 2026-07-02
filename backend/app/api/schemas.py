@@ -725,6 +725,10 @@ class PatternStatsEntry(BaseModel):
     # 전체 시도 대비 승률이다 — resolution_rate는 그중 실제로 해소된 비율을 보여준다.
     timeouts: int = 0
     resolution_rate: float | None = None
+    # 실제 79종목 백테스트 결과가 아니라 표본이 부족할 때 쓰는 손으로 튜닝한 기본값이면
+    # True. 이게 없으면 사용자는 "진짜 검증된 승률"과 "개발자 추정치"를 구분할 방법이
+    # 없이 똑같은 화면에서 똑같이 신뢰도 있어 보이게 표시된다.
+    is_synthetic: bool = False
 
 
 class PatternStatsResponse(BaseModel):

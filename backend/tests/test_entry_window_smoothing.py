@@ -17,7 +17,7 @@ from datetime import datetime
 
 import pytest
 
-from app.services.analysis_service import _action_plan_profile, _entry_window_profile
+from app.services.analysis_service import _action_plan_profile, _entry_window_profile, _trade_readiness_profile
 from app.services.pattern_engine import PatternResult
 
 
@@ -144,3 +144,101 @@ class TestStillGatesOnRewardRisk:
         generous = _entry_window_at_extension(1.0, target=11000.0)
         tight = _entry_window_at_extension(1.0, target=9300.0)
         assert tight["entry_window_score"] < generous["entry_window_score"]
+
+
+def _trade_readiness_at_extension(pct: float, target: float = 11000.0) -> dict:
+    """Reproduces the downstream _trade_readiness_profile / _action_plan_profile call
+    with a fixed set of otherwise-strong factors, varying only breakout extension —
+    isolates whether entry_window's label transition still causes a cliff one layer down."""
+    pattern = _confirmed_pattern(target)
+    current_close = 9000.0 * (1 + pct / 100)
+    reward_risk_ratio = (target - current_close) / (current_close - 8500.0)
+    target_distance_pct = (target - current_close) / current_close
+    stop_distance_pct = (current_close - 8500.0) / current_close
+    ew = _entry_window_profile(
+        timeframe="1d",
+        pattern=pattern,
+        current_close=current_close,
+        reward_risk_ratio=reward_risk_ratio,
+        headroom_score=0.75,
+        target_distance_pct=target_distance_pct,
+        stop_distance_pct=stop_distance_pct,
+        completion_proximity=0.8,
+        target_hit_at=None,
+        invalidated_at=None,
+    )
+    action_plan = _action_plan_profile(
+        timeframe="1d",
+        pattern=pattern,
+        p_up=0.65,
+        p_down=0.35,
+        entry_score=ew["entry_window_score"],
+        completion_proximity=0.8,
+        recency_score=0.9,
+        data_quality=0.9,
+        reward_risk_ratio=reward_risk_ratio,
+        headroom_score=0.75,
+        entry_window_score=ew["entry_window_score"],
+        entry_window_label=ew["entry_window_label"],
+        freshness_score=0.85,
+        freshness_label="신선",
+        reentry_score=0.5,
+        reentry_label="none",
+        historical_edge_score=0.7,
+        trend_alignment_score=0.8,
+        intraday_session_score=0.5,
+        target_hit_at=None,
+        invalidated_at=None,
+        fetch_status="live_ok",
+    )
+    freshness = {"freshness_score": 0.85, "freshness_label": "신선", "freshness_summary": ""}
+    reentry = {"reentry_score": 0.5, "reentry_label": "none", "reentry_summary": ""}
+    return _trade_readiness_profile(
+        timeframe="1d",
+        pattern=pattern,
+        action_plan=action_plan,
+        entry_window=ew,
+        freshness=freshness,
+        reentry=reentry,
+        p_up=0.65,
+        p_down=0.35,
+        entry_score=ew["entry_window_score"],
+        confidence=0.8,
+        completion_proximity=0.8,
+        recency_score=0.9,
+        data_quality=0.9,
+        reward_risk_ratio=reward_risk_ratio,
+        headroom_score=0.75,
+        sample_reliability=0.7,
+        historical_edge_score=0.7,
+        trend_alignment_score=0.8,
+        intraday_session_score=0.5,
+        ichimoku_score=0.7,
+        target_hit_at=None,
+        invalidated_at=None,
+        bars_since_signal=2,
+    )
+
+
+class TestTradeReadinessDoesNotRecreateLabelCliff:
+    """Regression for a bug found right after the entry-window fix shipped: the smoothed
+    entry_window_score was fixed, but _trade_readiness_profile / _action_plan_profile still
+    branched on the discrete entry_window_label ("확장 추격" vs "초기 돌파"), hard-capping
+    raw_score to 0.44 the instant the label flipped — recreating the exact same cliff one
+    layer downstream, even though the underlying score barely moved.
+    """
+
+    def test_no_cliff_in_trade_readiness_across_label_boundary(self):
+        # Daily fresh_cutoff is 5% — straddle it narrowly.
+        just_under = _trade_readiness_at_extension(4.9)
+        just_over = _trade_readiness_at_extension(5.1)
+        under_score = just_under["trade_readiness_score"]
+        over_score = just_over["trade_readiness_score"]
+        assert abs(under_score - over_score) < 0.08
+
+    def test_trade_readiness_decays_gradually_with_extension(self):
+        pcts = [0.5, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0]
+        scores = [_trade_readiness_at_extension(p)["trade_readiness_score"] for p in pcts]
+        assert scores == sorted(scores, reverse=True)
+        for a, b in zip(scores, scores[1:]):
+            assert a - b < 0.08

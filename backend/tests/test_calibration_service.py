@@ -89,3 +89,35 @@ class TestBuildCalibrationReport:
         assert report.brier_score == 0.0
         uppers = {b.upper for b in report.bins}
         assert 1.0 in uppers
+
+
+class TestPerBinSampleGating:
+    """Regression: the reliability verdict used to only check the *total* sample size
+    (n >= 20) before declaring the calibration "well calibrated", even though that total
+    is spread across 10 bins -- a bin with 1-2 trades could swing its observed win rate
+    to 0% or 100% and still count fully toward "well calibrated". Bins below
+    MIN_BIN_SAMPLES should be excluded from the ECE/verdict and flagged.
+    """
+
+    def test_thin_bin_is_flagged_low_confidence(self):
+        # 20 total, but split thinly: one bin with 18, one bin with just 2.
+        pairs = [(0.6, True)] * 11 + [(0.6, False)] * 7 + [(0.95, True)] * 2
+        report = build_calibration_report(pairs)
+        thin_bins = [b for b in report.bins if b.low_confidence]
+        assert thin_bins, "expected at least one thin bin"
+        assert all(b.count < 5 for b in thin_bins)
+
+    def test_all_bins_thin_reports_insufficient_per_bin_sample_even_if_total_is_enough(self):
+        # 20 total pairs, but spread one-per-bin across bin boundaries -- total clears
+        # MIN_CALIBRATION_SAMPLES but no single bin has enough for a trustworthy verdict.
+        pairs = [(i / 20 + 0.025, i % 2 == 0) for i in range(20)]
+        report = build_calibration_report(pairs)
+        assert report.sample_size >= 20
+        assert "구간별 표본 부족" in report.reliability
+
+    def test_well_populated_single_bin_is_unaffected(self):
+        # Sanity: existing well-calibrated case (one bin, 100 samples) must still pass.
+        pairs = [(0.6, True)] * 60 + [(0.6, False)] * 40
+        report = build_calibration_report(pairs)
+        assert report.reliability.startswith("양호")
+        assert not any(b.low_confidence for b in report.bins)

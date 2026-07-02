@@ -135,9 +135,13 @@ async def test_analyze_symbol_dataframe_characterization(monkeypatch):
     # 0.326 -> 0.334 after pattern_engine stopped demoting "confirmed" patterns to
     # "armed"/"forming" on low secondary fits (stale-pattern fix). Intentional.
     assert result.entry_score == 0.334
-    # 0.48 -> 0.42: same pattern-demotion removal keeps the setup "confirmed" with
-    # weak secondary fits, which trips the confirmed+low-quality risk penalty.
-    assert result.trade_readiness_score == 0.42
+    # 0.42 -> 0.48 after replacing the discrete action_plan-bucket cap ("cooling" -> hard
+    # 0.42) with a continuous cap driven by action_priority_score. The bucket-based cap
+    # created a cliff: crossing from "ready_now" to "cooling" via a hair's-width change in
+    # entry_window_score used to slam trade_readiness_score down regardless of how strong
+    # action_priority_score actually was. Here it now falls through to the (still hard,
+    # but unrelated-to-this-fix) reward:risk/headroom floor at 0.48.
+    assert result.trade_readiness_score == 0.48
 
 
 def _old_breakout_double_bottom_df() -> pd.DataFrame:

@@ -29,13 +29,32 @@ logger = logging.getLogger(__name__)
 
 _CACHE_PREFIX = "calibration:offline:v1"
 _CACHE_TTL = 7 * 86400  # rebuilt weekly at most; refresh=true forces it
-_OFFLINE_MAX_SYMBOLS = 8  # keep background builds light on the free instance
+# 8 -> 20: 예전엔 get_backtest_universe()[:8]로 뽑아서 유니버스 앞쪽(초대형주 위주,
+# _BACKTEST_UNIVERSE의 정렬 순서 참고)만 검증했다. "예측 확률이 실제로 맞는가"를
+# 초대형주 8개로만 답하면서 중소형주에도 같은 결론을 적용하는 셈이었다. 여전히
+# 무료 인스턴스 배경 작업 부하는 신경 써야 하므로 전체(79) 대신 20으로만 늘리되,
+# _select_offline_symbols()로 유니버스 전체에 고르게 퍼진 표본을 뽑는다.
+_OFFLINE_MAX_SYMBOLS = 20
 # Real sleep (not just a loop tick) between windows so /health and user requests
 # get CPU time while the build crunches pandas on the tiny free instance.
 _WINDOW_BREATH_SECONDS = 0.05
 _SYMBOL_BREATH_SECONDS = 0.5
 
 _build_tasks: dict[str, asyncio.Task] = {}
+
+
+def _select_offline_symbols(universe: list[str], max_symbols: int) -> list[str]:
+    """유니버스에서 max_symbols개를 고르게 퍼뜨려 뽑는다.
+
+    앞쪽 max_symbols개만 자르면(정렬상 초대형주 위주) 캘리브레이션 검증이
+    초대형주에만 편중된다. 등간격으로 뽑아 중형주 구간도 표본에 포함시킨다.
+    """
+    if max_symbols <= 0:
+        return []
+    if max_symbols >= len(universe):
+        return list(universe)
+    step = len(universe) / max_symbols
+    return [universe[int(i * step)] for i in range(max_symbols)]
 
 
 def simulate_window_outcome(
@@ -126,7 +145,13 @@ async def collect_symbol_pairs(
             invalidation=float(primary.invalidation_level),
         )
         if won is None:
+            # backtest_engine.py의 _bucket_to_stat_line()과 같은 이유로, 목표·손절
+            # 어디에도 닿지 않은 timeout을 그냥 버리면 "애매하게 끝난 경우"가 통째로
+            # 빠져 승률(=칼리브레이션 base_rate)이 실제보다 낙관적으로 보이는 편향이
+            # 생긴다. build_calibration_report()는 (predicted, won: bool) 쌍만 받으므로
+            # timeout을 손절과 동일하게(=False) 분모에 포함시켜 같은 효과를 낸다.
             unresolved += 1
+            pairs.append((float(predicted), False))
             continue
         pairs.append((float(predicted), bool(won)))
 
@@ -145,7 +170,7 @@ async def run_offline_calibration(
     from .data_fetcher import get_data_fetcher
 
     cfg = get_backtest_config(timeframe)
-    codes = symbols or get_backtest_universe()[:max_symbols]
+    codes = symbols or _select_offline_symbols(get_backtest_universe(), max_symbols)
     fetcher = get_data_fetcher()
 
     all_pairs: list[tuple[float, bool]] = []
