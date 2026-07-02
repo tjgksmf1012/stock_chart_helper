@@ -248,6 +248,34 @@ PATTERN_LIBRARY: list[PatternLibraryEntry] = [
         ],
         svg_path="/patterns/vcp.svg",
     ),
+    PatternLibraryEntry(
+        pattern_type="momentum_breakout",
+        name_kr="모멘텀 브레이크아웃",
+        grade="B",
+        direction="bullish",
+        description="W/M/삼각형 같은 스윙 패턴과 달리 형태 완성을 기다리지 않고, 최근 저항선 근접 + 거래량 확장 + 상승 모멘텀을 직접 스캔하는 보완 트랙입니다. 고전 패턴이 confirmed될 즈음엔 이미 상당 부분 오른 뒤인 경우가 많아, 돌파 임박·직후를 더 빠르게 포착하기 위해 추가했습니다.",
+        structure_conditions=[
+            "최근 30봉 고가(저항선) 대비 -8% ~ +6% 범위 안에 있어야 합니다.",
+            "최근 10봉 저가 대비 저항선까지 형성 높이가 30% 이내여야 합니다.",
+            "최근 11봉 수익률이 양(+)이어야 합니다 — 하락 추세에서는 이 트랙으로 잡지 않습니다.",
+        ],
+        volume_conditions=[
+            "당일 거래량이 최근 20일 평균 대비 1.3배 이상이면 confirmed, 1.0배 이상이면 armed로 봅니다.",
+            "거래량 확장 없이 저항선 근처에서만 머무르면 forming 단계에 머뭅니다.",
+        ],
+        confirmation_conditions=[
+            "저항선을 종가 기준 +0.5% 이상 돌파하고 거래량이 평균 1.3배 이상이어야 confirmed입니다.",
+        ],
+        invalidation_conditions=[
+            "최근 10봉 저가 아래로 종가 기준 이탈하면 구조가 무효화됩니다.",
+        ],
+        cautions=[
+            "거래량 확장 없이 가격만 튄 경우 가짜 돌파일 수 있습니다.",
+            "다른 스윙 패턴과 달리 대칭적인 형태 검증이 없어 상대적으로 신뢰도(grade B)가 낮게 잡혀 있습니다.",
+            "아직 실거래 백테스트 표본이 적어 win_rate는 잠정치입니다.",
+        ],
+        svg_path=None,
+    ),
 ]
 
 

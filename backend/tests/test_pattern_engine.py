@@ -31,6 +31,8 @@ KNOWN_PATTERN_TYPES = {
     "falling_channel",
     "cup_and_handle",
     "rounding_bottom",
+    "vcp",
+    "momentum_breakout",
 }
 
 

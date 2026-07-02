@@ -44,6 +44,7 @@ _REENTRY_MOMENTUM_PATTERNS = {
     "vcp",
     "falling_channel",
     "rising_channel",
+    "momentum_breakout",
 }
 
 _FETCH_STATUS_LABELS = {

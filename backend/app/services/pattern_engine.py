@@ -35,6 +35,7 @@ PatternType = Literal[
     "cup_and_handle",
     "rounding_bottom",
     "vcp",
+    "momentum_breakout",
 ]
 
 # 방향성 분류의 단일 소스. 새 패턴을 추가/변경할 때 이 두 세트만 갱신하면
@@ -47,6 +48,7 @@ BULLISH_PATTERNS: frozenset[str] = frozenset({
     "cup_and_handle",
     "rounding_bottom",
     "vcp",
+    "momentum_breakout",
 })
 BEARISH_PATTERNS: frozenset[str] = frozenset({
     "double_top",
@@ -658,20 +660,8 @@ def _candlestick_confirmation(df: pd.DataFrame, pattern: PatternResult) -> tuple
     if len(df) < 3:
         return 0.5, "neutral", "캔들 확인 정보가 아직 부족합니다."
 
-    bullish = pattern.pattern_type in {
-        "double_bottom",
-        "inverse_head_and_shoulders",
-        "ascending_triangle",
-        "rectangle",
-        "cup_and_handle",
-        "rounding_bottom",
-        "vcp",
-    }
-    bearish = pattern.pattern_type in {
-        "double_top",
-        "head_and_shoulders",
-        "descending_triangle",
-    }
+    bullish = pattern.pattern_type in BULLISH_PATTERNS
+    bearish = pattern.pattern_type in BEARISH_PATTERNS
     if not bullish and not bearish:
         return 0.5, "neutral", "캔들 확인 필터를 적용하지 않는 패턴입니다."
 
@@ -754,6 +744,7 @@ class PatternEngine:
             self._detect_triangles,
             self._detect_vcp,
             self._detect_rectangle,
+            self._detect_momentum_breakout,
         ]:
             found = detector(df, swings, regime_fit, timeframe)
             if found:
@@ -1567,6 +1558,132 @@ class PatternEngine:
             key_points=[
                 {"price": resistance, "type": "resistance"},
                 {"price": support, "type": "support"},
+            ],
+            is_provisional=(state != "confirmed"),
+        )
+        r.textbook_similarity = _finalize_textbook_similarity(r)
+        return [r]
+
+    # ── Momentum Breakout ────────────────────────────────────────────────────
+    # W/M/H&S/삼각형 등은 스윙 포인트 기반이라 "형태가 완성"돼야 잡히고, 그때는
+    # 이미 상당 부분 움직인 뒤인 경우가 많다. 이 트랙은 형태 완성을 기다리지
+    # 않고 최근 저항선 근접 + 거래량 확장 + 상승 모멘텀을 직접 스캔해
+    # 돌파 임박/직후를 더 빠르게 포착하는 보완 트랙이다.
+
+    def _detect_momentum_breakout(
+        self, df: pd.DataFrame, swings: list[SwingPoint], regime_fit: float, timeframe: str | None = None
+    ) -> list[PatternResult]:
+        lookback = 30
+        if len(df) < lookback + 15:
+            return []
+
+        dates = df["date"].values if "date" in df.columns else df["datetime"].values
+        closes = pd.to_numeric(df["close"], errors="coerce")
+        lows = pd.to_numeric(df["low"], errors="coerce")
+        volumes = pd.to_numeric(df["volume"], errors="coerce").fillna(0)
+
+        current_close = float(closes.iloc[-1])
+        if current_close <= 0:
+            return []
+
+        # 직전 저항선: 오늘을 제외한 최근 lookback봉의 최고가
+        base_window = df.iloc[-(lookback + 1):-1]
+        resistance = float(pd.to_numeric(base_window["high"], errors="coerce").max())
+        if not resistance or resistance <= 0:
+            return []
+
+        distance_pct = _safe_ratio(current_close - resistance, resistance)
+        # 저항선에서 너무 멀면(-8% 미만 or +6% 초과) 이 트랙 대상이 아님
+        if distance_pct < -0.08 or distance_pct > 0.06:
+            return []
+
+        current_volume = float(volumes.iloc[-1])
+        avg_volume_20 = float(volumes.iloc[-21:-1].mean()) if len(volumes) >= 21 else float(volumes.iloc[:-1].mean() or 1.0)
+        volume_ratio = _safe_ratio(current_volume, max(avg_volume_20, 1.0), default=0.0)
+
+        if len(closes) < 12:
+            return []
+        momentum_window = closes.tail(11)
+        momentum_return = _safe_ratio(
+            float(momentum_window.iloc[-1]) - float(momentum_window.iloc[0]),
+            max(float(momentum_window.iloc[0]), 1.0),
+        )
+        if momentum_return <= 0:
+            return []  # 하락 추세에서는 모멘텀 브레이크아웃으로 보지 않음
+
+        last_dt = pd.Timestamp(dates[-1]).to_pydatetime()
+
+        if distance_pct >= 0.005 and volume_ratio >= 1.3:
+            state = "confirmed"
+        elif distance_pct >= -0.02 and volume_ratio >= 1.0:
+            state = "armed"
+        else:
+            state = "forming"
+
+        invalidation = float(lows.iloc[-10:].min())
+        if invalidation >= resistance:
+            return []
+        base_height_pct = _safe_ratio(resistance - invalidation, resistance, default=0.0)
+        if base_height_pct <= 0 or base_height_pct > 0.30:
+            return []
+
+        raw_target = resistance + (resistance - invalidation)
+        target, target_realism = _apply_realistic_target(
+            df,
+            timeframe,
+            current_close,
+            resistance,
+            raw_target,
+            state,
+            bullish=True,
+            formation_height_pct=base_height_pct,
+        )
+
+        pre_window_start = max(0, len(df) - lookback - 1)
+        vol_context = _volume_context_score(df, pre_window_start, len(df) - 1)
+        volat_context = _volatility_context_score(df, pre_window_start, len(df) - 1)
+        tight_range = _tight_range_score(df, max(0, len(df) - 12), max(0, len(df) - 2))
+
+        breakout_idx = _breakout_index(df, resistance, max(0, len(df) - 6), bullish=True, threshold=0.003)
+        breakout_quality = _breakout_quality_score(df, breakout_idx, resistance, bullish=True)
+        retest_quality = _retest_quality_score(df, breakout_idx, resistance, bullish=True)
+        state = _normalize_state(state, breakout_quality, retest_quality)
+
+        volume_strength = float(np.clip((volume_ratio - 0.8) / 1.4, 0.0, 1.0))
+        momentum_strength = float(np.clip(momentum_return / 0.10, 0.0, 1.0))
+
+        geometry_fit = float(
+            np.clip(
+                0.40 * tight_range + 0.30 * momentum_strength + 0.30 * (1.0 - min(1.0, abs(distance_pct) / 0.08)),
+                0.0,
+                1.0,
+            )
+        )
+        grade = _grade_from_quality(geometry_fit, breakout_quality, retest_quality, vol_context)
+
+        r = PatternResult(
+            pattern_type="momentum_breakout",
+            state=state,
+            grade=grade,
+            start_dt=pd.Timestamp(dates[pre_window_start]).to_pydatetime(),
+            end_dt=last_dt if state == "confirmed" else None,
+            variant=f"vol{volume_ratio:.1f}x",
+            neckline=resistance,
+            invalidation_level=invalidation,
+            target_level=target,
+            geometry_fit=round(geometry_fit, 3),
+            swing_structure_fit=round(tight_range, 3),
+            volume_context_fit=round(vol_context, 3),
+            volatility_context_fit=round(volat_context, 3),
+            regime_fit=regime_fit,
+            leg_balance_fit=round(tight_range, 3),
+            reversal_energy_fit=round(momentum_strength, 3),
+            variant_fit=round(volume_strength, 3),
+            breakout_quality_fit=breakout_quality,
+            retest_quality_fit=retest_quality,
+            key_points=[
+                {"price": resistance, "type": "resistance"},
+                {"price": invalidation, "type": "stop"},
             ],
             is_provisional=(state != "confirmed"),
         )

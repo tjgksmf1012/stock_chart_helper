@@ -69,6 +69,7 @@ _PATTERN_NAMES_KR: dict[str, str] = {
     "vcp": "VCP",
     "cup_and_handle": "컵앤핸들",
     "rounding_bottom": "원형 바닥",
+    "momentum_breakout": "모멘텀 브레이크아웃",
 }
 
 

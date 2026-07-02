@@ -9,7 +9,7 @@ import logging
 from typing import Any
 
 from ..core.redis import cache_get, cache_set
-from .pattern_engine import PatternEngine, PatternResult
+from .pattern_engine import BULLISH_PATTERNS, PatternEngine, PatternResult
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +29,7 @@ _DEFAULT_WIN_RATES: dict[str, float] = {
     "falling_channel": 0.53,
     "cup_and_handle": 0.62,
     "rounding_bottom": 0.60,
+    "momentum_breakout": 0.55,
 }
 
 _DEFAULT_SAMPLE_SIZES = {"1mo": 12, "1wk": 16, "1d": 20}
@@ -142,14 +143,7 @@ def _default_stats() -> dict[str, dict[str, dict[str, float | int | str]]]:
 
 
 def _is_bullish(pattern_type: str) -> bool:
-    return pattern_type in {
-        "double_bottom",
-        "inverse_head_and_shoulders",
-        "ascending_triangle",
-        "cup_and_handle",
-        "rounding_bottom",
-        "rectangle",
-    }
+    return pattern_type in BULLISH_PATTERNS
 
 
 def _backtest_stock_sync(timeframe: str, bars_df: Any) -> list[dict[str, Any]]:
