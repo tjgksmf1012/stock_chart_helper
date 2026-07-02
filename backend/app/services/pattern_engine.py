@@ -106,6 +106,21 @@ def _compute_textbook_similarity(r: PatternResult) -> float:
 
 
 def _formation_quality_score(r: PatternResult) -> float:
+    if r.state in ("forming", "armed"):
+        # breakout_quality_fit/retest_quality_fit are only meaningful once a breakout has
+        # actually happened — for forming/armed patterns they sit at their (low) unset
+        # defaults, which would otherwise punish an already well-formed pre-breakout setup
+        # for something that hasn't occurred yet. Score pre-breakout structure only.
+        return float(
+            np.clip(
+                0.36 * r.leg_balance_fit
+                + 0.32 * r.reversal_energy_fit
+                + 0.20 * r.variant_fit
+                + 0.12 * r.candlestick_confirmation_fit,
+                0.0,
+                1.0,
+            )
+        )
     return float(
         np.clip(
             0.25 * r.leg_balance_fit

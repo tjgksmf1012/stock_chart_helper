@@ -106,6 +106,20 @@ def _rule_engine_prob(pattern: PatternResult) -> tuple[float, float]:
 
 
 def _formation_quality(pattern: PatternResult) -> float:
+    if pattern.state in ("forming", "armed"):
+        # Mirrors pattern_engine._formation_quality_score: breakout/retest quality are
+        # undefined pre-breakout, so scoring them here would structurally cap forming/armed
+        # patterns low regardless of how well-formed the setup actually is.
+        return max(
+            0.0,
+            min(
+                1.0,
+                0.36 * pattern.leg_balance_fit
+                + 0.32 * pattern.reversal_energy_fit
+                + 0.20 * pattern.variant_fit
+                + 0.12 * pattern.candlestick_confirmation_fit,
+            ),
+        )
     return max(
         0.0,
         min(
@@ -182,7 +196,11 @@ def _probability_cap(
     profile = probability_threshold_profile(timeframe)
     cap = 0.78
     if pattern.state == "forming":
-        cap = min(cap, profile.forming_direction_cap)
+        # A well-formed setup (tight, symmetric legs + strong reversal energy) shouldn't be
+        # capped identically to a weak one just because it hasn't broken out yet — let quality
+        # earn up to half the gap toward the armed-state cap.
+        quality_bonus = (profile.armed_direction_cap - profile.forming_direction_cap) * 0.5 * _formation_quality(pattern)
+        cap = min(cap, profile.forming_direction_cap + quality_bonus)
     elif pattern.state == "armed":
         cap = min(cap, profile.armed_direction_cap)
     elif pattern.state == "confirmed":

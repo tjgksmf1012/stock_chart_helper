@@ -405,6 +405,23 @@ def _refresh_pattern_state(
     return refreshed, target_hit_at, invalidated_at
 
 
+def _formation_completion_quality(pattern: PatternResult) -> float:
+    """0-1 신호: 돌파 전에도 유효한 형성 품질만으로 완성 가능성을 가늠한다.
+
+    leg_balance/reversal_energy/variant_fit는 돌파와 무관하게 형성 단계에서부터
+    의미 있는 값이라, forming/armed 패턴의 baseline을 여기에 따라 가변화하면
+    (상태만으로 정해지는 고정값 대신) 품질이 좋은 형성 중 패턴이 실제로 더
+    높은 완성 가능성을 인정받는다.
+    """
+    return max(
+        0.0,
+        min(
+            1.0,
+            0.40 * pattern.leg_balance_fit + 0.35 * pattern.reversal_energy_fit + 0.25 * pattern.variant_fit,
+        ),
+    )
+
+
 def _completion_proximity(pattern: PatternResult, current_close: float) -> float:
     neckline = pattern.neckline
     invalidation = pattern.invalidation_level
@@ -418,13 +435,20 @@ def _completion_proximity(pattern: PatternResult, current_close: float) -> float
     else:
         progress = 0.5
 
-    baseline = {
-        "forming": 0.25,
-        "armed": 0.72,
-        "confirmed": 0.92,
-        "played_out": 1.0,
-        "invalidated": 0.0,
-    }.get(pattern.state, 0.35)
+    # 상태별 baseline을 고정값이 아니라 [low, high] 범위로 두고 형성 품질로
+    # 보간한다 — 예전에는 forming 패턴이 전부 0.25로 깔려서 "완성 가능성"이
+    # 아니라 "상태를 재포장한 값"이었다. 이제는 잘 형성된(대칭적이고 반전
+    # 에너지가 강한) forming 패턴이 약한 패턴보다 실제로 더 높은 점수를 받는다.
+    baseline_ranges: dict[str, tuple[float, float]] = {
+        "forming": (0.12, 0.52),
+        "armed": (0.60, 0.85),
+        "confirmed": (0.90, 0.96),
+        "played_out": (1.0, 1.0),
+        "invalidated": (0.0, 0.0),
+    }
+    low, high = baseline_ranges.get(pattern.state, (0.30, 0.45))
+    quality = _formation_completion_quality(pattern)
+    baseline = low + (high - low) * quality
     return max(0.0, min(1.0, max(progress, baseline)))
 
 
