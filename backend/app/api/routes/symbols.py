@@ -248,29 +248,20 @@ async def get_reference_cases(
     return await build_reference_cases(symbol_code=symbol, timeframe=timeframe, analysis=analysis, limit=limit)
 
 
-@router.get("/{symbol}/price")
-async def get_price(symbol: str) -> PriceInfo:
-    cache_key = f"price:{symbol}"
-    cached = await cache_get(cache_key)
-    if cached:
-        return PriceInfo(**cached)
+async def _resolve_live_price(symbol: str, kis, toss, prev_close_fn) -> PriceInfo | None:
+    """KIS -> Toss 순서로 실거래 시세를 시도한다. 성공하면 PriceInfo, 둘 다 실패/미설정이면 None.
 
-    fetcher = get_data_fetcher()
-    from ...services.kis_client import get_kis_client
-
-    kis = get_kis_client()
+    prev_close_fn: current_close를 받아 전일 종가를 비동기로 조회하는 콜백 (일봉 캐시 재사용).
+    """
     if kis.configured:
         try:
             kis_data = await kis.fetch_current_price(symbol)
             if kis_data and kis_data.get("close"):
-                end = date.today()
-                start = end - timedelta(days=5)
-                hist = await fetcher.get_stock_ohlcv(symbol, start, end)
-                prev_close = float(hist["close"].iloc[-2]) if len(hist) >= 2 else float(hist["close"].iloc[-1])
                 close = float(kis_data["close"])
+                prev_close = await prev_close_fn(close)
                 change = close - prev_close
                 change_pct = change / prev_close if prev_close else 0.0
-                info = PriceInfo(
+                return PriceInfo(
                     code=symbol,
                     close=close,
                     prev_close=prev_close,
@@ -280,10 +271,55 @@ async def get_price(symbol: str) -> PriceInfo:
                     source="kis",
                     timestamp=kis_data.get("timestamp"),
                 )
-                await cache_set(cache_key, info.model_dump(), ttl=60)
-                return info
         except Exception:
             pass
+
+    if toss.configured:
+        try:
+            toss_data = await toss.fetch_current_price(symbol)
+            if toss_data and toss_data.get("close"):
+                close = float(toss_data["close"])
+                prev_close = await prev_close_fn(close)
+                change = close - prev_close
+                change_pct = change / prev_close if prev_close else 0.0
+                return PriceInfo(
+                    code=symbol,
+                    close=close,
+                    prev_close=prev_close,
+                    change=round(change, 2),
+                    change_pct=round(change_pct, 4),
+                    volume=0,
+                    source="toss",
+                    timestamp=toss_data.get("timestamp"),
+                )
+        except Exception:
+            pass
+
+    return None
+
+
+@router.get("/{symbol}/price")
+async def get_price(symbol: str) -> PriceInfo:
+    cache_key = f"price:{symbol}"
+    cached = await cache_get(cache_key)
+    if cached:
+        return PriceInfo(**cached)
+
+    fetcher = get_data_fetcher()
+    from ...services.kis_client import get_kis_client
+    from ...services.toss_client import get_toss_client
+
+    async def _prev_close(current_close: float) -> float:
+        end = date.today()
+        start = end - timedelta(days=5)
+        hist = await fetcher.get_stock_ohlcv(symbol, start, end)
+        return float(hist["close"].iloc[-2]) if len(hist) >= 2 else (float(hist["close"].iloc[-1]) if not hist.empty else current_close)
+
+    live_info = await _resolve_live_price(symbol, get_kis_client(), get_toss_client(), _prev_close)
+    if live_info:
+        # 실거래 시세 소스라 짧게 캐시 — 화면에서 가격이 실제로 움직이는 게 보이도록.
+        await cache_set(cache_key, live_info.model_dump(), ttl=15)
+        return live_info
 
     try:
         end = date.today()

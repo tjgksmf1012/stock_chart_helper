@@ -69,9 +69,28 @@ export default function ChartPage() {
     queryKey: ['price', symbol],
     queryFn: () => symbolsApi.getPrice(symbol!),
     enabled: !!symbol,
-    staleTime: 60_000,
-    refetchInterval: 120_000,
+    staleTime: 10_000,
+    // 지금 보고 있는 종목 1개뿐이라 자주 물어봐도 부담이 적음 — 백엔드가 실거래
+    // 시세(KIS/토스)는 15초 캐시라 그 주기에 맞춰 최대한 빨리 새 값을 반영한다.
+    refetchInterval: 15_000,
   })
+
+  // 현재가가 실제로 바뀔 때 잠깐 배경을 깜빡여서, 숫자가 조용히 갱신되는 게 아니라
+  // "지금 막 움직였다"는 게 눈에 보이도록 한다.
+  const [priceFlash, setPriceFlash] = useState<'up' | 'down' | null>(null)
+  const prevCloseRef = useRef<number | null>(null)
+  useEffect(() => {
+    const close = priceQ.data?.close
+    if (close == null || close <= 0) return
+    const prev = prevCloseRef.current
+    if (prev != null && close !== prev) {
+      setPriceFlash(close > prev ? 'up' : 'down')
+      const timer = setTimeout(() => setPriceFlash(null), 900)
+      prevCloseRef.current = close
+      return () => clearTimeout(timer)
+    }
+    prevCloseRef.current = close
+  }, [priceQ.data?.close])
 
   // 수급 데이터는 분석 API 블로킹 방지를 위해 별도 쿼리로 분리.
   // 패턴 타입을 직접 전달해 정렬 판정 — 분석 캐시 의존 시 첫 방문 레이스로
@@ -395,7 +414,15 @@ export default function ChartPage() {
 
                 {priceQ.data && priceQ.data.close > 0 && (
                   <div className="flex flex-wrap items-center gap-3">
-                    <span className="font-mono text-2xl font-bold">{fmtPrice(priceQ.data.close)}</span>
+                    <span
+                      className={cn(
+                        'rounded px-1 font-mono text-2xl font-bold transition-colors duration-700',
+                        priceFlash === 'up' && 'bg-emerald-400/25',
+                        priceFlash === 'down' && 'bg-red-400/25',
+                      )}
+                    >
+                      {fmtPrice(priceQ.data.close)}
+                    </span>
                     <span
                       className={cn(
                         'inline-flex items-center gap-1 text-sm font-medium',
@@ -410,7 +437,9 @@ export default function ChartPage() {
                         {fmtPct(priceQ.data.change_pct)})
                       </span>
                     </span>
-                    <span className="text-xs text-muted-foreground">{priceQ.data.source === 'kis' ? '실시간 기준' : '종가 기준'}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {priceQ.data.source === 'kis' || priceQ.data.source === 'toss' ? '실시간 기준' : '종가 기준'}
+                    </span>
                   </div>
                 )}
 

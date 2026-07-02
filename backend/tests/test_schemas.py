@@ -201,6 +201,13 @@ class TestRuntimeStatusSchemas:
             app_name="Stock Chart Helper",
             debug=False,
             kis=kis,
+            toss={
+                "configured": False,
+                "token_cached": False,
+                "base_url": "https://openapi.tossinvest.com",
+                "live_intraday_provider_order": "toss,kis",
+                "guidance": ["not configured"],
+            },
             cache={"backend": "redis", "redis_available": True, "memory_fallback_entries": 0},
             intraday_store={"path": "data/intraday_cache.sqlite3", "retention_days": 45, "total_rows": 120, "symbol_count": 1},
             scheduler_enabled=True,

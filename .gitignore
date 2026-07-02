@@ -52,6 +52,7 @@ Thumbs.db
 data/
 *.db
 *.sqlite3
+*.rdb
 
 # Alembic
 backend/alembic/versions/*.py

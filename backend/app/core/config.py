@@ -25,12 +25,15 @@ class Settings(BaseSettings):
 
     # Scan workload controls.
     # ⚠️ 여기 기본값이 실제 Render 동작에 직접 영향. 환경변수 미설정 시에도 충분히 스캔되도록 높게 유지.
+    # 한도를 올리면 로테이션 커서(scanner._rotate_scan_slice)가 한 사이클에 더 많은
+    # 종목을 커버해 전체 유니버스를 도는 주기가 짧아진다 — SCAN_MAX_DURATION_SECONDS
+    # 예산 안에서 배치 크기(5)로 처리 가능한 수준까지만 올렸다.
     startup_daily_scan_enabled: bool = True       # 서버 재시작 시 항상 스캔
-    background_scan_limit: int = 200              # 시작 스캔 최대 종목 수 (환경변수 BACKGROUND_SCAN_LIMIT)
+    background_scan_limit: int = 300              # 시작 스캔 최대 종목 수 (환경변수 BACKGROUND_SCAN_LIMIT)
     background_scan_batch_size: int = 5           # 시작 스캔 배치 크기
-    manual_scan_limit: int = 100                  # 수동 스캔 최대 종목 수
+    manual_scan_limit: int = 150                  # 수동 스캔 최대 종목 수
     manual_scan_batch_size: int = 5
-    scheduled_scan_limit: int = 500               # 예약 스캔 최대 종목 수
+    scheduled_scan_limit: int = 700               # 예약 스캔 최대 종목 수
     scheduled_scan_batch_size: int = 5
     scan_max_duration_seconds: int = 600          # 시작/수동 스캔 최대 시간 (10분)
     scheduled_scan_max_duration_seconds: int = 1200  # 예약 스캔 최대 시간 (20분)
@@ -49,6 +52,18 @@ class Settings(BaseSettings):
     kis_token_cache_path: str = "data/kis_token_cache.json"
     kis_max_concurrent_requests: int = 2
     kis_request_spacing_ms: int = 350
+
+    # Toss Securities Open API (optional, alternative real-time source alongside KIS)
+    toss_client_id: str = ""
+    toss_client_secret: str = ""
+    toss_base_url: str = "https://openapi.tossinvest.com"
+    toss_token_cache_path: str = "data/toss_token_cache.json"
+    toss_max_concurrent_requests: int = 3
+    toss_request_spacing_ms: int = 150
+    toss_failure_cooldown_seconds: int = 900
+    # 실시간 분봉/현재가 소스 우선순위 (콤마 구분). 설정되지 않았거나 미구성된
+    # provider는 건너뛴다. 예: "kis,toss"로 바꾸면 KIS를 우선 시도.
+    live_intraday_provider_order: str = "toss,kis"
 
     # Cache TTL (seconds)
     daily_bars_ttl: int = 3600
@@ -71,8 +86,10 @@ class Settings(BaseSettings):
     telegram_chat_id: str = ""
 
     # Universe filters
-    min_market_cap_billion: float = 500.0   # 5,000억 원
-    min_avg_volume_billion: float = 3.0     # 30억 원 (20일 평균 거래대금)
+    # 500억/30억이던 하한을 완화 — 기존 값은 코스닥 중소형주 상당수를 스캔
+    # 유니버스에서 통째로 제외해 분석 대상 종목 수를 필요 이상으로 줄였다.
+    min_market_cap_billion: float = 300.0   # 3,000억 원
+    min_avg_volume_billion: float = 1.5     # 15억 원 (20일 평균 거래대금)
 
     # CORS — comma-separated list of allowed origins; "*" to allow all
     allowed_origins: str = "http://localhost:5173,http://localhost:3000"

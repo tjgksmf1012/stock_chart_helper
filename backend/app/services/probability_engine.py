@@ -7,7 +7,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 
-from .pattern_engine import PatternResult
+from .pattern_engine import (
+    BEARISH_PATTERNS as _BEARISH_PATTERNS,
+    BULLISH_PATTERNS as _BULLISH_PATTERNS,
+    PatternResult,
+)
 from .timeframe_service import probability_threshold_profile
 
 
@@ -65,21 +69,7 @@ _PATTERN_NAMES_KR: dict[str, str] = {
     "vcp": "VCP",
     "cup_and_handle": "컵앤핸들",
     "rounding_bottom": "원형 바닥",
-}
-
-_BULLISH_PATTERNS = {
-    "double_bottom",
-    "inverse_head_and_shoulders",
-    "ascending_triangle",
-    "rectangle",
-    "cup_and_handle",
-    "rounding_bottom",
-    "vcp",
-}
-_BEARISH_PATTERNS = {
-    "double_top",
-    "head_and_shoulders",
-    "descending_triangle",
+    "momentum_breakout": "모멘텀 브레이크아웃",
 }
 
 
@@ -117,6 +107,20 @@ def _rule_engine_prob(pattern: PatternResult) -> tuple[float, float]:
 
 
 def _formation_quality(pattern: PatternResult) -> float:
+    if pattern.state in ("forming", "armed"):
+        # Mirrors pattern_engine._formation_quality_score: breakout/retest quality are
+        # undefined pre-breakout, so scoring them here would structurally cap forming/armed
+        # patterns low regardless of how well-formed the setup actually is.
+        return max(
+            0.0,
+            min(
+                1.0,
+                0.36 * pattern.leg_balance_fit
+                + 0.32 * pattern.reversal_energy_fit
+                + 0.20 * pattern.variant_fit
+                + 0.12 * pattern.candlestick_confirmation_fit,
+            ),
+        )
     return max(
         0.0,
         min(
@@ -193,7 +197,11 @@ def _probability_cap(
     profile = probability_threshold_profile(timeframe)
     cap = 0.78
     if pattern.state == "forming":
-        cap = min(cap, profile.forming_direction_cap)
+        # A well-formed setup (tight, symmetric legs + strong reversal energy) shouldn't be
+        # capped identically to a weak one just because it hasn't broken out yet — let quality
+        # earn up to half the gap toward the armed-state cap.
+        quality_bonus = (profile.armed_direction_cap - profile.forming_direction_cap) * 0.5 * _formation_quality(pattern)
+        cap = min(cap, profile.forming_direction_cap + quality_bonus)
     elif pattern.state == "armed":
         cap = min(cap, profile.armed_direction_cap)
     elif pattern.state == "confirmed":

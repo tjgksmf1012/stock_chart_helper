@@ -63,6 +63,7 @@ export const PATTERN_NAMES: Record<string, string> = {
   cup_and_handle: '컵 앤 핸들',
   rounding_bottom: '라운딩 바닥',
   vcp: 'VCP 변동성 수축',
+  momentum_breakout: '모멘텀 브레이크아웃',
 }
 
 export const PATTERN_VARIANT_NAMES: Record<string, string> = {

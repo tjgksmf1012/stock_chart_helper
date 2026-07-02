@@ -444,6 +444,14 @@ class KisRuntimeStatus(BaseModel):
     last_prime: KisPrimeStatus | None = None
 
 
+class TossRuntimeStatus(BaseModel):
+    configured: bool
+    token_cached: bool
+    base_url: str
+    live_intraday_provider_order: str
+    guidance: list[str] = Field(default_factory=list)
+
+
 class CacheRuntimeStatus(BaseModel):
     backend: str
     redis_available: bool
@@ -497,6 +505,7 @@ class RuntimeStatusResponse(BaseModel):
     app_name: str
     debug: bool
     kis: KisRuntimeStatus
+    toss: TossRuntimeStatus
     cache: CacheRuntimeStatus
     intraday_store: IntradayStoreStatus
     scheduler_enabled: bool
@@ -712,8 +721,8 @@ class PatternStatsEntry(BaseModel):
     avg_mae_pct: float
     avg_bars_to_outcome: float
     historical_edge_score: float
-    # 해소율 — win_rate는 '해소된 표본 중 승률'이므로, 목표·손절 어디에도 닿지
-    # 않고 흐지부지 끝난(timeout) 표본 비중을 함께 봐야 오해가 없다.
+    # win_rate는 timeout(목표·손절 어디에도 안 닿고 흐지부지 끝난 경우)까지 포함한
+    # 전체 시도 대비 승률이다 — resolution_rate는 그중 실제로 해소된 비율을 보여준다.
     timeouts: int = 0
     resolution_rate: float | None = None
 

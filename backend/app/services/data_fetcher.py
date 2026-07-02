@@ -4,7 +4,8 @@ Korean market data fetcher.
 Primary source: pykrx (daily)
 Fallback: FinanceDataReader (daily)
 Intraday: Yahoo Finance with persistent local storage fallback
-Optional real-time: KIS API
+Optional real-time: Toss Securities Open API and/or KIS API (see
+settings.live_intraday_provider_order for priority between the two)
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from ..core.config import get_settings
 from ..core.redis import cache_get, cache_set
 from .intraday_store import get_intraday_store
 from .kis_client import KISClient, get_kis_client
+from .toss_client import TossClient, get_toss_client
 from .timeframe_service import get_timeframe_spec, is_intraday_timeframe, resolve_daily_reference_date
 
 logger = logging.getLogger(__name__)
@@ -103,6 +105,9 @@ FETCH_STATUS_MESSAGES = {
     "kis_not_configured": "KIS API가 설정되지 않아 공개 분봉 소스만 사용 가능합니다.",
     "kis_error": "KIS API 요청이 실패해 무시했습니다.",
     "kis_empty": "KIS에서 해당 종목 분봉을 반환하지 않았습니다.",
+    "toss_not_configured": "토스증권 API가 설정되지 않았습니다.",
+    "toss_error": "토스증권 API 요청이 실패해 무시했습니다.",
+    "toss_empty": "토스증권에서 해당 종목 분봉을 반환하지 않았습니다.",
 }
 
 
@@ -110,6 +115,7 @@ FETCH_STATUS_MESSAGES.update(
     {
         "stored_recent": "최근 저장한 분봉을 우선 재사용했습니다.",
         "kis_cooldown": "KIS 오류 직후라 잠시 저장 분봉을 우선 사용하며 재시도를 늦추고 있습니다.",
+        "toss_cooldown": "토스증권 오류 직후라 잠시 저장 분봉을 우선 사용하며 재시도를 늦추고 있습니다.",
     }
 )
 
@@ -125,13 +131,17 @@ FETCH_STATUS_MESSAGES.update(
 class KRXDataFetcher:
     """Fetches historical OHLCV and symbol metadata for the Korean market."""
 
-    def __init__(self, kis_client: KISClient | None = None) -> None:
+    def __init__(self, kis_client: KISClient | None = None, toss_client: TossClient | None = None) -> None:
         self._kis_client = kis_client or get_kis_client()
+        self._toss_client = toss_client or get_toss_client()
         self._intraday_store = get_intraday_store()
         self._universe_lock = asyncio.Lock()
 
     def _kis_cooldown_key(self, code: str, timeframe: str) -> str:
         return f"kis:cooldown:{code}:{timeframe}"
+
+    def _toss_cooldown_key(self, code: str, timeframe: str) -> str:
+        return f"toss:cooldown:{code}:{timeframe}"
 
     def _yahoo_cooldown_key(self, timeframe: str) -> str:
         return f"{YAHOO_INTRADAY_COOLDOWN_PREFIX}:{timeframe}"
@@ -144,6 +154,16 @@ class KRXDataFetcher:
             self._kis_cooldown_key(code, timeframe),
             {"reason": reason, "at": datetime.now(UTC).replace(tzinfo=None).isoformat()},
             ttl=max(60, int(settings.kis_failure_cooldown_seconds)),
+        )
+
+    async def _toss_is_in_cooldown(self, code: str, timeframe: str) -> bool:
+        return bool(await cache_get(self._toss_cooldown_key(code, timeframe)))
+
+    async def _mark_toss_cooldown(self, code: str, timeframe: str, reason: str) -> None:
+        await cache_set(
+            self._toss_cooldown_key(code, timeframe),
+            {"reason": reason, "at": datetime.now(UTC).replace(tzinfo=None).isoformat()},
+            ttl=max(60, int(settings.toss_failure_cooldown_seconds)),
         )
 
     async def _yahoo_is_in_cooldown(self, timeframe: str) -> bool:
@@ -231,12 +251,12 @@ class KRXDataFetcher:
         if not allow_live_intraday:
             return await self._get_intraday_without_kis(code, timeframe, period_days, stored_df)
 
-        yahoo_df, kis_df = await asyncio.gather(
+        yahoo_df, provider_df = await asyncio.gather(
             self._get_yahoo_intraday_ohlcv(code, timeframe, period_days),
-            self._get_kis_intraday_ohlcv(code, timeframe),
+            self._get_live_intraday_ohlcv(code, timeframe),
         )
 
-        live_df = self._merge_intraday_sources(yahoo_df, kis_df)
+        live_df = self._merge_intraday_sources(yahoo_df, provider_df)
         if not live_df.empty:
             combined = self._combine_intraday_frames(stored_df, live_df)
             await self._intraday_store.upsert_bars(
@@ -256,10 +276,10 @@ class KRXDataFetcher:
             stored_only = stored_df.copy()
             stored_only.attrs["data_source"] = str(stored_df.attrs.get("stored_source") or "intraday_store")
             stored_only.attrs["fetch_status"] = "stored_fallback"
-            stored_only.attrs["fetch_message"] = self._stored_fallback_message(yahoo_df, kis_df, stored_df)
+            stored_only.attrs["fetch_message"] = self._stored_fallback_message(yahoo_df, provider_df, stored_df)
             return stored_only
 
-        failure_status, failure_message = self._combine_intraday_failure(yahoo_df, kis_df)
+        failure_status, failure_message = self._combine_intraday_failure(yahoo_df, provider_df)
         return self._empty_frame(
             data_source="intraday_unavailable",
             fetch_status=failure_status,
@@ -373,6 +393,77 @@ class KRXDataFetcher:
             fetch_message=FETCH_STATUS_MESSAGES["yahoo_empty"],
         )
 
+    async def _get_live_intraday_ohlcv(self, code: str, timeframe: str) -> pd.DataFrame:
+        """설정된 우선순위(live_intraday_provider_order)대로 실시간 분봉 소스를 시도한다.
+
+        기본값은 "toss,kis" — 두 소스 모두 미구성이면 KIS 쪽 결과(빈 프레임 + 실패
+        사유)를 그대로 반환해 기존 폴백 메시지 로직과 호환을 유지한다.
+        """
+        order = [name.strip().lower() for name in (settings.live_intraday_provider_order or "").split(",") if name.strip()]
+        if not order:
+            order = ["kis"]
+
+        result = self._empty_frame(data_source="live_intraday", fetch_status="kis_not_configured")
+        for provider in order:
+            if provider == "toss":
+                result = await self._get_toss_intraday_ohlcv(code, timeframe)
+            elif provider == "kis":
+                result = await self._get_kis_intraday_ohlcv(code, timeframe)
+            else:
+                continue
+            if not result.empty:
+                return result
+        return result
+
+    async def _get_toss_intraday_ohlcv(self, code: str, timeframe: str) -> pd.DataFrame:
+        if timeframe not in INTRADAY_RESAMPLE_RULES:
+            return self._empty_frame(data_source="toss_intraday", fetch_status="toss_not_configured")
+        if not self._toss_client.configured:
+            return self._empty_frame(
+                data_source="toss_intraday",
+                fetch_status="toss_not_configured",
+                fetch_message=FETCH_STATUS_MESSAGES["toss_not_configured"],
+            )
+        if await self._toss_is_in_cooldown(code, timeframe):
+            return self._empty_frame(
+                data_source="toss_intraday",
+                fetch_status="toss_cooldown",
+                fetch_message=FETCH_STATUS_MESSAGES["toss_cooldown"],
+            )
+
+        try:
+            # 하루치(장중 약 390분)를 커버할 수 있도록 넉넉히 요청 — 200개씩 페이지네이션.
+            minute_bars = await self._toss_client.fetch_minute_candles(code, count=390, max_pages=3)
+        except Exception as exc:
+            logger.warning("Toss intraday failed for %s (%s): %s", code, timeframe, exc)
+            await self._mark_toss_cooldown(code, timeframe, str(exc))
+            return self._empty_frame(
+                data_source="toss_intraday",
+                fetch_status="toss_error",
+                fetch_message=FETCH_STATUS_MESSAGES["toss_error"],
+            )
+
+        if minute_bars.empty:
+            return self._empty_frame(
+                data_source="toss_intraday",
+                fetch_status="toss_empty",
+                fetch_message=FETCH_STATUS_MESSAGES["toss_empty"],
+            )
+
+        if timeframe == "1m":
+            return self._with_attrs(
+                minute_bars.reset_index(drop=True),
+                data_source="toss_intraday",
+                fetch_status="live_ok",
+                fetch_message="토스증권 분봉을 정상적으로 불러왔습니다.",
+            )
+        return self._with_attrs(
+            self._resample_intraday_frame(minute_bars, timeframe),
+            data_source="toss_intraday",
+            fetch_status="live_ok",
+            fetch_message="토스증권 분봉을 정상적으로 불러왔습니다.",
+        )
+
     async def _get_kis_intraday_ohlcv(self, code: str, timeframe: str) -> pd.DataFrame:
         if timeframe not in INTRADAY_RESAMPLE_RULES:
             return self._empty_frame(data_source="kis_intraday", fetch_status="kis_unsupported")
@@ -461,12 +552,12 @@ class KRXDataFetcher:
         result["date"] = pd.to_datetime(result["date"]).dt.tz_localize(None)
         return result[["date", "open", "high", "low", "close", "volume", "amount"]]
 
-    def _merge_intraday_sources(self, yahoo_df: pd.DataFrame, kis_df: pd.DataFrame) -> pd.DataFrame:
-        if yahoo_df.empty and kis_df.empty:
+    def _merge_intraday_sources(self, yahoo_df: pd.DataFrame, provider_df: pd.DataFrame) -> pd.DataFrame:
+        if yahoo_df.empty and provider_df.empty:
             return pd.DataFrame()
         if yahoo_df.empty:
-            return self._with_attrs(kis_df.reset_index(drop=True), **kis_df.attrs)
-        if kis_df.empty:
+            return self._with_attrs(provider_df.reset_index(drop=True), **provider_df.attrs)
+        if provider_df.empty:
             return self._with_attrs(yahoo_df.reset_index(drop=True), **yahoo_df.attrs)
 
         today = pd.Timestamp.now(tz="Asia/Seoul").tz_convert(None).normalize()
@@ -474,13 +565,14 @@ class KRXDataFetcher:
         if getattr(yahoo_dt.dt, "tz", None) is not None:
             yahoo_dt = yahoo_dt.dt.tz_convert("Asia/Seoul").dt.tz_localize(None)
         historical = yahoo_df.loc[yahoo_dt.dt.normalize() < today].copy()
-        combined = pd.concat([historical, kis_df], ignore_index=True)
+        provider_name = str(provider_df.attrs.get("data_source") or "실시간").replace("_intraday", "")
+        combined = pd.concat([historical, provider_df], ignore_index=True)
         combined = combined.sort_values("datetime").drop_duplicates(subset=["datetime"], keep="last")
         return self._with_attrs(
             combined.reset_index(drop=True),
             data_source="hybrid_intraday",
             fetch_status="live_ok",
-            fetch_message="과거 구간은 야후, 최근 구간은 KIS를 사용해 분봉을 구성했습니다.",
+            fetch_message=f"과거 구간은 야후, 최근 구간은 {provider_name}를 사용해 분봉을 구성했습니다.",
         )
 
     def _combine_intraday_frames(self, stored_df: pd.DataFrame, live_df: pd.DataFrame) -> pd.DataFrame:
@@ -493,30 +585,38 @@ class KRXDataFetcher:
         attrs["storage_age_minutes"] = stored_df.attrs.get("storage_age_minutes")
         return self._with_attrs(result, **attrs)
 
-    def _combine_intraday_failure(self, yahoo_df: pd.DataFrame, kis_df: pd.DataFrame) -> tuple[str, str]:
-        statuses = {str(yahoo_df.attrs.get("fetch_status") or ""), str(kis_df.attrs.get("fetch_status") or "")}
-        if "yahoo_symbol_missing" in statuses:
+    def _combine_intraday_failure(self, yahoo_df: pd.DataFrame, provider_df: pd.DataFrame) -> tuple[str, str]:
+        """provider_df는 KIS/토스 중 실제로 시도된(live_intraday_provider_order) 소스의 결과.
+
+        fetch_status는 소스별로 "kis_*" 또는 "toss_*" 접두어를 쓰므로, 접미어 매칭으로
+        어느 provider든 동일하게 처리한다.
+        """
+        yahoo_status = str(yahoo_df.attrs.get("fetch_status") or "")
+        provider_status = str(provider_df.attrs.get("fetch_status") or "")
+        provider_message = FETCH_STATUS_MESSAGES.get(provider_status, FETCH_STATUS_MESSAGES["intraday_unavailable"])
+
+        if yahoo_status == "yahoo_symbol_missing":
             return "yahoo_symbol_missing", FETCH_STATUS_MESSAGES["yahoo_symbol_missing"]
-        if "yahoo_rate_limited" in statuses:
+        if yahoo_status == "yahoo_rate_limited":
             return "intraday_rate_limited", FETCH_STATUS_MESSAGES["intraday_rate_limited"]
-        if "kis_cooldown" in statuses and "yahoo_empty" in statuses:
-            return "stored_fallback", FETCH_STATUS_MESSAGES["kis_cooldown"]
-        if "yahoo_empty" in statuses and "kis_not_configured" in statuses:
-            return "intraday_empty", f"{FETCH_STATUS_MESSAGES['yahoo_empty']} {FETCH_STATUS_MESSAGES['kis_not_configured']}"
-        if "yahoo_empty" in statuses and "kis_empty" in statuses:
-            return "intraday_empty", f"{FETCH_STATUS_MESSAGES['yahoo_empty']} {FETCH_STATUS_MESSAGES['kis_empty']}"
-        if "kis_cooldown" in statuses:
-            return "intraday_unavailable", FETCH_STATUS_MESSAGES["kis_cooldown"]
-        if "kis_error" in statuses and "yahoo_empty" in statuses:
-            return "intraday_unavailable", f"{FETCH_STATUS_MESSAGES['yahoo_empty']} {FETCH_STATUS_MESSAGES['kis_error']}"
-        if "yahoo_empty" in statuses:
+        if provider_status.endswith("_cooldown") and yahoo_status == "yahoo_empty":
+            return "stored_fallback", provider_message
+        if yahoo_status == "yahoo_empty" and provider_status.endswith("_not_configured"):
+            return "intraday_empty", f"{FETCH_STATUS_MESSAGES['yahoo_empty']} {provider_message}"
+        if yahoo_status == "yahoo_empty" and provider_status.endswith("_empty"):
+            return "intraday_empty", f"{FETCH_STATUS_MESSAGES['yahoo_empty']} {provider_message}"
+        if provider_status.endswith("_cooldown"):
+            return "intraday_unavailable", provider_message
+        if provider_status.endswith("_error") and yahoo_status == "yahoo_empty":
+            return "intraday_unavailable", f"{FETCH_STATUS_MESSAGES['yahoo_empty']} {provider_message}"
+        if yahoo_status == "yahoo_empty":
             return "intraday_empty", FETCH_STATUS_MESSAGES["intraday_empty"]
         return "intraday_unavailable", FETCH_STATUS_MESSAGES["intraday_unavailable"]
 
-    def _stored_fallback_message(self, yahoo_df: pd.DataFrame, kis_df: pd.DataFrame, stored_df: pd.DataFrame) -> str:
+    def _stored_fallback_message(self, yahoo_df: pd.DataFrame, provider_df: pd.DataFrame, stored_df: pd.DataFrame) -> str:
         age_minutes = stored_df.attrs.get("storage_age_minutes")
         age_text = f" 마지막 저장 갱신은 약 {age_minutes}분 전입니다." if isinstance(age_minutes, int) else ""
-        failure_status, base_message = self._combine_intraday_failure(yahoo_df, kis_df)
+        failure_status, base_message = self._combine_intraday_failure(yahoo_df, provider_df)
         if failure_status == "intraday_rate_limited":
             return f"{FETCH_STATUS_MESSAGES['stored_fallback']} 야후 요청 제한이 감지됐습니다.{age_text}"
         return f"{FETCH_STATUS_MESSAGES['stored_fallback']} {base_message}{age_text}"

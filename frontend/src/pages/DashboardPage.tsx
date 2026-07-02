@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQueries, useQuery } from '@tanstack/react-query'
-import { Activity, Layers3, Loader2, RefreshCw, Sparkles } from 'lucide-react'
+import { Activity, ChevronDown, ChevronUp, Loader2, RefreshCw, Sparkles } from 'lucide-react'
 
 import { DashboardSection } from '@/components/dashboard/DashboardSection'
 import { MarketRegimeBar, getRegimeWarning } from '@/components/dashboard/MarketRegimeBar'
@@ -41,10 +41,14 @@ import {
   statusLabel,
   statusSubline,
 } from '@/lib/dashboardStatus'
+import {
+  INTRADAY_PRESET_OPTIONS,
+  INTRADAY_VIEW_OPTIONS,
+  filterIntradayItems,
+  type IntradayPreset,
+  type IntradayView,
+} from '@/lib/intradayFilters'
 import type { DashboardItem, DashboardResponse, OutcomeEvaluationResponse, OutcomeRecord, OutcomesSummary, OutcomeStatus, PriceInfo, ScanStatusResponse, Timeframe } from '@/types/api'
-
-type IntradayView = 'all' | 'live' | 'stored' | 'public' | 'mixed' | 'cooldown'
-type IntradayPreset = 'all' | 'ready-now' | 'watch' | 'recheck' | 'cooling'
 
 type RoutineMode = 'premarket' | 'intraday' | 'afterMarket'
 type RoutineModeSelection = 'auto' | RoutineMode
@@ -57,23 +61,6 @@ interface RoutineColumnDef {
   items: DashboardItem[]
   empty: string
 }
-
-const INTRADAY_VIEW_OPTIONS: Array<[IntradayView, string]> = [
-  ['all', '전체'],
-  ['live', 'Live'],
-  ['stored', '저장'],
-  ['public', '공개'],
-  ['mixed', '혼합'],
-  ['cooldown', '쿨다운'],
-]
-
-const INTRADAY_PRESET_OPTIONS: Array<[IntradayPreset, string]> = [
-  ['all', '전체'],
-  ['ready-now', '지금 볼 후보'],
-  ['watch', '지켜볼 후보'],
-  ['recheck', '재확인 필요'],
-  ['cooling', '관망'],
-]
 
 export default function DashboardPage() {
   const nav = useNavigate()
@@ -172,6 +159,30 @@ export default function DashboardPage() {
     }
   }
 
+  // 스캔 결과가 오래됐으면(기본 90분) 사용자가 직접 "빠른 갱신"을 누르지 않아도
+  // 자동으로 한 번 새로고침한다. 하루 1회(타임프레임별)로 제한해 예약 스캔과
+  // 겹치지 않는 시간대에도 방문 시점 기준으로 어느 정도 신선함을 보장하면서,
+  // 방문할 때마다 스캔을 새로 돌려 API/서버 부하를 키우지는 않게 한다.
+  const autoScanTriggeredRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    const status = statusQ.data
+    if (!status || status.is_running || isTriggeringScan) return
+    if (!status.last_finished_at) return
+
+    const lastFinishedMs = new Date(status.last_finished_at).getTime()
+    if (Number.isNaN(lastFinishedMs)) return
+    const AUTO_SCAN_STALE_MS = 90 * 60 * 1000
+    if (Date.now() - lastFinishedMs < AUTO_SCAN_STALE_MS) return
+
+    const guardKey = `autoScan:${timeframe}:${new Date().toISOString().slice(0, 10)}`
+    if (autoScanTriggeredRef.current.has(guardKey) || sessionStorage.getItem(guardKey)) return
+
+    autoScanTriggeredRef.current.add(guardKey)
+    sessionStorage.setItem(guardKey, '1')
+    triggerScan()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusQ.data, timeframe, isTriggeringScan])
+
   const refreshBoards = () => {
     overviewQ.refetch()
     statusQ.refetch()
@@ -238,8 +249,8 @@ export default function DashboardPage() {
       queryKey: ['price', 'routine', code],
       queryFn: () => symbolsApi.getPrice(code),
       enabled: routineSymbols.length > 0,
-      staleTime: 45_000,
-      refetchInterval: 90_000,
+      staleTime: 15_000,
+      refetchInterval: 30_000,
     })),
   })
   const routinePrices = useMemo(
@@ -606,50 +617,6 @@ export default function DashboardPage() {
 
       <PersonalPerformanceDesk summary={outcomesSummaryQ.data} isLoading={outcomesSummaryQ.isLoading} />
 
-      <section className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
-        <Card className="space-y-4">
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <Layers3 size={15} className="text-primary" />
-            한눈에 보는 흐름
-          </div>
-          <div className="grid gap-3 md:grid-cols-3">
-            <QuickBoard
-              title="바로 볼 후보"
-              value={`${summary.readyCount}개`}
-              description="준비도와 진입 구간이 살아 있는 종목입니다."
-            />
-            <QuickBoard
-              title="조금 더 지켜볼 후보"
-              value={`${summary.watchCount}개`}
-              description="패턴은 괜찮지만 트리거나 품질 확인이 더 필요한 종목입니다."
-            />
-            <QuickBoard
-              title="관망 / 리스크"
-              value={`${summary.riskCount}개`}
-              description="신호가 약하거나 보수적으로 봐야 하는 종목입니다."
-            />
-          </div>
-        </Card>
-
-        <Card className="space-y-4">
-          <div className="text-sm font-semibold">읽는 순서</div>
-          <div className="space-y-3 text-sm text-muted-foreground">
-            <FlowStep
-              title="1. 지금 볼 후보 먼저"
-              body="상단 두 섹션은 바로 체크할 종목 위주로 정리했습니다."
-            />
-            <FlowStep
-              title="2. 형성 중 후보 확인"
-              body="진입 직전이 아니라도 구조가 살아 있는 종목은 별도로 모아둡니다."
-            />
-            <FlowStep
-              title="3. 나머지는 필요할 때만"
-              body="유사도, 숏 후보, 관망 구간은 아래 보조 섹션에서 천천히 보면 됩니다."
-            />
-          </div>
-        </Card>
-      </section>
-
       {/* 섹터 패턴 분포 히트맵 */}
       {sectorQ.data && sectorQ.data.sectors.length > 0 && (
         <SectorHeatmap sectors={sectorQ.data.sectors} />
@@ -745,25 +712,6 @@ function HeroMetric({ label, value, hint }: { label: string; value: string; hint
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className="mt-2 text-xl font-semibold">{value}</div>
       <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{hint}</p>
-    </div>
-  )
-}
-
-function QuickBoard({ title, value, description }: { title: string; value: string; description: string }) {
-  return (
-    <div className="rounded-lg border border-border bg-background/60 p-4">
-      <div className="text-xs text-muted-foreground">{title}</div>
-      <div className="mt-1 text-xl font-semibold">{value}</div>
-      <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{description}</p>
-    </div>
-  )
-}
-
-function FlowStep({ title, body }: { title: string; body: string }) {
-  return (
-    <div className="rounded-lg border border-border bg-background/55 p-3">
-      <div className="text-sm font-medium text-foreground">{title}</div>
-      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{body}</p>
     </div>
   )
 }
@@ -880,9 +828,11 @@ function RoutineDesk({
 }) {
   const autoSessionMode = getKstRoutineMode()
   const [modeSelection, setModeSelection] = useState<RoutineModeSelection>('auto')
+  const [open, setOpen] = useState(false)
   const sessionMode: RoutineMode = modeSelection === 'auto' ? autoSessionMode : modeSelection
   const sessionMeta = getRoutineModeMeta(sessionMode)
   const currentItems = deck[sessionMode]
+  const totalCount = deck.premarket.length + deck.intraday.length + deck.afterMarket.length
   const routineColumns: RoutineColumnDef[] = [
     {
       mode: 'premarket',
@@ -916,19 +866,30 @@ function RoutineDesk({
 
   return (
     <section className="space-y-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="flex w-full flex-col gap-2 text-left sm:flex-row sm:items-end sm:justify-between"
+      >
         <div>
-          <div className="text-sm font-semibold">오늘 운용 루틴</div>
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            오늘 운용 루틴
+            <Badge variant="muted">{totalCount}개</Badge>
+            {open ? <ChevronUp size={14} className="text-muted-foreground" /> : <ChevronDown size={14} className="text-muted-foreground" />}
+          </div>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            장전에는 후보를 압축하고, 장중에는 현재가와 트리거를 확인하고, 장후에는 손절 여부와 기록 대상을 정리합니다.
+            {open
+              ? '장전에는 후보를 압축하고, 장중에는 현재가와 트리거를 확인하고, 장후에는 손절 여부와 기록 대상을 정리합니다.'
+              : '장전/장중/장후 세션별로 후보를 나눠 봅니다 — 펼치기'}
           </p>
         </div>
         <div className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
           <RefreshCw size={12} className={isFetchingPrices ? 'animate-spin' : ''} />
           상위 후보 현재가 자동 갱신
         </div>
-      </div>
+      </button>
 
+      {open && (
+      <>
       <Card className={cn('space-y-4', sessionMeta.panelClass)}>
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="space-y-2">
@@ -1012,6 +973,8 @@ function RoutineDesk({
           />
         ))}
       </div>
+      </>
+      )}
     </section>
   )
 }
@@ -1338,19 +1301,26 @@ function PersonalPerformanceDesk({ summary, isLoading }: { summary: OutcomesSumm
   const completed = summary?.completed ?? 0
   const pending = summary?.pending ?? 0
   const cancelled = summary?.cancelled ?? 0
+  const [open, setOpen] = useState(false)
 
   return (
     <section className="rounded-lg border border-border bg-card/55 p-4">
-      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+      <button onClick={() => setOpen(v => !v)} className="flex w-full flex-col gap-1 text-left sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <div className="text-sm font-semibold">내 성과 요약</div>
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            내 성과 요약
+            <Badge variant="muted">{total}건</Badge>
+            {open ? <ChevronUp size={14} className="text-muted-foreground" /> : <ChevronDown size={14} className="text-muted-foreground" />}
+          </div>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
             판단을 저장하고 결과를 닫을수록 이 영역이 내 스타일을 보여주는 성과판이 됩니다.
           </p>
         </div>
         {isLoading && <Loader2 size={14} className="animate-spin text-muted-foreground" />}
-      </div>
+      </button>
 
+      {open && (
+      <>
       {styleProfile && (
         <div className="mt-3 rounded-lg border border-violet-400/20 bg-violet-400/5 p-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -1395,6 +1365,8 @@ function PersonalPerformanceDesk({ summary, isLoading }: { summary: OutcomesSumm
           아직 저장된 판단이 없습니다. 차트 화면에서 좋은 셋업을 볼 때 `신호 저장`을 눌러두면, 이후 결과가 자동/수동으로 정리되고 여기서 내 성과가 쌓입니다.
         </div>
       )}
+      </>
+      )}
     </section>
   )
 }
@@ -1414,31 +1386,7 @@ function filterDashboard(
   intradayView: IntradayView,
   intradayPreset: IntradayPreset,
 ): DashboardResponse | undefined {
-  if (!intradayMode || !data) return data
-
-  return {
-    ...data,
-    items: data.items.filter(item => {
-      const matchesView =
-        intradayView === 'all'
-          ? true
-          : intradayView === 'live'
-            ? item.live_intraday_candidate
-            : !item.live_intraday_candidate && item.intraday_collection_mode === intradayView
-
-      const matchesPreset =
-        intradayPreset === 'all'
-          ? true
-          : intradayPreset === 'ready-now'
-            ? item.live_intraday_candidate && !item.no_signal_flag && ['confirmed', 'trigger_ready', 'breakout_watch'].includes(item.setup_stage)
-            : intradayPreset === 'watch'
-              ? !item.no_signal_flag && ['late_base', 'early_trigger_watch', 'base_building'].includes(item.setup_stage) && item.formation_quality >= 0.5
-              : intradayPreset === 'recheck'
-                ? ['stored', 'public', 'mixed', 'budget'].includes(item.intraday_collection_mode) && item.data_quality >= 0.45
-                : item.intraday_collection_mode === 'cooldown' || item.no_signal_flag
-
-      return matchesView && matchesPreset
-    }),
-  }
+  if (!data) return data
+  return { ...data, items: filterIntradayItems(data.items, intradayMode, intradayView, intradayPreset) }
 }
 

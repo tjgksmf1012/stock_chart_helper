@@ -11,19 +11,12 @@ from datetime import date, datetime, timedelta
 import pandas as pd
 
 from ..core.redis import cache_get, cache_set
+from .pattern_engine import BEARISH_PATTERNS as _BEARISH_PATTERNS, BULLISH_PATTERNS as _BULLISH_PATTERNS
 
 logger = logging.getLogger(__name__)
 
 _CACHE_PREFIX = "moneyflow:v2"
 _CACHE_TTL = 14400  # 4시간
-
-_BULLISH_PATTERNS = {
-    "double_bottom", "inverse_head_and_shoulders", "ascending_triangle",
-    "rectangle", "cup_and_handle", "rounding_bottom", "vcp",
-}
-_BEARISH_PATTERNS = {
-    "double_top", "head_and_shoulders", "descending_triangle",
-}
 
 # 수급 방향성 유의미 임계치 (50억원)
 _THRESHOLD_BILLION = 50.0

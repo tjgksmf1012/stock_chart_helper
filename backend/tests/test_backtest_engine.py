@@ -10,9 +10,11 @@ from app.services.backtest_engine import (
     _BACKTEST_TIMEFRAMES,
     _BACKTEST_UNIVERSE,
     _DEFAULT_WIN_RATES,
+    _bucket_to_stat_line,
     _default_stat_line,
     _default_stats,
     _edge_score,
+    _effective_sample_size,
     _is_bullish,
 )
 
@@ -94,6 +96,54 @@ class TestUniverseExpansion:
             assert tf in _BACKTEST_CONFIG
 
 
+class TestEffectiveSampleSize:
+    def test_discounts_overlapping_windows(self):
+        # 1d: window=60, step=10 -> overlap_factor ~= 1/6, but never below the
+        # "종목 수만큼은 독립"이라는 바닥(len(_BACKTEST_UNIVERSE))보다 작게 깎이진 않는다.
+        total = 300
+        effective = _effective_sample_size(total, "1d")
+        assert effective < total
+        assert effective >= min(total, len(_BACKTEST_UNIVERSE))
+
+    def test_never_exceeds_raw_total(self):
+        for tf in _BACKTEST_TIMEFRAMES:
+            assert _effective_sample_size(10, tf) <= 10
+
+    def test_zero_total_is_zero(self):
+        assert _effective_sample_size(0, "1d") == 0
+
+    def test_small_total_floors_at_least_one(self):
+        assert _effective_sample_size(1, "1d") >= 1
+
+
+class TestBucketToStatLine:
+    def _bucket(self, wins=12, total=20, timeouts=5, mfe=0.08, mae=0.03, bars=10.0) -> dict:
+        return {"wins": wins, "total": total, "timeouts": timeouts, "mfe_sum": mfe * total, "mae_sum": mae * total, "bars_sum": bars * total}
+
+    def test_win_rate_includes_timeouts_in_denominator(self):
+        # 12승 + (20-12)패 = 8패, timeout 5건 -> attempts = 25, win_rate = 12/25 = 0.48
+        # (해소표본만 썼다면 12/20=0.60으로 실제보다 낙관적으로 나왔을 것)
+        line = _bucket_to_stat_line("double_bottom", "1d", self._bucket(wins=12, total=20, timeouts=5))
+        assert line is not None
+        assert line["win_rate"] == pytest.approx(12 / 25, abs=0.001)
+        assert line["total"] == 25
+        assert line["resolution_rate"] == pytest.approx(20 / 25, abs=0.001)
+
+    def test_below_minimum_attempts_returns_none(self):
+        line = _bucket_to_stat_line("double_bottom", "1d", self._bucket(wins=1, total=2, timeouts=1))
+        assert line is None
+
+    def test_all_timeout_returns_none(self):
+        bucket = {"wins": 0, "total": 0, "timeouts": 10, "mfe_sum": 0.0, "mae_sum": 0.0, "bars_sum": 0.0}
+        assert _bucket_to_stat_line("double_bottom", "1d", bucket) is None
+
+    def test_sample_size_is_discounted_but_total_is_raw(self):
+        line = _bucket_to_stat_line("double_bottom", "1d", self._bucket(wins=60, total=100, timeouts=20))
+        assert line is not None
+        assert line["total"] == 120
+        assert line["sample_size"] <= line["total"]
+
+
 class TestBacktestStockSync:
     """_backtest_stock_sync 결과 계약 — timeout 포함, win_rate 분리 검증."""
 
@@ -111,7 +161,7 @@ class TestBacktestStockSync:
         from app.services.backtest_engine import _backtest_stock_sync
 
         # 랜덤워크 300봉에서는 목표·손절 어디에도 안 닿는 timeout이 실제로 발생한다.
-        # (이 표본이 win_rate 분모에서 빠지므로 해소율 표기가 필요해진 이유)
+        # (이 표본은 win_rate 분모(attempts)에는 들어가되 MFE/MAE/bars 평균에서는 빠진다)
         rows = _backtest_stock_sync("1d", sample_ohlcv_df_long)
         assert any(r["outcome"] == "timeout" for r in rows)
         assert any(r["outcome"] in {"win", "loss"} for r in rows)

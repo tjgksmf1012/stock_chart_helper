@@ -36,7 +36,7 @@ export function statusSubline(status: ScanStatusResponse | undefined, timeframe:
   if (status.last_error) {
     return `최근 오류가 있었지만 마지막 캐시 결과는 유지되고 있습니다. 오류: ${status.last_error}`
   }
-  return `${timeframeLabel(timeframe)} 기준 최근 스캔 결과를 표시하고 있습니다.`
+  return `${timeframeLabel(timeframe)} 기준 최근 스캔 결과입니다. 장중 하루 4번(08:30/09:10/13:30/16:00) 자동으로 갱신되고, 결과가 90분 넘게 오래됐으면 화면을 열 때 자동으로 한 번 더 갱신합니다. 지금 바로 보고 싶으면 아래 버튼으로 수동 갱신할 수 있습니다.`
 }
 
 export function statusLabel(status: string | undefined): string {

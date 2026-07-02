@@ -14,6 +14,7 @@ from datetime import date, datetime
 import pandas as pd
 
 from ..core.redis import cache_get, cache_set
+from .pattern_engine import BEARISH_PATTERNS as _BEARISH_PATTERNS, BULLISH_PATTERNS as _BULLISH_PATTERNS
 
 logger = logging.getLogger(__name__)
 
@@ -45,15 +46,6 @@ _SECTOR_TICKERS: dict[str, str] = {
     "1024": "서비스업",
     "1034": "비금속광물",
 }
-
-_BULLISH_PATTERNS = {
-    "double_bottom", "inverse_head_and_shoulders", "ascending_triangle",
-    "rectangle", "cup_and_handle", "rounding_bottom", "vcp",
-}
-_BEARISH_PATTERNS = {
-    "double_top", "head_and_shoulders", "descending_triangle",
-}
-
 
 def _get_semaphore() -> asyncio.Semaphore:
     global _SECTOR_SEMAPHORE
