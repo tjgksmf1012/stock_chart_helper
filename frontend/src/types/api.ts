@@ -16,7 +16,7 @@ export interface PriceInfo {
   change: number
   change_pct: number
   volume: number
-  source: 'kis' | 'pykrx' | 'none'
+  source: 'kis' | 'toss' | 'pykrx' | 'none'
   timestamp: string | null
 }
 

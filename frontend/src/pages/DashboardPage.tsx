@@ -249,8 +249,8 @@ export default function DashboardPage() {
       queryKey: ['price', 'routine', code],
       queryFn: () => symbolsApi.getPrice(code),
       enabled: routineSymbols.length > 0,
-      staleTime: 45_000,
-      refetchInterval: 90_000,
+      staleTime: 15_000,
+      refetchInterval: 30_000,
     })),
   })
   const routinePrices = useMemo(

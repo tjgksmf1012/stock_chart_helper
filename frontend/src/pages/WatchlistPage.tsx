@@ -17,8 +17,8 @@ function WatchlistRow({ code, name, market }: { code: string; name: string; mark
   const priceQ = useQuery({
     queryKey: ['price', code],
     queryFn: () => symbolsApi.getPrice(code),
-    staleTime: 60_000,
-    refetchInterval: 120_000,
+    staleTime: 20_000,
+    refetchInterval: 30_000,
   })
 
   const analysisQ = useQuery({
