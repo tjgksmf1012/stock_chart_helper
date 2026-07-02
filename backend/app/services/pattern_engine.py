@@ -730,7 +730,9 @@ class PatternEngine:
     df must have: date (or datetime), open, high, low, close, volume
     """
 
-    def detect_all(self, df: pd.DataFrame, regime_fit: float = 0.5, timeframe: str | None = None) -> list[PatternResult]:
+    def detect_all(
+        self, df: pd.DataFrame, regime_fit: float = 0.5, timeframe: str | None = None, rs_fit: float = 0.5
+    ) -> list[PatternResult]:
         if len(df) < 20:
             return []
         swings = alternating_swings(get_significant_swings(df))
@@ -742,11 +744,15 @@ class PatternEngine:
             self._detect_head_and_shoulders,
             self._detect_inverse_head_and_shoulders,
             self._detect_triangles,
-            self._detect_vcp,
             self._detect_rectangle,
-            self._detect_momentum_breakout,
         ]:
             found = detector(df, swings, regime_fit, timeframe)
+            if found:
+                results.extend(found)
+
+        # RS(상대강도)와 장기 추세 정배열을 함께 보는 트랙 — 모멘텀 방법론(VCP·돌파)에서만 사용
+        for rs_detector in [self._detect_vcp, self._detect_momentum_breakout]:
+            found = rs_detector(df, swings, regime_fit, timeframe, rs_fit)
             if found:
                 results.extend(found)
 
@@ -1356,7 +1362,12 @@ class PatternEngine:
     # ── Rectangle (Box) ─────────────────────────────────────────────────────
 
     def _detect_vcp(
-        self, df: pd.DataFrame, swings: list[SwingPoint], regime_fit: float, timeframe: str | None = None
+        self,
+        df: pd.DataFrame,
+        swings: list[SwingPoint],
+        regime_fit: float,
+        timeframe: str | None = None,
+        rs_fit: float = 0.5,
     ) -> list[PatternResult]:
         if len(df) < 50:
             return []
@@ -1401,6 +1412,12 @@ class PatternEngine:
         current_close = float(closes.iloc[-1])
         if not (current_close > ma20 > ma60):
             return []
+        # 스테이지2(장기 상승추세) 확인 — 데이터가 충분할 때만(짧은 이력은 건너뜀).
+        # 미너비니 VCP 기준의 150/200일선 정배열을 근사.
+        if len(closes) >= 150:
+            ma150 = float(closes.rolling(150).mean().iloc[-1])
+            if current_close < ma150:
+                return []
 
         latest_low = lows[-1]
         if latest_low.price >= highs[-1].price:
@@ -1413,6 +1430,10 @@ class PatternEngine:
         elif current_close >= pivot * 0.985 and contraction_score >= 0.45 and tight_range >= 0.50:
             state = "armed"
         else:
+            state = "forming"
+        # 상대강도(RS)가 뚜렷하게 시장을 하회하는 종목은 진짜 VCP 셋업으로 보지 않는다 —
+        # 미너비니 방법론에서 RS는 돌파 신뢰도의 전제조건이지 보조지표가 아니다.
+        if rs_fit < 0.35 and state != "forming":
             state = "forming"
 
         vol_score = _volume_context_score(df, highs[0].index, latest_low.index)
@@ -1447,6 +1468,7 @@ class PatternEngine:
                     1.0,
                 )
                 * (0.88 + 0.12 * target_realism)
+                * (0.80 + 0.20 * rs_fit)
             ),
             3,
         )
@@ -1571,10 +1593,16 @@ class PatternEngine:
     # 돌파 임박/직후를 더 빠르게 포착하는 보완 트랙이다.
 
     def _detect_momentum_breakout(
-        self, df: pd.DataFrame, swings: list[SwingPoint], regime_fit: float, timeframe: str | None = None
+        self,
+        df: pd.DataFrame,
+        swings: list[SwingPoint],
+        regime_fit: float,
+        timeframe: str | None = None,
+        rs_fit: float = 0.5,
     ) -> list[PatternResult]:
         lookback = 30
-        if len(df) < lookback + 15:
+        trend_ma_window = 50
+        if len(df) < max(lookback + 15, trend_ma_window):
             return []
 
         dates = df["date"].values if "date" in df.columns else df["datetime"].values
@@ -1584,6 +1612,12 @@ class PatternEngine:
 
         current_close = float(closes.iloc[-1])
         if current_close <= 0:
+            return []
+
+        # 추세 필터 — 자체 50봉 이평선 위에 있을 때만 "돌파"로 본다. 장기 하락추세 중
+        # 반짝 반등까지 브레이크아웃으로 잡는 것을 막는 최소한의 스테이지 확인.
+        ma_trend = float(closes.rolling(trend_ma_window).mean().iloc[-1])
+        if current_close < ma_trend:
             return []
 
         # 직전 저항선: 오늘을 제외한 최근 lookback봉의 최고가
@@ -1613,12 +1647,24 @@ class PatternEngine:
 
         last_dt = pd.Timestamp(dates[-1]).to_pydatetime()
 
-        if distance_pct >= 0.005 and volume_ratio >= 1.3:
+        # 거래량 확인 기준 — 20일 평균 대비 +45% (업계 권장 +40~50% 하한에 맞춤).
+        if distance_pct >= 0.005 and volume_ratio >= 1.45:
             state = "confirmed"
         elif distance_pct >= -0.02 and volume_ratio >= 1.0:
             state = "armed"
         else:
             state = "forming"
+        # RS가 뚜렷하게 시장을 하회하면 "돌파 확정"까지는 인정하지 않는다.
+        if rs_fit < 0.35 and state != "forming":
+            state = "forming"
+
+        # 바로 위(5% 이내)에 더 강한 과거 저항이 남아있으면 "완전히 뚫린 돌파"로 보지 않는다
+        # (overhead supply / clean air 확인).
+        long_window = df.iloc[: max(0, len(df) - lookback - 1)].tail(90)
+        if not long_window.empty:
+            long_resistance = float(pd.to_numeric(long_window["high"], errors="coerce").max())
+            if long_resistance and resistance < long_resistance <= resistance * 1.05 and state == "confirmed":
+                state = "armed"
 
         invalidation = float(lows.iloc[-10:].min())
         if invalidation >= resistance:
@@ -1642,7 +1688,9 @@ class PatternEngine:
         pre_window_start = max(0, len(df) - lookback - 1)
         vol_context = _volume_context_score(df, pre_window_start, len(df) - 1)
         volat_context = _volatility_context_score(df, pre_window_start, len(df) - 1)
-        tight_range = _tight_range_score(df, max(0, len(df) - 12), max(0, len(df) - 2))
+        # 직전 10봉이 아니라 저항선을 만든 lookback 구간 전체로 다져진 베이스인지 확인 —
+        # 며칠짜리 잡음성 횡보가 아니라 제대로 된 베이스인지 가늠하는 창을 넓힘.
+        tight_range = _tight_range_score(df, pre_window_start, max(0, len(df) - 2))
 
         breakout_idx = _breakout_index(df, resistance, max(0, len(df) - 6), bullish=True, threshold=0.003)
         breakout_quality = _breakout_quality_score(df, breakout_idx, resistance, bullish=True)
@@ -1658,6 +1706,7 @@ class PatternEngine:
                 0.0,
                 1.0,
             )
+            * (0.80 + 0.20 * rs_fit)
         )
         grade = _grade_from_quality(geometry_fit, breakout_quality, retest_quality, vol_context)
 

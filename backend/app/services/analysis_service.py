@@ -19,8 +19,56 @@ from .pattern_engine import (
     PatternResult,
     _breakout_index as _pe_breakout_index,
 )
+from .market_regime_service import get_market_regime
 from .probability_engine import compute_probability
 from .timeframe_service import get_timeframe_spec, is_intraday_timeframe, timeframe_label
+
+# 상대강도(RS) lookback을 타임프레임별 봉 수로 환산 — 지수 RS_LOOKBACK_BARS(영업일 63일)와
+# 같은 실제 기간(~3개월)을 나타내도록 타임프레임마다 다른 봉 수를 쓴다.
+_RS_WINDOW_BARS_BY_TIMEFRAME = {"1d": 60, "1wk": 13, "1mo": 3}
+
+_REGIME_FIT_SCORES = {
+    "bull": 0.80,
+    "sideways": 0.55,
+    "correction": 0.35,
+    "bear": 0.15,
+    "unknown": 0.50,
+}
+
+
+def _regime_fit_score(market_regime: dict, market: str) -> float:
+    """시장(KOSPI/KOSDAQ) 체제를 0~1 정합도 점수로 변환. 데이터 없으면 중립(0.5)."""
+    sub = market_regime.get("kosdaq" if market == "KOSDAQ" else "kospi") or {}
+    return _REGIME_FIT_SCORES.get(sub.get("regime", "unknown"), 0.5)
+
+
+def _relative_strength_fit(df: pd.DataFrame, timeframe: str, market_regime: dict, market: str) -> float:
+    """종목 자체 수익률 - 시장 지수 수익률(같은 lookback)의 초과수익을 0~1로 정규화.
+
+    실제 IBD식 RS Rating은 전체 시장 대비 백분위 순위지만, 이 앱은 요청 단위로
+    개별 종목만 분석하는 구조라 수백~수천 종목의 동시 수익률 계산이 불가능하다.
+    대신 지수 대비 초과수익(excess return)을 근사치로 사용한다.
+    """
+    sub = market_regime.get("kosdaq" if market == "KOSDAQ" else "kospi") or {}
+    index_return = sub.get("return_63d_pct")
+    if index_return is None:
+        return 0.5
+
+    window = _RS_WINDOW_BARS_BY_TIMEFRAME.get(timeframe, 60)
+    closes = pd.to_numeric(df["close"], errors="coerce").dropna()
+    if len(closes) <= window:
+        return 0.5
+
+    past_close = float(closes.iloc[-window - 1])
+    current_close = float(closes.iloc[-1])
+    if past_close <= 0:
+        return 0.5
+    stock_return = (current_close - past_close) / past_close
+
+    excess_return = stock_return - float(index_return)
+    # +-16.7% 초과수익을 0~1 스케일의 양 끝으로 사용 (0%면 중립 0.5)
+    return float(max(0.0, min(1.0, 0.5 + excess_return * 3.0)))
+
 
 # 분석 결과 캐시 키 접두사 — 분석 동작이 바뀌면 여기 한 곳만 올린다.
 # (routes/symbols.py와 alert_service가 함께 사용 — 순환 import 없는 위치)
@@ -3306,8 +3354,11 @@ async def analyze_symbol_dataframe(
         return build_no_signal_snapshot(symbol, timeframe, df)
 
     current_close, current_high, current_low = _current_ohlc(df)
+    market_regime = await get_market_regime()
+    regime_fit = _regime_fit_score(market_regime, symbol.market)
+    rs_fit = _relative_strength_fit(df, timeframe, market_regime, symbol.market)
     engine = PatternEngine()
-    raw_patterns = engine.detect_all(df, timeframe=timeframe)
+    raw_patterns = engine.detect_all(df, regime_fit=regime_fit, timeframe=timeframe, rs_fit=rs_fit)
     if not raw_patterns:
         return build_no_signal_snapshot(symbol, timeframe, df)
 

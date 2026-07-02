@@ -33,6 +33,10 @@ def _get_fetch_lock() -> asyncio.Lock:
     return _fetch_lock
 
 
+# 상대강도(RS) 계산에 쓰는 지수 수익률 lookback — 약 3개월(영업일 기준)
+RS_LOOKBACK_BARS = 63
+
+
 def _unknown_regime() -> dict:
     unk = {
         "regime": "unknown",
@@ -42,6 +46,7 @@ def _unknown_regime() -> dict:
         "ma60": None,
         "ma120": None,
         "distance_from_ma120_pct": 0.0,
+        "return_63d_pct": None,
     }
     return {
         "kospi": unk,
@@ -54,7 +59,16 @@ def _unknown_regime() -> dict:
 def _classify_regime(close: pd.Series) -> dict:
     """OHLCV close 시리즈에서 체제를 판정해 dict로 반환."""
     if len(close) < 20:
-        return {"regime": "unknown", "current": 0.0, "change_pct": 0.0, "ma20": None, "ma60": None, "ma120": None, "distance_from_ma120_pct": 0.0}
+        return {
+            "regime": "unknown",
+            "current": 0.0,
+            "change_pct": 0.0,
+            "ma20": None,
+            "ma60": None,
+            "ma120": None,
+            "distance_from_ma120_pct": 0.0,
+            "return_63d_pct": None,
+        }
 
     current = float(close.iloc[-1])
     prev = float(close.iloc[-2]) if len(close) >= 2 else current
@@ -79,6 +93,14 @@ def _classify_regime(close: pd.Series) -> dict:
     else:
         regime = "correction"
 
+    # 상대강도(RS) 계산용 지수 수익률 — 종목 자체 수익률과 비교해 시장 대비
+    # 잘 버티는지/못 버티는지를 gauge 한다 (RS_LOOKBACK_BARS 없으면 None).
+    return_63d_pct = None
+    if len(close) > RS_LOOKBACK_BARS:
+        past = float(close.iloc[-RS_LOOKBACK_BARS - 1])
+        if past:
+            return_63d_pct = round((current - past) / past, 4)
+
     return {
         "regime": regime,
         "current": round(current, 2),
@@ -87,6 +109,7 @@ def _classify_regime(close: pd.Series) -> dict:
         "ma60": round(ma60, 2),
         "ma120": round(ma120, 2),
         "distance_from_ma120_pct": distance_pct,
+        "return_63d_pct": return_63d_pct,
     }
 
 

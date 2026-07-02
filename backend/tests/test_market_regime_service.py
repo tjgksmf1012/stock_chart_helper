@@ -72,6 +72,22 @@ class TestClassifyRegime:
         result = _classify_regime(_rising_close())
         assert result["distance_from_ma120_pct"] > 0
 
+    def test_return_63d_pct_is_none_when_not_enough_history(self):
+        # exactly at the lookback boundary (RS_LOOKBACK_BARS=63) -> no "past" bar to diff against
+        result = _classify_regime(_rising_close(n=63))
+        assert result["return_63d_pct"] is None
+
+    def test_return_63d_pct_reflects_index_return(self):
+        result = _classify_regime(_rising_close(n=150, start=100.0, step=0.5))
+        # 63 bars back from the end: current - past over past
+        assert result["return_63d_pct"] is not None
+        assert result["return_63d_pct"] > 0
+
+    def test_return_63d_pct_negative_for_falling_index(self):
+        result = _classify_regime(_falling_close(n=150, start=200.0, step=0.5))
+        assert result["return_63d_pct"] is not None
+        assert result["return_63d_pct"] < 0
+
 
 class TestCloseSeries:
     def test_extracts_korean_column_name(self):

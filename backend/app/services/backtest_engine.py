@@ -78,6 +78,41 @@ _BACKTEST_UNIVERSE = [
     "035900",  # JYP엔터테인먼트
     "214150",  # 클래시스
     "196170",  # 알테오젠
+    # 중형주 확장 — 스캔 유니버스가 시가총액 300억, 거래대금 15억까지 낮아졌는데
+    # 백테스트 승률은 여전히 초대형주 40개에서만 뽑히면 중소형 신규 편입 종목엔
+    # 안 맞는 승률이 적용된다. 확실히 아는 코드 위주로 중형주 비중을 늘림
+    # (다만 실제 300억대 소형주까지는 코드 확인이 어려워 완전히 커버하진 못함).
+    "011200",  # HMM
+    "010060",  # OCI홀딩스
+    "004020",  # 현대제철
+    "006800",  # 미래에셋증권
+    "016360",  # 삼성증권
+    "138040",  # 메리츠금융지주
+    "047810",  # 한국항공우주
+    "012450",  # 한화에어로스페이스
+    "010130",  # 고려아연
+    "051900",  # LG생활건강
+    "097950",  # CJ제일제당
+    "018260",  # 삼성에스디에스
+    "271560",  # 오리온
+    "112610",  # 씨에스윈드
+    "000100",  # 유한양행
+    "293490",  # 카카오게임즈
+    "259960",  # 크래프톤
+    "145020",  # 휴젤
+    "000120",  # CJ대한통운
+    "010620",  # 현대미포조선
+    "011780",  # 금호석유
+    "004990",  # 롯데지주
+    "023530",  # 롯데쇼핑
+    "069960",  # 현대백화점
+    "035250",  # 강원랜드
+    "021240",  # 코웨이
+    "009830",  # 한화솔루션
+    "010120",  # LS ELECTRIC
+    "011210",  # 현대위아
+    "032640",  # LG유플러스
+    "018880",  # 한온시스템
 ]
 _BACKTEST_CONFIG = {
     "1mo": {"window": 24, "step": 2, "max_forward": 6, "lookback_days": 3650, "min_bars": 32},
@@ -146,6 +181,64 @@ def _is_bullish(pattern_type: str) -> bool:
     return pattern_type in BULLISH_PATTERNS
 
 
+def _bucket_to_stat_line(pattern_type: str, timeframe: str, bucket: dict[str, float | int]) -> dict[str, float | int | str] | None:
+    """집계된 wins/total/timeouts 버킷을 통계 라인으로 변환. 표본이 너무 적으면 None."""
+    wins = int(bucket["wins"])
+    resolved = int(bucket["total"])
+    timeouts = int(bucket["timeouts"])
+    # timeout(목표·손절 어디에도 안 닿고 흐지부지 끝난 경우)도 시도 횟수에 넣는다.
+    # 해소된 표본만으로 승률을 계산하면 "애매하게 끝난 경우"가 통째로 빠져
+    # 승률이 실제보다 낙관적으로 보이는 편향이 생긴다.
+    attempts = resolved + timeouts
+    if attempts < 5 or resolved == 0:
+        return None
+    avg_mfe_pct = round(float(bucket["mfe_sum"]) / resolved, 4)
+    avg_mae_pct = round(float(bucket["mae_sum"]) / resolved, 4)
+    avg_bars_to_outcome = round(float(bucket["bars_sum"]) / resolved, 2)
+    win_rate = round(wins / attempts, 3)
+    resolution_rate = round(resolved / attempts, 3)
+    return {
+        "pattern_type": pattern_type,
+        "timeframe": timeframe,
+        "win_rate": win_rate,
+        # 슬라이딩 윈도우(step < window)로 만든 표본은 서로 대부분 겹쳐 사실상
+        # 독립표본이 아니다 — 신뢰구간 계산(sample_reliability)에 쓰이는
+        # "표본수"는 그 중첩을 감안해 할인한 값을 쓴다. win_rate 자체(점 추정치)는
+        # 원래 카운트(wins/total)를 그대로 쓴다 — 편향 문제가 아니라 분산 과소평가 문제이므로.
+        "sample_size": _effective_sample_size(attempts, timeframe),
+        "wins": wins,
+        "total": attempts,
+        "timeouts": timeouts,
+        "resolution_rate": resolution_rate,
+        "avg_mfe_pct": avg_mfe_pct,
+        "avg_mae_pct": avg_mae_pct,
+        "avg_bars_to_outcome": avg_bars_to_outcome,
+        "historical_edge_score": _edge_score(
+            win_rate,
+            avg_mfe_pct,
+            avg_mae_pct,
+            avg_bars_to_outcome,
+            int(_BACKTEST_CONFIG[timeframe]["max_forward"]),
+        ),
+    }
+
+
+def _effective_sample_size(total: int, timeframe: str) -> int:
+    """겹치는 슬라이딩 윈도우 표본수를 신뢰구간 계산용으로 할인한다.
+
+    window=60/step=10처럼 연속 표본끼리 대부분 겹치면 "표본수"가 부풀려져
+    실제보다 신뢰구간이 좁게(과신하게) 나온다. step/window 비율만큼 할인하되,
+    유니버스 내 서로 다른 종목 수만큼은 독립 관측으로 인정해 바닥을 둔다.
+    """
+    if total <= 0:
+        return 0
+    cfg = _BACKTEST_CONFIG.get(timeframe, _BACKTEST_CONFIG["1d"])
+    overlap_factor = min(1.0, cfg["step"] / cfg["window"])
+    discounted = round(total * overlap_factor)
+    floor = min(total, len(_BACKTEST_UNIVERSE))
+    return max(1, max(discounted, floor))
+
+
 def _backtest_stock_sync(timeframe: str, bars_df: Any) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
     engine = PatternEngine()
@@ -198,8 +291,8 @@ def _backtest_stock_sync(timeframe: str, bars_df: Any) -> list[dict[str, Any]]:
                         bars_to_outcome = step
                         break
 
-            # timeout(목표·손절 미도달)도 별도 outcome으로 기록 — 해소율 계산용.
-            # win_rate는 resolved(win/loss)만으로 계산하므로 영향 없음.
+            # timeout(목표·손절 미도달)도 별도 outcome으로 기록 — win_rate 집계 단계에서
+            # 시도 횟수(분모)에 포함되고, MFE/MAE/bars 평균에서만 제외된다.
             outcome = "timeout" if win is None else ("win" if win else "loss")
             results.append(
                 {
@@ -241,7 +334,8 @@ async def run_backtest() -> dict[str, dict[str, dict[str, float | int | str]]]:
                             result["pattern_type"],
                             {"wins": 0, "total": 0, "timeouts": 0, "mfe_sum": 0.0, "mae_sum": 0.0, "bars_sum": 0.0},
                         )
-                        # timeout은 해소율 분모에만 반영 — win_rate/평균은 resolved만 사용
+                        # timeout은 wins/mfe/mae/bars 집계에선 빠지지만, 아래 _bucket_to_stat_line
+                        # 에서 win_rate 분모(attempts)에는 포함된다.
                         if result.get("outcome") == "timeout":
                             bucket["timeouts"] += 1
                             continue
@@ -258,36 +352,9 @@ async def run_backtest() -> dict[str, dict[str, dict[str, float | int | str]]]:
         stats = _default_stats()
         for timeframe, pattern_counts in aggregated.items():
             for pattern_type, bucket in pattern_counts.items():
-                wins = int(bucket["wins"])
-                total = int(bucket["total"])
-                if total < 5:
-                    continue
-                timeouts = int(bucket["timeouts"])
-                avg_mfe_pct = round(float(bucket["mfe_sum"]) / total, 4)
-                avg_mae_pct = round(float(bucket["mae_sum"]) / total, 4)
-                avg_bars_to_outcome = round(float(bucket["bars_sum"]) / total, 2)
-                win_rate = round(wins / total, 3)
-                resolution_rate = round(total / (total + timeouts), 3) if (total + timeouts) else None
-                stats[timeframe][pattern_type] = {
-                    "pattern_type": pattern_type,
-                    "timeframe": timeframe,
-                    "win_rate": win_rate,
-                    "sample_size": total,
-                    "wins": wins,
-                    "total": total,
-                    "timeouts": timeouts,
-                    "resolution_rate": resolution_rate,
-                    "avg_mfe_pct": avg_mfe_pct,
-                    "avg_mae_pct": avg_mae_pct,
-                    "avg_bars_to_outcome": avg_bars_to_outcome,
-                    "historical_edge_score": _edge_score(
-                        win_rate,
-                        avg_mfe_pct,
-                        avg_mae_pct,
-                        avg_bars_to_outcome,
-                        int(_BACKTEST_CONFIG[timeframe]["max_forward"]),
-                    ),
-                }
+                stat_line = _bucket_to_stat_line(pattern_type, timeframe, bucket)
+                if stat_line is not None:
+                    stats[timeframe][pattern_type] = stat_line
 
         await cache_set(BACKTEST_CACHE_KEY, stats, BACKTEST_TTL)
         return stats
