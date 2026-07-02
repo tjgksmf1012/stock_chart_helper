@@ -69,7 +69,7 @@ export function DashboardSection({
       ) : isError ? (
         <QueryError compact onRetry={onRetry} />
       ) : !hasItems ? (
-        <div className="rounded-lg border border-dashed border-border bg-background/30 px-4 py-8 text-center text-sm text-muted-foreground">
+        <div className="rounded-lg border border-dashed border-border bg-background/30 px-4 py-3 text-sm text-muted-foreground">
           {emptyMessage ?? '조건에 맞는 후보가 아직 없습니다.'}
         </div>
       ) : (
