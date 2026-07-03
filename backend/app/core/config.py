@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     secret_key: str = "change-me-in-production"
     self_healthcheck_url: str = ""
     enable_platform_keepalive: bool = False
+    # 상시 서버 배포(Render 등)에서만 쓰는 자동 스캔/관심종목 알림/주간 정비 잡을 켤지.
+    # 로컬 데스크톱 모드는 사용자가 켤 때만 동작하므로 백그라운드 스케줄이 의미가
+    # 없다 — .env.local.example은 이 값을 false로 둔다.
+    enable_scheduler: bool = True
 
     # OpenAI API (optional, for LLM-written recommendation commentary)
     openai_api_key: str = ""

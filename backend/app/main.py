@@ -50,6 +50,9 @@ async def root() -> dict:
 
 
 def _start_scheduler() -> None:
+    if not settings.enable_scheduler:
+        logger.info("Scheduler disabled (enable_scheduler=false) — running in on-demand/local mode")
+        return
     try:
         from apscheduler.schedulers.asyncio import AsyncIOScheduler
         from apscheduler.triggers.cron import CronTrigger

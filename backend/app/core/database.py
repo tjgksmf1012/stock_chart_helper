@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ssl
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import inspect, text
@@ -47,8 +48,22 @@ def normalize_database_url(database_url: str) -> tuple[str, dict[str, Any]]:
     return normalized_url.render_as_string(hide_password=False), connect_args
 
 
+def _ensure_sqlite_parent_dir(database_url: str) -> None:
+    """SQLite는(Postgres와 달리) DB 파일이 위치할 디렉터리가 미리 있어야 한다.
+    로컬 데스크톱 모드(DATABASE_URL=sqlite+aiosqlite:///./data/local.db)에서
+    data/ 디렉터리가 아직 없으면 최초 실행 시 연결 자체가 실패한다."""
+    url = make_url(database_url)
+    if not url.drivername.startswith("sqlite"):
+        return
+    database = url.database
+    if not database or database == ":memory:":
+        return
+    Path(database).parent.mkdir(parents=True, exist_ok=True)
+
+
 def _create_engine():
     database_url, connect_args = normalize_database_url(settings.database_url)
+    _ensure_sqlite_parent_dir(database_url)
     engine_kwargs: dict[str, Any] = {
         "echo": settings.debug,
         "pool_pre_ping": True,
