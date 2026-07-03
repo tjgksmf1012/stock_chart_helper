@@ -12,6 +12,11 @@ set BACKEND_PORT=8001
 set FRONTEND_PORT=5173
 set ROOT_DIR=%~dp0
 
+if not exist "%ROOT_DIR%backend\.env" (
+  echo No backend\.env found - using local desktop mode defaults ^(SQLite, no Postgres/Redis needed^).
+  copy "%ROOT_DIR%backend\.env.local.example" "%ROOT_DIR%backend\.env" >nul
+)
+
 echo [1/3] Backend starting at http://localhost:%BACKEND_PORT%
 start "Backend" cmd /k "cd /d "%ROOT_DIR%backend" && python -m uvicorn app.main:app --reload --port %BACKEND_PORT%"
 

@@ -20,15 +20,33 @@
 - Intraday data: Yahoo fallback + local intraday store + optional KIS API
 - Cache: Redis fallback + in-memory cache
 
-## Local Run
+## Local Run (권장 — 데스크톱 모드)
 
-가장 간단한 실행:
+Render/Vercel 없이 이 컴퓨터에서만 돌리는 게 기본 실행 방식입니다. Postgres/Redis 서버도
+필요 없습니다 (SQLite 파일 하나 + 메모리 캐시로 자동 대체). 하루 4번 자동 스캔이나
+10분마다 관심종목 체크 같은, 상시 서버에서만 의미 있는 백그라운드 작업은 기본적으로
+꺼져 있고, 화면을 열 때와 새로고침 버튼으로만 갱신합니다.
+
+macOS / Linux:
+
+```bash
+./scripts/run_local.sh
+```
+
+Windows:
 
 ```bat
 run.bat
 ```
 
-직접 실행:
+처음 실행하면 `backend/.env`가 없을 때 `backend/.env.local.example`(SQLite, 스케줄러 꺼짐)을
+자동으로 복사해서 씁니다. 직접 커스터마이즈하려면 미리 복사해서 값을 바꿔두면 됩니다:
+
+```bash
+cp backend/.env.local.example backend/.env
+```
+
+직접 실행하려면:
 
 ```bash
 cd backend
@@ -42,7 +60,11 @@ npm install
 npm run dev
 ```
 
-## Deployment
+## Deployment (선택 사항 — 상시 서버로 돌리고 싶을 때)
+
+자동 스캔이나 관심종목 알림처럼 컴퓨터를 꺼도 계속 동작해야 하는 기능이 필요하면
+아래처럼 호스팅할 수 있습니다. 이 경우 `backend/.env.local.example` 대신
+`backend/.env.example`(Postgres/Redis 기반)을 쓰고, `ENABLE_SCHEDULER=true`로 설정하세요.
 
 현재 배포 구조:
 
