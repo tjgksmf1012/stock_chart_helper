@@ -68,10 +68,15 @@ class TestSummarize:
         stats = {s["pattern_type"]: s for s in _summarize_cases(cases)}
         w = stats["double_bottom"]
         assert (w["total"], w["wins"], w["losses"], w["timeouts"]) == (3, 1, 1, 1)
-        assert w["win_rate"] == 0.5
+        # win_rate의 분모는 해소된 표본(wins+losses)뿐 아니라 timeout까지 포함한 전체
+        # 시도(attempts=3)다 -- 애매하게 끝난 경우를 분모에서 빼면 승률이 실제보다
+        # 낙관적으로 보이는 편향이 생긴다 (backtest_engine.py와 동일한 관행).
+        assert w["win_rate"] == round(1 / 3, 3)
+        assert w["resolution_rate"] == round(2 / 3, 3)
         assert w["avg_bars_to_outcome"] == 8.0
         assert w["avg_win_move_pct"] == 0.10
         assert stats["vcp"]["win_rate"] == 1.0
+        assert stats["vcp"]["resolution_rate"] == 1.0
 
 
 class TestLongContext:

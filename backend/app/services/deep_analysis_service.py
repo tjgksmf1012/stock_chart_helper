@@ -15,9 +15,8 @@ from typing import Any
 import pandas as pd
 
 from ..core.redis import cache_get, cache_set
-from .backtest_engine import _is_bullish
 from .data_fetcher import get_data_fetcher
-from .pattern_engine import PatternEngine, PatternResult
+from .pattern_engine import PatternEngine, PatternResult, pattern_direction_is_bullish
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +88,10 @@ def _replay_pattern_cases_sync(bars_df: pd.DataFrame, progress_code: str | None 
 
             entry_price = float(window_df.iloc[-1]["close"])
             signal_date = str(window_df.iloc[-1]["date"])[:10]
-            bullish = _is_bullish(pattern.pattern_type)
+            # 대칭삼각형/직사각형/채널은 타입만으로 방향이 안 정해지므로
+            # pattern_direction_is_bullish로 이 인스턴스의 실제 target_level 기준
+            # 방향을 판정한다 — 안 그러면 이런 타입은 항상 하락으로 잘못 취급된다.
+            bullish = pattern_direction_is_bullish(pattern)
             forward = bars_df.iloc[start_idx + _WINDOW:start_idx + _WINDOW + _MAX_FORWARD]
 
             outcome = "timeout"
@@ -103,24 +105,28 @@ def _replay_pattern_cases_sync(bars_df: pd.DataFrame, progress_code: str | None 
                 if bullish:
                     mfe = max(mfe, (high - entry_price) / max(entry_price, 1e-9))
                     mae = max(mae, (entry_price - low) / max(entry_price, 1e-9))
-                    if high >= pattern.target_level:
-                        outcome, bars_to_outcome = "success", step_no
-                        move_pct = (pattern.target_level - entry_price) / max(entry_price, 1e-9)
-                        break
+                    # 손절을 먼저 확인한다 — 한 봉 안에 목표와 손절을 둘 다 건드리면
+                    # (돌파 직후 흔한 변동성 큰 봉) 목표를 먼저 체크할 경우 항상
+                    # 성공으로 집계돼 승률이 구조적으로 부풀려진다. backtest_engine.py의
+                    # _resolve_bar_outcome()과 동일한 보수적 관행을 따른다.
                     if low <= pattern.invalidation_level:
                         outcome, bars_to_outcome = "fail", step_no
                         move_pct = (pattern.invalidation_level - entry_price) / max(entry_price, 1e-9)
                         break
-                else:
-                    mfe = max(mfe, (entry_price - low) / max(entry_price, 1e-9))
-                    mae = max(mae, (high - entry_price) / max(entry_price, 1e-9))
-                    if low <= pattern.target_level:
+                    if high >= pattern.target_level:
                         outcome, bars_to_outcome = "success", step_no
                         move_pct = (pattern.target_level - entry_price) / max(entry_price, 1e-9)
                         break
+                else:
+                    mfe = max(mfe, (entry_price - low) / max(entry_price, 1e-9))
+                    mae = max(mae, (high - entry_price) / max(entry_price, 1e-9))
                     if high >= pattern.invalidation_level:
                         outcome, bars_to_outcome = "fail", step_no
                         move_pct = (pattern.invalidation_level - entry_price) / max(entry_price, 1e-9)
+                        break
+                    if low <= pattern.target_level:
+                        outcome, bars_to_outcome = "success", step_no
+                        move_pct = (pattern.target_level - entry_price) / max(entry_price, 1e-9)
                         break
 
             if outcome == "timeout" and len(forward) > 0:
@@ -155,6 +161,10 @@ def _summarize_cases(cases: list[dict[str, Any]]) -> list[dict[str, Any]]:
         timeouts = [row for row in rows if row["outcome"] == "timeout"]
         resolved = wins + losses
         resolved_bars = [row["bars_to_outcome"] for row in resolved if row["bars_to_outcome"]]
+        # timeout(목표·손절 어디에도 안 닿고 흐지부지 끝난 경우)도 승률 분모(attempts)에
+        # 넣는다 — 해소된 표본만으로 계산하면 애매하게 끝난 경우가 통째로 빠져 승률이
+        # 실제보다 낙관적으로 보이는 편향이 생긴다 (backtest_engine.py와 동일한 관행).
+        attempts = len(resolved) + len(timeouts)
         stats.append(
             {
                 "pattern_type": pattern_type,
@@ -162,7 +172,8 @@ def _summarize_cases(cases: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "wins": len(wins),
                 "losses": len(losses),
                 "timeouts": len(timeouts),
-                "win_rate": round(len(wins) / len(resolved), 3) if resolved else None,
+                "win_rate": round(len(wins) / attempts, 3) if attempts else None,
+                "resolution_rate": round(len(resolved) / attempts, 3) if attempts else None,
                 "avg_bars_to_outcome": round(sum(resolved_bars) / len(resolved_bars), 1) if resolved_bars else None,
                 "avg_win_move_pct": round(sum(row["move_pct"] for row in wins) / len(wins), 4) if wins else None,
                 "avg_loss_move_pct": round(sum(row["move_pct"] for row in losses) / len(losses), 4) if losses else None,

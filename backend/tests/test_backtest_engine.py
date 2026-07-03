@@ -15,9 +15,9 @@ from app.services.backtest_engine import (
     _default_stats,
     _edge_score,
     _effective_sample_size,
-    _is_bullish,
     _resolve_bar_outcome,
 )
+from app.services.pattern_engine import PatternResult, pattern_direction_is_bullish
 
 
 class TestResolveBarOutcome:
@@ -114,14 +114,46 @@ class TestDefaultStats:
             assert set(stats[tf].keys()) == set(_DEFAULT_WIN_RATES.keys())
 
 
-class TestIsBullish:
-    @pytest.mark.parametrize("pt", ["double_bottom", "inverse_head_and_shoulders", "ascending_triangle", "cup_and_handle", "rounding_bottom", "rectangle"])
-    def test_bullish_patterns(self, pt):
-        assert _is_bullish(pt) is True
+def _pattern(pattern_type: str, neckline: float | None = None, target_level: float | None = None) -> PatternResult:
+    from datetime import datetime
 
-    @pytest.mark.parametrize("pt", ["double_top", "head_and_shoulders", "descending_triangle", "falling_channel"])
-    def test_non_bullish_patterns(self, pt):
-        assert _is_bullish(pt) is False
+    return PatternResult(
+        pattern_type=pattern_type,
+        state="confirmed",
+        grade="B",
+        start_dt=datetime(2023, 1, 1),
+        end_dt=datetime(2023, 3, 1),
+        neckline=neckline,
+        target_level=target_level,
+    )
+
+
+class TestPatternDirectionIsBullish:
+    """Regression: backtest_engine.py used to infer direction from a pure
+    type-string lookup (`pattern_type in BULLISH_PATTERNS`), which always
+    returned False for direction-neutral types (symmetric_triangle, rectangle,
+    rising_channel, falling_channel) regardless of which way the specific
+    instance actually broke out -- silently flipping win/loss classification
+    for any confirmed bullish breakout of these types.
+    """
+
+    @pytest.mark.parametrize("pt", ["double_bottom", "inverse_head_and_shoulders", "ascending_triangle", "cup_and_handle", "rounding_bottom", "vcp", "momentum_breakout"])
+    def test_type_locked_bullish_patterns(self, pt):
+        assert pattern_direction_is_bullish(_pattern(pt)) is True
+
+    @pytest.mark.parametrize("pt", ["double_top", "head_and_shoulders", "descending_triangle"])
+    def test_type_locked_bearish_patterns(self, pt):
+        assert pattern_direction_is_bullish(_pattern(pt)) is False
+
+    @pytest.mark.parametrize("pt", ["symmetric_triangle", "rectangle", "rising_channel", "falling_channel"])
+    def test_direction_neutral_pattern_bullish_instance(self, pt):
+        # target above neckline -> this specific instance broke out bullish.
+        assert pattern_direction_is_bullish(_pattern(pt, neckline=100.0, target_level=110.0)) is True
+
+    @pytest.mark.parametrize("pt", ["symmetric_triangle", "rectangle", "rising_channel", "falling_channel"])
+    def test_direction_neutral_pattern_bearish_instance(self, pt):
+        # target below neckline -> this specific instance broke down bearish.
+        assert pattern_direction_is_bullish(_pattern(pt, neckline=100.0, target_level=90.0)) is False
 
 
 class TestUniverseExpansion:

@@ -9,7 +9,7 @@ import logging
 from typing import Any
 
 from ..core.redis import cache_get, cache_set
-from .pattern_engine import BULLISH_PATTERNS, PatternEngine, PatternResult
+from .pattern_engine import PatternEngine, PatternResult, pattern_direction_is_bullish
 
 logger = logging.getLogger(__name__)
 
@@ -180,10 +180,6 @@ def _default_stats() -> dict[str, dict[str, dict[str, float | int | str]]]:
     }
 
 
-def _is_bullish(pattern_type: str) -> bool:
-    return pattern_type in BULLISH_PATTERNS
-
-
 def _resolve_bar_outcome(
     high: float, low: float, target: float, invalidation: float, *, bullish: bool
 ) -> bool | None:
@@ -300,7 +296,11 @@ def _backtest_stock_sync(timeframe: str, bars_df: Any) -> list[dict[str, Any]]:
 
             forward_bars = bars_df.iloc[start_idx + window:start_idx + window + max_forward]
             win: bool | None = None
-            bullish = _is_bullish(pattern.pattern_type)
+            # 대칭삼각형/직사각형/채널처럼 방향이 타입만으로 안 정해지는 패턴은
+            # _is_bullish(타입 문자열)만 보면 늘 베어리시로 잘못 취급된다(둘 중
+            # 어느 정적 집합에도 없어서). 이 인스턴스가 실제로 어느 방향으로
+            # 돌파했는지(target_level 기준)를 보는 pattern_direction_is_bullish를 쓴다.
+            bullish = pattern_direction_is_bullish(pattern)
             entry_price = float(window_df.iloc[-1]["close"])
             favorable_excursion = 0.0
             adverse_excursion = 0.0

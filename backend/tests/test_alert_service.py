@@ -45,6 +45,30 @@ class TestBearish:
         assert _kinds(alerts) == ["stop"]
 
 
+class TestDirectionNeutralPatterns:
+    """Regression: rectangle/symmetric_triangle/channels are direction-neutral TYPES --
+    the same type can break out bullish or bearish depending on the specific instance.
+    _evaluate_levels used to call the old _is_bullish(pattern_type), which always
+    returned False for these types regardless of actual direction, silently flipping
+    alert direction (e.g. reporting a "stop breach" for what was actually a bullish
+    target hit).
+    """
+
+    def test_rectangle_bullish_instance_uses_bullish_levels(self):
+        # target above neckline -> this instance broke out upward.
+        alerts = _evaluate_levels("rectangle", neckline=10_000, invalidation=9_000, target=11_000, price=11_200)
+        assert _kinds(alerts) == ["target"]
+
+    def test_rectangle_bearish_instance_uses_bearish_levels(self):
+        # target below neckline -> this instance broke down.
+        alerts = _evaluate_levels("rectangle", neckline=10_000, invalidation=11_000, target=9_000, price=8_800)
+        assert _kinds(alerts) == ["target"]
+
+    def test_rectangle_bearish_instance_stop_is_above(self):
+        alerts = _evaluate_levels("rectangle", neckline=10_000, invalidation=11_000, target=9_000, price=11_100)
+        assert _kinds(alerts) == ["stop"]
+
+
 class TestEdgeCases:
     def test_no_pattern(self):
         assert _evaluate_levels(None, neckline=10_000, invalidation=9_000, target=11_000, price=10_500) == []

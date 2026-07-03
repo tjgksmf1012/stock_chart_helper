@@ -11,7 +11,7 @@ from ..api.schemas import AnalysisResult, ReferenceCaseItem, ReferenceCaseRespon
 from ..core.redis import cache_get, cache_set
 from .backtest_engine import get_backtest_config, get_backtest_universe
 from .data_fetcher import get_data_fetcher
-from .pattern_engine import PatternEngine, PatternResult
+from .pattern_engine import PatternEngine, PatternResult, pattern_direction_is_bullish
 from .timeframe_service import timeframe_label
 
 REFERENCE_CASES_TTL = 60 * 60 * 6
@@ -287,15 +287,12 @@ def _outcome_from_future(pattern: PatternResult, window_df: pd.DataFrame, future
             "bars_to_resolution": None,
         }
 
-    bullish = pattern.pattern_type in {
-        "double_bottom",
-        "inverse_head_and_shoulders",
-        "ascending_triangle",
-        "rectangle",
-        "cup_and_handle",
-        "rounding_bottom",
-        "vcp",
-    }
+    # 예전엔 이 함수만의 하드코딩된 방향 집합을 따로 들고 있었다 — pattern_engine.py의
+    # BULLISH_PATTERNS/BEARISH_PATTERNS(단일 소스)와 따로 관리되다 보니 momentum_breakout이
+    # 빠져 있었고, rectangle이 방향중립으로 바뀐 뒤에도 갱신이 안 돼 계속 강세로만
+    # 취급했다. 또한 목록에 없는 타입(대칭삼각형/채널 등)은 전부 `else`로 새서 무조건
+    # 약세 취급됐다. pattern_direction_is_bullish로 단일 소스를 참조해 이 문제를 없앤다.
+    bullish = pattern_direction_is_bullish(pattern)
     entry = _safe_float(window_df["close"].iloc[-1], 0.0)
     target = pattern.target_level
     invalidation = pattern.invalidation_level
@@ -309,19 +306,13 @@ def _outcome_from_future(pattern: PatternResult, window_df: pd.DataFrame, future
         ts = row.get("datetime") or row.get("date")
         resolved = ts.isoformat() if hasattr(ts, "isoformat") else str(ts)
         bars_to_resolution = int(index) + 1
+        # 손절을 먼저 확인한다 — 일봉 OHLC만으로는 한 봉 안에서 고가와 저가 중
+        # 어느 쪽이 먼저 찍혔는지 알 수 없다. 목표가를 먼저 체크하면 두 값을 모두
+        # 건드리는 변동성 큰 봉(돌파 직후 흔함)이 항상 "성공"으로 표시되어, 사용자에게
+        # 보여주는 "실제 과거 사례"의 성공률이 구조적으로 부풀려진다.
         if bullish:
             max_favorable_pct = max(max_favorable_pct, (high - entry) / max(entry, 1.0))
             max_adverse_pct = max(max_adverse_pct, (entry - low) / max(entry, 1.0))
-            if target is not None and high >= target:
-                return {
-                    "outcome_label": "성공",
-                    "outcome_summary": "익절 기준가를 먼저 찍고 진행된 실제 과거 사례입니다.",
-                    "resolution_date": resolved,
-                    "outcome_return_pct": round((high - entry) / max(entry, 1.0), 4),
-                    "max_favorable_pct": round(max_favorable_pct, 4),
-                    "max_adverse_pct": round(max_adverse_pct, 4),
-                    "bars_to_resolution": bars_to_resolution,
-                }
             if invalidation is not None and low <= invalidation:
                 return {
                     "outcome_label": "실패",
@@ -332,25 +323,35 @@ def _outcome_from_future(pattern: PatternResult, window_df: pd.DataFrame, future
                     "max_adverse_pct": round(max_adverse_pct, 4),
                     "bars_to_resolution": bars_to_resolution,
                 }
-        else:
-            max_favorable_pct = max(max_favorable_pct, (entry - low) / max(entry, 1.0))
-            max_adverse_pct = max(max_adverse_pct, (high - entry) / max(entry, 1.0))
-            if target is not None and low <= target:
+            if target is not None and high >= target:
                 return {
                     "outcome_label": "성공",
-                    "outcome_summary": "익절 기준가를 먼저 달성한 실제 과거 사례입니다.",
+                    "outcome_summary": "익절 기준가를 먼저 찍고 진행된 실제 과거 사례입니다.",
                     "resolution_date": resolved,
-                    "outcome_return_pct": round((entry - low) / max(entry, 1.0), 4),
+                    "outcome_return_pct": round((high - entry) / max(entry, 1.0), 4),
                     "max_favorable_pct": round(max_favorable_pct, 4),
                     "max_adverse_pct": round(max_adverse_pct, 4),
                     "bars_to_resolution": bars_to_resolution,
                 }
+        else:
+            max_favorable_pct = max(max_favorable_pct, (entry - low) / max(entry, 1.0))
+            max_adverse_pct = max(max_adverse_pct, (high - entry) / max(entry, 1.0))
             if invalidation is not None and high >= invalidation:
                 return {
                     "outcome_label": "실패",
                     "outcome_summary": "손절 기준가를 먼저 건드린 실제 과거 사례입니다.",
                     "resolution_date": resolved,
                     "outcome_return_pct": round((entry - high) / max(entry, 1.0), 4),
+                    "max_favorable_pct": round(max_favorable_pct, 4),
+                    "max_adverse_pct": round(max_adverse_pct, 4),
+                    "bars_to_resolution": bars_to_resolution,
+                }
+            if target is not None and low <= target:
+                return {
+                    "outcome_label": "성공",
+                    "outcome_summary": "익절 기준가를 먼저 달성한 실제 과거 사례입니다.",
+                    "resolution_date": resolved,
+                    "outcome_return_pct": round((entry - low) / max(entry, 1.0), 4),
                     "max_favorable_pct": round(max_favorable_pct, 4),
                     "max_adverse_pct": round(max_adverse_pct, 4),
                     "bars_to_resolution": bars_to_resolution,
@@ -620,12 +621,13 @@ async def build_reference_cases(
 
     unique_items: list[ReferenceCaseItem] = []
     seen_keys: set[str] = set()
+    # 유사도로만 정렬한다 — outcome_label(성공/부분 성공 여부)을 타이브레이커로 쓰면
+    # 유사도가 동점일 때(흔함, 소수점 반올림 때문에) 성공한 사례가 실패한 사례보다
+    # 우선적으로 살아남아 limit 안에 들어간다. "실제 과거 사례"를 보여주는 목적 자체가
+    # 미래를 미리 안 상태로 얼마나 비슷했는지를 보여주는 것인데, 결과로 다시
+    # 정렬하면 사용자에게 승리한 사례만 골라 보여주는 것과 같아진다.
     for index, item in enumerate(
-        sorted(
-            snapshots,
-            key=lambda row: (row.similarity_score, row.outcome_label == "성공", row.outcome_label == "부분 성공"),
-            reverse=True,
-        )
+        sorted(snapshots, key=lambda row: row.similarity_score, reverse=True)
     ):
         key = f"{item.symbol_code}:{item.signal_date}:{index}"
         if key in seen_keys:
