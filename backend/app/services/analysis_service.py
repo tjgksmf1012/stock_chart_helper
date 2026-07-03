@@ -4,6 +4,7 @@ Shared analysis pipeline for symbol detail pages and scanner snapshots.
 
 from __future__ import annotations
 
+import math
 from datetime import UTC, datetime
 from typing import Any
 
@@ -18,6 +19,7 @@ from .pattern_engine import (
     PatternEngine,
     PatternResult,
     _breakout_index as _pe_breakout_index,
+    pattern_direction_is_bullish,
 )
 from .market_regime_service import get_market_regime
 from .probability_engine import compute_probability
@@ -37,9 +39,41 @@ _REGIME_FIT_SCORES = {
 
 
 def _regime_fit_score(market_regime: dict, market: str) -> float:
-    """시장(KOSPI/KOSDAQ) 체제를 0~1 정합도 점수로 변환. 데이터 없으면 중립(0.5)."""
+    """시장(KOSPI/KOSDAQ) 체제를 0~1 정합도 점수로 변환. 데이터 없으면 중립(0.5).
+
+    market_regime_service._classify_regime()의 bull/sideways/correction/bear 라벨은
+    하드 임계값(예: ma_spread_pct<3.0)으로 갈리는 이산 분류다. 예전엔 그 라벨을 바로
+    4단계 점수표에 꽂아 썼는데, 지수가 정배열/역배열 경계를 근소하게 넘나들 때마다
+    (예: MA20이 MA60을 0.1%p 위/아래로 오갈 때) 그 순간 스캔되는 모든 종목의
+    textbook_similarity가 동시에 크게 흔들렸다. 대신 라벨을 만드는 데 쓰인 것과 같은
+    MA 관계를 연속값(시그모이드)으로 다시 계산해, 경계 근처에서도 완만하게 이어지게
+    한다. MA 데이터가 없으면(구 캐시 등) 라벨 기반 표로 폴백한다.
+    """
     sub = market_regime.get("kosdaq" if market == "KOSDAQ" else "kospi") or {}
-    return _REGIME_FIT_SCORES.get(sub.get("regime", "unknown"), 0.5)
+    regime = sub.get("regime", "unknown")
+    if regime == "unknown":
+        return 0.5
+
+    current = sub.get("current") or 0.0
+    ma20 = sub.get("ma20")
+    ma60 = sub.get("ma60")
+    ma120 = sub.get("ma120")
+    if not current or not ma20 or not ma60 or not ma120:
+        return _REGIME_FIT_SCORES.get(regime, 0.5)
+
+    def _sigmoid_pct(pct: float, scale: float = 2.5) -> float:
+        return 1.0 / (1.0 + math.exp(-pct / scale))
+
+    short_gap_pct = (ma20 - ma60) / ma60 * 100
+    long_gap_pct = (ma60 - ma120) / ma120 * 100
+    price_gap_pct = (current - ma20) / ma20 * 100
+
+    alignment = (
+        0.40 * _sigmoid_pct(short_gap_pct)
+        + 0.30 * _sigmoid_pct(long_gap_pct)
+        + 0.30 * _sigmoid_pct(price_gap_pct)
+    )
+    return round(float(min(1.0, max(0.0, 0.10 + 0.80 * alignment))), 3)
 
 
 def _relative_strength_fit(df: pd.DataFrame, timeframe: str, market_regime: dict, market: str) -> float:
@@ -130,14 +164,6 @@ _FETCH_STATUS_LABELS.update(
         "placeholder_pending": "빠른 예열 후보",
     }
 )
-
-
-def _is_bullish(pattern_type: str) -> bool:
-    return pattern_type in _BULLISH_PATTERNS
-
-
-def _is_bearish(pattern_type: str) -> bool:
-    return pattern_type in _BEARISH_PATTERNS
 
 
 def _reentry_pattern_profile(pattern_type: str) -> dict[str, Any]:
@@ -396,8 +422,11 @@ def _historical_pattern_outcome(
     timestamps = _timestamp_series(df)
     future_df = df.loc[timestamps >= anchor].copy()
     future_times = timestamps.loc[future_df.index]
-    bullish = _is_bullish(pattern.pattern_type)
-    bearish = _is_bearish(pattern.pattern_type)
+    # pattern_direction_is_bullish는 대칭삼각형/직사각형/채널처럼 타입만으로 방향이
+    # 안 정해지는 패턴도 target_level 기준으로 실제 방향을 판정해 항상 결정적인
+    # 답을 준다. 예전에 _is_bullish/_is_bearish를 따로 불렀을 때는 이런 타입에서
+    # 둘 다 False가 나와 target_hit/invalidated 판정 자체가 통째로 스킵됐다.
+    bullish = pattern_direction_is_bullish(pattern)
 
     for idx, row in future_df.iterrows():
         ts = future_times.loc[idx]
@@ -410,7 +439,7 @@ def _historical_pattern_outcome(
                 return "played_out", ts_text, None
             if low <= invalidation:
                 return "invalidated", None, ts_text
-        elif bearish:
+        else:
             if low <= target:
                 return "played_out", ts_text, None
             if high >= invalidation:
@@ -437,14 +466,12 @@ def _refresh_pattern_state(
     refreshed.state = historical_state
 
     if historical_state not in {"played_out", "invalidated"}:
-        bullish = _is_bullish(refreshed.pattern_type)
-        bearish = _is_bearish(refreshed.pattern_type)
-        if bullish:
+        if pattern_direction_is_bullish(refreshed):
             if current_low <= invalidation:
                 refreshed.state = "invalidated"
             elif current_high >= target or current_close >= target:
                 refreshed.state = "played_out"
-        elif bearish:
+        else:
             if current_high >= invalidation:
                 refreshed.state = "invalidated"
             elif current_low <= target or current_close <= target:
@@ -477,12 +504,10 @@ def _completion_proximity(pattern: PatternResult, current_close: float) -> float
     if neckline is None or invalidation is None or neckline == invalidation:
         return 0.5 if pattern.state == "confirmed" else 0.35
 
-    if _is_bullish(pattern.pattern_type):
+    if pattern_direction_is_bullish(pattern):
         progress = (current_close - invalidation) / (neckline - invalidation)
-    elif _is_bearish(pattern.pattern_type):
-        progress = (invalidation - current_close) / (invalidation - neckline)
     else:
-        progress = 0.5
+        progress = (invalidation - current_close) / (invalidation - neckline)
 
     # 상태별 baseline을 고정값이 아니라 [low, high] 범위로 두고 형성 품질로
     # 보간한다 — 예전에는 forming 패턴이 전부 0.25로 깔려서 "완성 가능성"이
@@ -598,10 +623,7 @@ def _bars_since_trigger(df: pd.DataFrame, pattern: PatternResult) -> int | None:
     neckline = pattern.neckline
     if neckline is None:
         return None
-    bullish = _is_bullish(pattern.pattern_type)
-    bearish = _is_bearish(pattern.pattern_type)
-    if not bullish and not bearish:
-        return None
+    bullish = pattern_direction_is_bullish(pattern)
     start_idx = _last_key_point_position(df, pattern)
     breakout_idx = _pe_breakout_index(df, neckline, start_idx, bullish=bullish)
     if breakout_idx is None:
@@ -640,23 +662,7 @@ def _liquidity_score(turnover_billion: float) -> float:
     return 0.25
 
 
-def _regime_match(df: pd.DataFrame, pattern_type: str) -> float:
-    close = pd.to_numeric(df["close"], errors="coerce").dropna()
-    if len(close) < 20:
-        return 0.5
-    fast = close.tail(min(len(close), 20)).mean()
-    slow = close.tail(min(len(close), 60)).mean()
-    if slow == 0:
-        return 0.5
-    bullish = fast >= slow
-    if _is_bullish(pattern_type):
-        return 0.68 if bullish else 0.38
-    if _is_bearish(pattern_type):
-        return 0.68 if not bullish else 0.38
-    return 0.5
-
-
-def _trend_alignment_profile(df: pd.DataFrame, pattern_type: str) -> dict[str, Any]:
+def _trend_alignment_profile(df: pd.DataFrame, pattern: PatternResult) -> dict[str, Any]:
     close = pd.to_numeric(df["close"], errors="coerce").dropna()
     if len(close) < 80:
         return {
@@ -680,8 +686,7 @@ def _trend_alignment_profile(df: pd.DataFrame, pattern_type: str) -> dict[str, A
     else:
         trend_direction = "sideways"
 
-    bullish = _is_bullish(pattern_type)
-    bearish = _is_bearish(pattern_type)
+    bullish = pattern_direction_is_bullish(pattern)
 
     if bullish:
         if trend_direction == "up":
@@ -693,7 +698,7 @@ def _trend_alignment_profile(df: pd.DataFrame, pattern_type: str) -> dict[str, A
         else:
             score = 0.24
             warning = "하락 추세에서 패턴이 감지됩니다. 추세 전환 신호가 명확히 확인된 후 진입하세요."
-    elif bearish:
+    else:
         if trend_direction == "down":
             score = 0.92 if last_close < fast_now else 0.82
             warning = ""
@@ -703,9 +708,6 @@ def _trend_alignment_profile(df: pd.DataFrame, pattern_type: str) -> dict[str, A
         else:
             score = 0.24
             warning = "상승 추세에서 하락 패턴이 감지됩니다. 추세 전환 신호를 확인 후 진입하세요."
-    else:
-        score = 0.5
-        warning = "패턴 방향성이 중립입니다. 추세 방향에 따른 진입 전략을 별도로 세우는 것이 좋습니다."
 
     return {
         "trend_alignment_score": round(score, 3),
@@ -714,7 +716,7 @@ def _trend_alignment_profile(df: pd.DataFrame, pattern_type: str) -> dict[str, A
     }
 
 
-def _wyckoff_profile(df: pd.DataFrame, pattern_type: str) -> dict[str, Any]:
+def _wyckoff_profile(df: pd.DataFrame, pattern: PatternResult) -> dict[str, Any]:
     close = pd.to_numeric(df["close"], errors="coerce").dropna()
     volume = pd.to_numeric(df["volume"], errors="coerce").dropna()
     if len(close) < 80:
@@ -747,8 +749,8 @@ def _wyckoff_profile(df: pd.DataFrame, pattern_type: str) -> dict[str, Any]:
         else 1.0
     )
 
-    bullish = _is_bullish(pattern_type)
-    bearish = _is_bearish(pattern_type)
+    bullish = pattern_direction_is_bullish(pattern)
+    bearish = not bullish
 
     phase = "neutral"
     score = 0.52
@@ -786,7 +788,7 @@ def _wyckoff_profile(df: pd.DataFrame, pattern_type: str) -> dict[str, Any]:
     }
 
 
-def _intraday_session_profile(df: pd.DataFrame, timeframe: str, pattern_type: str) -> dict[str, Any]:
+def _intraday_session_profile(df: pd.DataFrame, timeframe: str, pattern: PatternResult) -> dict[str, Any]:
     if not is_intraday_timeframe(timeframe) or "datetime" not in df.columns:
         return {
             "intraday_session_phase": "neutral",
@@ -824,8 +826,8 @@ def _intraday_session_profile(df: pd.DataFrame, timeframe: str, pattern_type: st
         float(recent_volume.mean()) / max(float(base_volume.mean()) if not base_volume.empty else float(recent_volume.mean()), 1.0)
     )
 
-    bullish = _is_bullish(pattern_type)
-    bearish = _is_bearish(pattern_type)
+    bullish = pattern_direction_is_bullish(pattern)
+    bearish = not bullish
 
     if hhmm < 1000:
         phase = "open_drive"
@@ -919,18 +921,14 @@ def _opportunity_profile(pattern: PatternResult, current_close: float) -> dict[s
             "stop_distance_pct": 0.0,
         }
 
-    bullish = _is_bullish(pattern.pattern_type)
-    bearish = _is_bearish(pattern.pattern_type)
+    bullish = pattern_direction_is_bullish(pattern)
 
     if bullish:
         target_distance = max(0.0, target - current_close)
         stop_distance = max(0.0, current_close - invalidation)
-    elif bearish:
+    else:
         target_distance = max(0.0, current_close - target)
         stop_distance = max(0.0, invalidation - current_close)
-    else:
-        target_distance = abs(target - current_close)
-        stop_distance = abs(current_close - invalidation)
 
     target_distance_pct = target_distance / current_close
     stop_distance_pct = stop_distance / current_close
@@ -1154,14 +1152,16 @@ def _entry_window_profile(
     neckline = pattern.neckline
     invalidation = pattern.invalidation_level
     target = pattern.target_level
-    bullish = _is_bullish(pattern.pattern_type)
-    bearish = _is_bearish(pattern.pattern_type)
-    if neckline is None or invalidation is None or target is None or (not bullish and not bearish):
+    if neckline is None or invalidation is None or target is None:
         return {
             "entry_window_score": 0.28,
             "entry_window_label": "재확인 필요",
             "entry_window_summary": f"{label} 기준 핵심 가격대가 충분히 잡히지 않아 보수적으로 해석하는 편이 좋습니다.",
         }
+    # 대칭삼각형/직사각형/채널은 (not bullish and not bearish)가 항상 참이 되어 가격대가
+    # 멀쩡히 잡혀 있어도 이 함수가 매번 조기 반환됐다 — 이 함수 전체(그리고 이 세션
+    # 초반에 고친 절벽 완화 로직)가 이 4개 타입에는 사실상 전혀 적용되지 않고 있었다.
+    bullish = pattern_direction_is_bullish(pattern)
 
     trigger_span = max(abs(neckline - invalidation), max(current_close * 0.012, 1.0))
     if bullish:
@@ -1406,7 +1406,7 @@ def _reentry_factor_breakdown(
             "thresholds": profile["thresholds"],
         }
 
-    bullish = _is_bullish(pattern.pattern_type) or not _is_bearish(pattern.pattern_type)
+    bullish = pattern_direction_is_bullish(pattern)
     neckline = pattern.neckline
     window = min(len(df), _reentry_window_size(timeframe))
     recent = df.tail(window).copy()
@@ -1561,7 +1561,7 @@ def _reentry_profile(
     target = pattern.target_level
     anchor_level = neckline if neckline is not None else current_close
     span = max(abs((target or current_close) - anchor_level), max(current_close * 0.015, 1.0))
-    bullish = _is_bullish(pattern.pattern_type) or not _is_bearish(pattern.pattern_type)
+    bullish = pattern_direction_is_bullish(pattern)
 
     distance_to_trigger = 0.0
     if neckline is not None:
@@ -2255,9 +2255,8 @@ def _decision_support_profile(
 ) -> dict[str, Any]:
     flags: list[str] = []
     checklist: list[str] = []
-    bullish = _is_bullish(pattern.pattern_type)
-    bearish = _is_bearish(pattern.pattern_type)
-    direction = "상승" if bullish or (not bearish and p_up >= p_down) else "하락"
+    bullish = pattern_direction_is_bullish(pattern)
+    direction = "상승" if bullish else "하락"
     pattern_name = pattern.pattern_type.replace("_", " ")
 
     if invalidated_at or pattern.state == "invalidated":
@@ -2282,7 +2281,7 @@ def _decision_support_profile(
         flags.append("일목 구조가 아직 약해 구름 지지 또는 이탈 확인이 더 필요합니다.")
     if bullish and wyckoff_phase in {"distribution", "markdown"}:
         flags.append("와이코프 국면이 상승 패턴과 잘 맞지 않습니다.")
-    if bearish and wyckoff_phase in {"accumulation", "markup"}:
+    if not bullish and wyckoff_phase in {"accumulation", "markup"}:
         flags.append("와이코프 국면이 하락 패턴과 잘 맞지 않습니다.")
     if is_intraday_timeframe(timeframe) and intraday_session_score < 0.48:
         flags.append("장중 세션 컨디션이 지금 구간에 우호적이지 않습니다.")
@@ -2863,7 +2862,7 @@ def _build_projection(
     target = pattern.target_level or current_close
     invalidation = pattern.invalidation_level or current_close
     span = max(abs(target - neckline), abs(current_close - invalidation), current_close * 0.04)
-    bullish = _is_bullish(pattern.pattern_type)
+    bullish = pattern_direction_is_bullish(pattern)
     pattern_name = pattern.pattern_type.replace("_", " ")
     steps = _projection_horizon(timeframe)
     reentry_case = str((reentry or {}).get("reentry_case") or "")
@@ -3339,7 +3338,7 @@ def _compute_risk_penalty(
         risk_penalty -= 0.02
     if ichimoku["prior_high_structure"] == "recent_high_cleared_old_high_pending":
         risk_penalty += 0.04
-    if _is_bullish(pattern.pattern_type):
+    if pattern_direction_is_bullish(pattern):
         if wyckoff_profile["wyckoff_phase"] == "markdown":
             risk_penalty += 0.16
         elif wyckoff_profile["wyckoff_phase"] == "distribution":
@@ -3348,7 +3347,7 @@ def _compute_risk_penalty(
             risk_penalty -= 0.03
         elif wyckoff_profile["wyckoff_phase"] == "markup":
             risk_penalty -= 0.02
-    elif _is_bearish(pattern.pattern_type):
+    else:
         if wyckoff_profile["wyckoff_phase"] == "markup":
             risk_penalty += 0.16
         elif wyckoff_profile["wyckoff_phase"] == "accumulation":
@@ -3435,9 +3434,9 @@ async def analyze_symbol_dataframe(
     avg_mae_pct = float(stats.get("avg_mae_pct", 0.0))
     avg_bars_to_outcome = float(stats.get("avg_bars_to_outcome", 0.0))
     historical_edge_score = float(stats.get("historical_edge_score", 0.5))
-    trend_profile = _trend_alignment_profile(df, best_pattern.pattern_type)
-    wyckoff_profile = _wyckoff_profile(df, best_pattern.pattern_type)
-    intraday_profile = _intraday_session_profile(df, timeframe, best_pattern.pattern_type)
+    trend_profile = _trend_alignment_profile(df, best_pattern)
+    wyckoff_profile = _wyckoff_profile(df, best_pattern)
+    intraday_profile = _intraday_session_profile(df, timeframe, best_pattern)
     ichimoku = _ichimoku_profile(df)
     regime_match = trend_profile["trend_alignment_score"]
     opportunity = _opportunity_profile(best_pattern, current_close)

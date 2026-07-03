@@ -382,3 +382,95 @@ class TestSymmetricTriangleCanReachConfirmed:
         assert symmetric[0].state == "confirmed", (
             f"clean breakout above the apex should reach 'confirmed', got {symmetric[0].state}"
         )
+
+
+class TestRectangleCanBreakDownBearish:
+    """Regression: _detect_rectangle only ever checked a breakout above resistance.
+    A clean breakdown below support was invisible -- state stayed 'forming' forever,
+    never 'invalidated', and the stale upside target kept pointing above a price that
+    had already broken the other way.
+    """
+
+    def test_clean_downward_breakdown_reaches_confirmed_bearish(self):
+        from app.services.pattern_engine import PatternEngine
+        from app.services.swing_points import SwingPoint
+
+        import numpy as np
+        import pandas as pd
+
+        closes = (
+            list(np.linspace(11_000, 12_000, 10))  # up to first high (resistance test)
+            + list(np.linspace(12_000, 10_000, 10))  # down to first low (support test)
+            + list(np.linspace(10_000, 11_950, 10))  # up to second high
+            + list(np.linspace(11_950, 10_050, 10))  # down to second low
+            + list(np.linspace(10_050, 12_050, 10))  # up to third high
+            + list(np.linspace(12_050, 10_000, 10))  # down to third low
+            + list(np.linspace(10_000, 9_000, 15))  # clean breakdown below support (~10,017)
+        )
+        df = _build_ohlcv_from_closes(closes)
+        dates = pd.Timestamp("2023-01-02") + pd.to_timedelta(np.arange(len(df)), unit="D")
+
+        def sp(idx: int, price: float, kind: str) -> SwingPoint:
+            return SwingPoint(index=idx, datetime=dates[idx].to_pydatetime(), price=price, kind=kind, strength=5)
+
+        swings = [
+            sp(10, 12_000, "high"),
+            sp(20, 10_000, "low"),
+            sp(30, 11_950, "high"),
+            sp(40, 10_050, "low"),
+            sp(50, 12_050, "high"),
+            sp(60, 10_000, "low"),
+        ]
+
+        engine = PatternEngine()
+        results = engine._detect_rectangle(df, swings, regime_fit=0.6, timeframe="1d")
+
+        rectangles = [r for r in results if r.pattern_type == "rectangle"]
+        assert rectangles, "expected a rectangle detection"
+        rect = rectangles[0]
+        assert rect.state == "confirmed", f"clean breakdown below support should reach 'confirmed', got {rect.state}"
+        assert rect.target_level is not None and rect.invalidation_level is not None
+        # bearish: target below the breakout level (support), invalidation above it.
+        assert rect.target_level < rect.neckline < rect.invalidation_level
+
+
+class TestDescendingTriangleRequiresFlatSupport:
+    """Regression: descending_triangle used to match whenever highs were descending
+    and lows were 'not ascending' -- which also matched lows that were clearly
+    descending too (a parallel down-channel/wedge, not a converging triangle). A real
+    descending triangle needs roughly flat support, mirroring how ascending_triangle
+    already requires roughly flat resistance.
+    """
+
+    def test_parallel_falling_highs_and_lows_is_not_a_descending_triangle(self):
+        from app.services.pattern_engine import PatternEngine
+        from app.services.swing_points import SwingPoint
+        from datetime import datetime, timedelta
+
+        base = datetime(2023, 1, 2)
+
+        def sp(idx: int, price: float, kind: str) -> SwingPoint:
+            return SwingPoint(index=idx, datetime=base + timedelta(days=idx), price=price, kind=kind, strength=5)
+
+        # Highs fall 12,000 -> 11,000 -> 10,000; lows fall 9,000 -> 8,000 -> 7,000 --
+        # both clearly descending in parallel, not converging on a flat support line.
+        swings = [
+            sp(10, 12_000, "high"),
+            sp(15, 9_000, "low"),
+            sp(30, 11_000, "high"),
+            sp(35, 8_000, "low"),
+            sp(50, 10_000, "high"),
+            sp(55, 7_000, "low"),
+        ]
+        import numpy as np
+
+        closes = list(np.linspace(12_000, 7_000, 60))
+        df = _build_ohlcv_from_closes(closes)
+
+        engine = PatternEngine()
+        results = engine._detect_triangles(df, swings, regime_fit=0.6, timeframe="1d")
+
+        descending = [r for r in results if r.pattern_type == "descending_triangle"]
+        assert not descending, (
+            f"parallel falling highs/lows should not be classified as descending_triangle, got {results}"
+        )

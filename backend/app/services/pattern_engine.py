@@ -40,11 +40,18 @@ PatternType = Literal[
 
 # 방향성 분류의 단일 소스. 새 패턴을 추가/변경할 때 이 두 세트만 갱신하면
 # analysis_service/probability_engine/sector_service/money_flow_service에 모두 반영된다.
+#
+# rectangle/symmetric_triangle/rising_channel/falling_channel은 둘 중 어느 세트에도
+# 없다 — 이 구조들은 위/아래 어느 쪽으로도 돌파할 수 있어 타입만으로 방향을 못 정한다
+# (대칭삼각형처럼 개별 탐지 결과마다 실제 돌파 방향이 다를 수 있음). 이런 타입은
+# `pattern_type in BULLISH_PATTERNS` 같은 정적 집합 조회로 방향을 판정하면 안 되고
+# 반드시 pattern_direction_is_bullish()로 해당 PatternResult 인스턴스의 실제
+# target_level/neckline을 봐야 한다 — 안 그러면 항상 "베어리시도 불리시도 아님"으로
+# 새서 하드코딩된 기본값(대개 베어리시)으로 잘못 취급된다.
 BULLISH_PATTERNS: frozenset[str] = frozenset({
     "double_bottom",
     "inverse_head_and_shoulders",
     "ascending_triangle",
-    "rectangle",
     "cup_and_handle",
     "rounding_bottom",
     "vcp",
@@ -54,6 +61,13 @@ BEARISH_PATTERNS: frozenset[str] = frozenset({
     "double_top",
     "head_and_shoulders",
     "descending_triangle",
+})
+# 타입만으로 방향이 안 정해지는 패턴들 — 개별 인스턴스의 target_level/neckline을 봐야 한다.
+DIRECTION_NEUTRAL_PATTERNS: frozenset[str] = frozenset({
+    "symmetric_triangle",
+    "rectangle",
+    "rising_channel",
+    "falling_channel",
 })
 
 
@@ -89,6 +103,36 @@ class PatternResult:
 
     key_points: list[dict] = field(default_factory=list)
     is_provisional: bool = True
+
+
+def resolve_pattern_direction(
+    pattern_type: str | None, neckline: float | None, target_level: float | None
+) -> bool:
+    """패턴 타입 + 핵심 가격대만으로 강세/약세를 판정하는 저수준 버전.
+
+    대부분의 패턴 타입은 타입 자체가 방향을 고정하므로(예: double_bottom은 항상
+    강세) BULLISH_PATTERNS/BEARISH_PATTERNS 정적 집합으로 충분하다. 하지만
+    DIRECTION_NEUTRAL_PATTERNS(대칭삼각형/직사각형/채널)는 같은 타입이라도 개별
+    탐지 결과마다 위로 돌파했는지 아래로 이탈했는지가 다르므로, target_level이
+    neckline보다 위/아래인지로 실제 방향을 판정해야 한다. 이걸 안 하면(예:
+    `pattern_type in BULLISH_PATTERNS`만 보면) 이런 타입은 항상 "둘 다 아님"으로
+    새서, 실제로는 상승 돌파인데 하락으로 잘못 취급되는 식의 오류가 생긴다.
+
+    PatternResult 객체가 없는 호출부(예: 알림처럼 가격 레벨만 따로 들고 있는 곳)를
+    위한 버전이다 — 인스턴스가 있으면 pattern_direction_is_bullish()를 대신 쓴다.
+    """
+    if pattern_type in BULLISH_PATTERNS:
+        return True
+    if pattern_type in BEARISH_PATTERNS:
+        return False
+    if target_level is not None and neckline is not None:
+        return target_level >= neckline
+    return True
+
+
+def pattern_direction_is_bullish(pattern: PatternResult) -> bool:
+    """이 특정 탐지 결과가 실제로 강세/약세 중 어느 쪽인지 판정한다."""
+    return resolve_pattern_direction(pattern.pattern_type, pattern.neckline, pattern.target_level)
 
 
 def _compute_textbook_similarity(r: PatternResult) -> float:
@@ -1308,8 +1352,8 @@ class PatternEngine:
 
         high_descending = len(h_series) >= 2 and h_series[-1].price < h_series[0].price
         low_ascending = len(l_series) >= 2 and l_series[-1].price > l_series[0].price
-        low_descending = len(l_series) >= 2 and l_series[-1].price < l_series[0].price
         high_flat = len(h_series) >= 2 and abs(h_series[-1].price - h_series[0].price) / h_series[0].price < 0.02
+        low_flat = len(l_series) >= 2 and abs(l_series[-1].price - l_series[0].price) / l_series[0].price < 0.02
 
         current_close = float(df["close"].iloc[-1])
         last_dt = pd.Timestamp(dates[-1]).to_pydatetime()
@@ -1340,7 +1384,11 @@ class PatternEngine:
             )
             breakout_level = resistance
             bullish_breakout = True
-        elif high_descending and not low_ascending:
+        elif high_descending and low_flat:
+            # 진짜 하락삼각형은 지지선이 대체로 평평해야 한다(high_flat과 대칭인 기준).
+            # "low_ascending이 아니면 전부"로 판정하면 저점도 함께 뚜렷하게 떨어지는
+            # 평행 하락채널/쐐기까지 수렴형 삼각형으로 잘못 분류된다 — 그 경우는
+            # 수렴이 아니라 평행이라 지지선을 기준으로 한 돌파 트리거 자체가 안 맞는다.
             pattern_type = "descending_triangle"
             support = sum(l.price for l in l_series) / len(l_series)
             state = "confirmed" if current_close < support * 0.995 else (
@@ -1551,52 +1599,80 @@ class PatternEngine:
 
         h_series = highs[-3:]
         l_series = lows[-3:]
-        h_std = np.std([h.price for h in h_series]) / np.mean([h.price for h in h_series])
-        l_std = np.std([l.price for l in l_series]) / np.mean([l.price for l in l_series])
+        h_mean = np.mean([h.price for h in h_series])
+        l_mean = np.mean([l.price for l in l_series])
+        if h_mean <= 0 or l_mean <= 0:
+            return []
+        h_std = np.std([h.price for h in h_series]) / h_mean
+        l_std = np.std([l.price for l in l_series]) / l_mean
 
         if h_std > 0.03 or l_std > 0.03:
             return []
 
-        resistance = np.mean([h.price for h in h_series])
-        support = np.mean([l.price for l in l_series])
-        if (resistance - support) / support < 0.03:
+        resistance = h_mean
+        support = l_mean
+        if support <= 0 or (resistance - support) / support < 0.03:
             return []
 
         current_close = float(df["close"].iloc[-1])
         last_dt = pd.Timestamp(dates[-1]).to_pydatetime()
+        # 직사각형(박스)은 위/아래 어느 쪽으로도 이탈할 수 있는 방향중립 구조다 —
+        # 저항선 위 돌파만 보면(구 버전) 지지선 붕괴는 영원히 "forming"에 머물러
+        # invalidated로도 안 넘어가고, 남은 목표가는 이미 의미 없는 상단 목표를
+        # 계속 가리키게 된다.
         if current_close > resistance * 1.005:
             state = "confirmed"
+            bullish_breakout = True
+            breakout_level = resistance
+        elif current_close < support * 0.995:
+            state = "confirmed"
+            bullish_breakout = False
+            breakout_level = support
         elif current_close > resistance * 0.995:
             state = "armed"
+            bullish_breakout = True
+            breakout_level = resistance
+        elif current_close < support * 1.005:
+            state = "armed"
+            bullish_breakout = False
+            breakout_level = support
         else:
+            dist_to_resistance = resistance - current_close
+            dist_to_support = current_close - support
+            bullish_breakout = dist_to_resistance <= dist_to_support
+            breakout_level = resistance if bullish_breakout else support
             state = "forming"
-        breakout_idx = _breakout_index(df, resistance, max(h.index for h in h_series[-2:] + l_series[-2:]), bullish=True)
-        breakout_quality = _breakout_quality_score(df, breakout_idx, resistance, bullish=True)
-        retest_quality = _retest_quality_score(df, breakout_idx, resistance, bullish=True)
+        breakout_idx = _breakout_index(
+            df, breakout_level, max(h.index for h in h_series[-2:] + l_series[-2:]), bullish=bullish_breakout
+        )
+        breakout_quality = _breakout_quality_score(df, breakout_idx, breakout_level, bullish=bullish_breakout)
+        retest_quality = _retest_quality_score(df, breakout_idx, breakout_level, bullish=bullish_breakout)
         vol_score = _volume_context_score(df, min(h_series[0].index, l_series[0].index), len(df) - 1)
         volat_score = _volatility_context_score(df, min(h_series[0].index, l_series[0].index), len(df) - 1)
         state = _normalize_state(state, breakout_quality, retest_quality)
         grade = _grade_from_quality(max(0.0, 1 - (h_std + l_std) * 10), breakout_quality, retest_quality, vol_score)
-        raw_target = resistance + (resistance - support)
+        box_height = resistance - support
+        raw_target = breakout_level + box_height if bullish_breakout else breakout_level - box_height
         target, target_realism = _apply_realistic_target(
             df,
             timeframe,
             current_close,
-            resistance,
+            breakout_level,
             raw_target,
             state,
-            bullish=True,
-            formation_height_pct=_safe_ratio(resistance - support, resistance, default=0.0),
+            bullish=bullish_breakout,
+            formation_height_pct=_safe_ratio(box_height, resistance, default=0.0),
         )
         geometry_fit = round(float(np.clip((1 - (h_std + l_std) * 10) * (0.88 + 0.12 * target_realism), 0.0, 1.0)), 3)
+        invalidation = support * 0.99 if bullish_breakout else resistance * 1.01
 
         r = PatternResult(
             pattern_type="rectangle",
             state=state, grade=grade,
             start_dt=min(h_series[0].datetime, l_series[0].datetime),
             end_dt=last_dt if state == "confirmed" else None,
-            neckline=resistance,
-            invalidation_level=support * 0.99,
+            neckline=breakout_level,
+            invalidation_level=invalidation,
             target_level=target,
             geometry_fit=geometry_fit,
             swing_structure_fit=0.7,

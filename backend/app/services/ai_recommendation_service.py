@@ -195,6 +195,10 @@ def _watchlist_score_bonus(row: dict, watched: bool) -> float:
         bonus += 1.5
     if row.get("no_signal_flag") or row.get("action_plan") == "cooling":
         bonus -= 2.5
+        # 활성 신호가 나쁜(무신호/쿨링) 관심종목까지 아래의 1.5점 바닥으로 떠받치면
+        # 방금 적용한 페널티가 사실상 무력화된다 — "관심종목이니 최소한의 관심은
+        # 받는다"는 취지는 신호가 멀쩡할 때만 적용한다.
+        return max(bonus, 0.0)
     return max(bonus, 1.5)
 
 
@@ -273,7 +277,16 @@ def _stance(row: dict, score: float) -> str:
         return "risk_review"
     if float(row.get("entry_window_score", 0.0)) < 0.34 and float(row.get("p_up", 0.0)) >= 0.58:
         return "avoid_chase"
-    if score >= 68 and float(row.get("p_up", 0.0)) >= 0.55 and float(row.get("trade_readiness_score", 0.0)) >= 0.50:
+
+    p_up = float(row.get("p_up", 0.0))
+    trade_readiness = float(row.get("trade_readiness_score", 0.0))
+    normalized_score = score / 100.0
+    # 예전엔 score>=68 AND p_up>=0.55 AND trade_readiness>=0.50을 전부 동시에 만족해야
+    # priority_watch였다 — 셋 중 하나만 근소하게(예: p_up 0.549) 못 미쳐도 객관적으로
+    # 훌륭한 후보가 "대기"로 밀렸다. 가중평균 + 최소 바닥으로 완화해, 한 지표가 살짝
+    # 부족해도 나머지가 강하면 여전히 최우선 후보로 잡히게 한다.
+    priority_readiness = 0.45 * normalized_score + 0.30 * p_up + 0.25 * trade_readiness
+    if priority_readiness >= 0.58 and min(normalized_score, p_up, trade_readiness) >= 0.40:
         return "priority_watch"
     if score >= 52:
         return "wait_for_trigger"

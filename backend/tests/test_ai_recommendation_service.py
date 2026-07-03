@@ -1,7 +1,56 @@
 from __future__ import annotations
 
 from app.api.schemas import AiRecommendationItem, SymbolInfo
-from app.services.ai_recommendation_service import _apply_overlap_risk
+from app.services.ai_recommendation_service import _apply_overlap_risk, _stance, _watchlist_score_bonus
+
+
+class TestStanceSoftAnd:
+    """Regression: priority_watch used to require score>=68 AND p_up>=0.55 AND
+    trade_readiness_score>=0.50 all simultaneously -- missing any one by a hair (e.g.
+    p_up=0.549) demoted an objectively excellent candidate to 'wait_for_trigger'.
+    """
+
+    def test_all_three_comfortably_above_threshold_is_priority_watch(self):
+        row = {"p_up": 0.70, "trade_readiness_score": 0.70, "entry_window_score": 0.6, "data_quality": 0.9}
+        assert _stance(row, score=75.0) == "priority_watch"
+
+    def test_one_factor_just_under_old_threshold_can_still_be_priority_watch(self):
+        # p_up just below the old hard 0.55 cutoff, but score and readiness are strong.
+        row = {"p_up": 0.549, "trade_readiness_score": 0.90, "entry_window_score": 0.6, "data_quality": 0.9}
+        assert _stance(row, score=95.0) == "priority_watch"
+
+    def test_all_three_weak_is_not_priority_watch(self):
+        row = {"p_up": 0.40, "trade_readiness_score": 0.35, "entry_window_score": 0.4, "data_quality": 0.9}
+        assert _stance(row, score=55.0) != "priority_watch"
+
+    def test_one_factor_very_weak_is_not_rescued_by_the_others(self):
+        # trade_readiness is essentially zero -- shouldn't be masked by a high score/p_up.
+        row = {"p_up": 0.90, "trade_readiness_score": 0.05, "entry_window_score": 0.6, "data_quality": 0.9}
+        assert _stance(row, score=90.0) != "priority_watch"
+
+
+class TestWatchlistScoreBonusFloor:
+    """The healthy-path floor (max(bonus, 1.5)) is meant to guarantee watchlisted
+    stocks at least a small bump; it must not apply once the no_signal_flag/cooling
+    penalty has been subtracted, or that floor would partially undo the penalty.
+    """
+
+    def test_healthy_watchlisted_stock_gets_the_base_bonus(self):
+        row = {"entry_window_score": 0.1, "trade_readiness_score": 0.1}
+        assert _watchlist_score_bonus(row, watched=True) == 6.0
+
+    def test_no_signal_watchlisted_stock_gets_the_full_penalty_no_extra_floor(self):
+        row = {"entry_window_score": 0.1, "trade_readiness_score": 0.1, "no_signal_flag": True}
+        # base 6.0 - 2.5 penalty = 3.5, not re-floored up to the healthy-path 1.5+ floor
+        # (which wouldn't bind here anyway, but the penalty branch must not apply it).
+        assert _watchlist_score_bonus(row, watched=True) == 3.5
+
+    def test_cooling_watchlisted_stock_gets_the_full_penalty_no_extra_floor(self):
+        row = {"entry_window_score": 0.1, "trade_readiness_score": 0.1, "action_plan": "cooling"}
+        assert _watchlist_score_bonus(row, watched=True) == 3.5
+
+    def test_unwatched_stock_always_gets_zero(self):
+        assert _watchlist_score_bonus({"no_signal_flag": True}, watched=False) == 0.0
 
 
 def _item(code: str, *, watched: bool) -> AiRecommendationItem:

@@ -13,7 +13,7 @@ from typing import Any
 from ..core.config import get_settings
 from ..core.redis import cache_get, cache_set
 from .analysis_service import ANALYSIS_CACHE_PREFIX, analyze_symbol_dataframe, build_no_signal_snapshot
-from .backtest_engine import _is_bullish
+from .pattern_engine import resolve_pattern_direction
 from .data_fetcher import get_data_fetcher
 from .kis_client import get_kis_client
 from .notification_service import send_telegram_message, telegram_configured
@@ -49,7 +49,7 @@ def _evaluate_levels(
         return []
 
     alerts: list[dict[str, Any]] = []
-    bullish = _is_bullish(pattern_type)
+    bullish = resolve_pattern_direction(pattern_type, neckline, target)
     if bullish:
         if target and price >= target:
             alerts.append({"kind": "target", "level": target})

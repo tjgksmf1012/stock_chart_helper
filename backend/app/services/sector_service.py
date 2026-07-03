@@ -14,7 +14,7 @@ from datetime import date, datetime
 import pandas as pd
 
 from ..core.redis import cache_get, cache_set
-from .pattern_engine import BEARISH_PATTERNS as _BEARISH_PATTERNS, BULLISH_PATTERNS as _BULLISH_PATTERNS
+from .pattern_engine import resolve_pattern_direction
 
 logger = logging.getLogger(__name__)
 
@@ -158,7 +158,13 @@ def build_sector_heatmap(
 
     for row in scan_rows:
         code = row.get("code", "")
-        sector = code_to_sector.get(code, "기타")
+        # 섹터 맵이 콜드 캐시거나(빌드 중이면 get_sector_map()이 빈 dict를 즉시 반환)
+        # 해당 종목이 아직 안 잡혀 있으면, "기타"라는 가짜 섹터로 몰아넣지 않고
+        # 그냥 집계에서 뺀다 — 안 그러면 실제 섹터 로테이션처럼 보이는 거대한
+        # "기타" 버킷이 |net_score| 정렬에서 히트맵 최상단을 차지할 수 있다.
+        sector = code_to_sector.get(code)
+        if not sector:
+            continue
         pattern = row.get("pattern_type") or ""
         if not pattern:
             continue
@@ -166,12 +172,17 @@ def build_sector_heatmap(
         if sector not in aggregation:
             aggregation[sector] = {"bullish": 0, "bearish": 0, "symbols": []}
 
-        if pattern in _BULLISH_PATTERNS:
+        # symmetric_triangle/rectangle/rising_channel/falling_channel은 타입만으로
+        # 방향이 안 정해지는 구조라, 정적 집합(BULLISH_PATTERNS/BEARISH_PATTERNS)만
+        # 보면 둘 중 어디에도 안 걸려 집계에서 통째로 빠진다. trigger_level(=neckline)
+        # 대비 target_level로 이 종목의 실제 방향을 판정한다.
+        bullish = resolve_pattern_direction(pattern, row.get("trigger_level"), row.get("target_level"))
+        if bullish:
             aggregation[sector]["bullish"] += 1
             name = row.get("name", code)
             if name not in aggregation[sector]["symbols"]:
                 aggregation[sector]["symbols"].append(name)
-        elif pattern in _BEARISH_PATTERNS:
+        else:
             aggregation[sector]["bearish"] += 1
 
     sectors = []

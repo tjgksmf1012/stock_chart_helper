@@ -61,17 +61,33 @@ def _bucket_stats(records: list[SignalOutcome], key_name: str) -> dict[str, dict
     return dict(sorted(buckets.items(), key=lambda item: (-int(item[1]["total"]), -float(item[1]["win_rate"]), item[0])))
 
 
+def _shrunk_win_rate(wins: int, total: int, prior_strength: float = 4.0, prior_rate: float = 0.5) -> float:
+    """작은 표본의 원시 승률을 그대로 랭킹에 쓰면, 1건짜리 우연한 승리(100%)가 20건짜리
+    75% 승률보다 "가장 잘 맞는 패턴"으로 뽑히는 식의 과신이 생긴다. 표본이 커질수록
+    실제 관측 승률에 가까워지고 작을수록 중립(prior_rate)에 가깝게 당겨지는 베이지안
+    축소 추정치로 랭킹해, 소수 표본이 미래 추천 점수(score_personal_fit)를 과도하게
+    좌우하지 않게 한다.
+    """
+    return (wins + prior_strength * prior_rate) / (total + prior_strength)
+
+
 def _pick_top_bucket(
     buckets: dict[str, dict[str, float | int]],
     *,
-    min_total: int = 1,
+    min_total: int = 3,
 ) -> tuple[str | None, dict[str, float | int] | None]:
     eligible = [(key, value) for key, value in buckets.items() if int(value["total"]) >= min_total]
     if not eligible:
         eligible = list(buckets.items())
     if not eligible:
         return None, None
-    eligible.sort(key=lambda item: (float(item[1]["win_rate"]), int(item[1]["total"])), reverse=True)
+    eligible.sort(
+        key=lambda item: (
+            _shrunk_win_rate(int(item[1]["wins"]), int(item[1]["total"])),
+            int(item[1]["total"]),
+        ),
+        reverse=True,
+    )
     return eligible[0]
 
 
