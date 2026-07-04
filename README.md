@@ -62,37 +62,12 @@ npm run dev
 
 ## Deployment (선택 사항 — 상시 서버로 돌리고 싶을 때)
 
-자동 스캔이나 관심종목 알림처럼 컴퓨터를 꺼도 계속 동작해야 하는 기능이 필요하면
-아래처럼 호스팅할 수 있습니다. 이 경우 `backend/.env.local.example` 대신
-`backend/.env.example`(Postgres/Redis 기반)을 쓰고, `ENABLE_SCHEDULER=true`로 설정하세요.
+자동 스캔이나 관심종목 알림처럼 컴퓨터를 꺼도 계속 동작해야 하는 기능이 필요할 때만
+고려하면 됩니다. 이 경우 `backend/.env.local.example` 대신 `backend/.env.example`
+(Postgres/Redis 기반)을 쓰고, `ENABLE_SCHEDULER=true`로 설정하세요.
 
-현재 배포 구조:
-
-- Frontend: Vercel
-- Backend: Render
-
-운영 URL:
-
-- Frontend: [https://frontend-mu-sooty-i4662dxm4r.vercel.app/](https://frontend-mu-sooty-i4662dxm4r.vercel.app/)
-- Backend: [https://stock-chart-helper-api.onrender.com](https://stock-chart-helper-api.onrender.com)
-
-프론트 환경 변수:
-
-```env
-VITE_API_BASE_URL=https://stock-chart-helper-api.onrender.com
-```
-
-백엔드 CORS 환경 변수:
-
-```env
-ALLOWED_ORIGINS=https://frontend-mu-sooty-i4662dxm4r.vercel.app,http://localhost:5173
-```
-
-## Railway Migration
-
-Render Free는 15분 동안 inbound traffic이 없으면 슬립 상태로 들어가므로, 실제 사용성까지 생각하면 백엔드를 Railway persistent service로 옮기는 구성이 더 무난합니다.
-
-이 저장소에는 Railway용 config-as-code 파일이 이미 포함되어 있습니다:
+Railway를 예로 든 참고 설정입니다 (이 저장소는 특정 플랫폼에 실제로 배포되어 있지
+않습니다 — 필요할 때 아래 config를 참고해 직접 연결하면 됩니다):
 
 - Railway config file: [backend/railway.toml](backend/railway.toml)
 - Backend Dockerfile: [backend/Dockerfile](backend/Dockerfile)
@@ -104,13 +79,13 @@ Render Free는 15분 동안 inbound traffic이 없으면 슬립 상태로 들어
 - Healthcheck path: `/health`
 - PORT: Railway 기본 주입값 사용
 
-Vercel에서는 백엔드 주소만 Railway 도메인으로 바꾸면 됩니다.
+프론트엔드를 별도로 호스팅한다면 백엔드 주소를 아래처럼 지정하면 됩니다.
 
 ```env
 VITE_API_BASE_URL=https://your-railway-domain.up.railway.app
 ```
 
-Railway로 이전할 때는 백엔드 환경 변수도 아래처럼 맞추는 것을 권장합니다.
+Railway로 배포할 때는 백엔드 환경 변수도 아래처럼 맞추는 것을 권장합니다.
 
 ```env
 DEPLOYMENT_PLATFORM=railway

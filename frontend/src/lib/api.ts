@@ -8,10 +8,6 @@ import type {
 } from '@/types/api'
 
 function resolveApiBase() {
-  if (typeof window !== 'undefined' && window.location.hostname.endsWith('vercel.app')) {
-    return '/api/v1'
-  }
-
   if (import.meta.env.VITE_API_BASE_URL) {
     return `${String(import.meta.env.VITE_API_BASE_URL).replace(/\/$/, '')}/api/v1`
   }
@@ -20,9 +16,12 @@ function resolveApiBase() {
 }
 
 const _base = resolveApiBase()
+// 프록시(/api/v1) 요청이 실패했을 때 재시도할 직접 백엔드 주소 — VITE_API_BASE_URL이
+// 설정된 배포 환경에서만 의미가 있다. 없으면(로컬 모드) 대체할 알려진 주소가 없으므로
+// null로 두고 폴백을 아예 시도하지 않는다.
 const _directBase = import.meta.env.VITE_API_BASE_URL
   ? `${String(import.meta.env.VITE_API_BASE_URL).replace(/\/$/, '')}/api/v1`
-  : 'https://stock-chart-helper-api.onrender.com/api/v1'
+  : null
 const REQUEST_TIMEOUT_MS = 20_000
 const MAX_DIRECT_RETRIES = 1
 
@@ -52,7 +51,7 @@ api.interceptors.response.use(undefined, async error => {
 
   // 503 = 백엔드 자체가 다운/재시작 중 — 직접 호출도 똑같이 실패하고
   // CORS 콘솔 노이즈 + 죽은 서버에 부하만 가중되므로 폴백하지 않는다.
-  if ((config.baseURL ?? _base) === '/api/v1' && !config.__directFallbackTried && status !== 503) {
+  if (_directBase && (config.baseURL ?? _base) === '/api/v1' && !config.__directFallbackTried && status !== 503) {
     config.__directFallbackTried = true
     config.__retryCount = 0
     config.baseURL = _directBase
