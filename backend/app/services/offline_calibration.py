@@ -99,14 +99,17 @@ async def collect_symbol_pairs(
     window: int,
     step: int,
     max_forward: int,
-) -> tuple[list[tuple[float, bool]], dict[str, int]]:
-    """Walk one symbol's history and emit (predicted, won) pairs.
+) -> tuple[list[tuple[str, float, bool]], dict[str, int]]:
+    """Walk one symbol's history and emit (pattern_type, predicted, won) triples.
 
     Each window is analyzed exactly as production would have on that day
     (only data up to the window end is visible). no_signal results are skipped
-    because production would not act on them either.
+    because production would not act on them either. pattern_type is carried
+    along so callers can break the calibration report down per pattern type
+    (an aggregate report can look weak/overconfident even when a subset of
+    pattern types has real skill, diluted by weaker ones pooled in).
     """
-    pairs: list[tuple[float, bool]] = []
+    pairs: list[tuple[str, float, bool]] = []
     windows = 0
     signals = 0
     unresolved = 0
@@ -140,6 +143,7 @@ async def collect_symbol_pairs(
             target=float(primary.target_level),
             invalidation=float(primary.invalidation_level),
         )
+        pattern_type = str(primary.pattern_type)
         if won is None:
             # backtest_engine.py의 _bucket_to_stat_line()과 같은 이유로, 목표·손절
             # 어디에도 닿지 않은 timeout을 그냥 버리면 "애매하게 끝난 경우"가 통째로
@@ -147,9 +151,9 @@ async def collect_symbol_pairs(
             # 생긴다. build_calibration_report()는 (predicted, won: bool) 쌍만 받으므로
             # timeout을 손절과 동일하게(=False) 분모에 포함시켜 같은 효과를 낸다.
             unresolved += 1
-            pairs.append((float(predicted), False))
+            pairs.append((pattern_type, float(predicted), False))
             continue
-        pairs.append((float(predicted), bool(won)))
+        pairs.append((pattern_type, float(predicted), bool(won)))
 
         # keep the event loop responsive during long background builds
         await asyncio.sleep(_WINDOW_BREATH_SECONDS)
@@ -186,7 +190,7 @@ async def run_offline_calibration(
                 step=int(cfg["step"]),
                 max_forward=int(cfg["max_forward"]),
             )
-            all_pairs.extend(pairs)
+            all_pairs.extend((predicted, won) for _, predicted, won in pairs)
             totals["symbols"] += 1
             totals["windows"] += meta["windows"]
             totals["signals"] += meta["signals"]
