@@ -1347,6 +1347,13 @@ class PatternEngine:
         h_series = highs[-3:]
         l_series = lows[-3:]
 
+        # 스윙 포인트 가격이 0 이하로 들어오는 건 정상적인 시세에서는 있을 수 없지만
+        # (리샘플된 월봉/주봉 구간에 데이터가 비어 0으로 채워지는 등) 방어적으로
+        # 걸러낸다 — 안 그러면 아래 나눗셈에서 ZeroDivisionError로 백테스트/스캔
+        # 전체가 그 종목·구간에서 죽는다.
+        if any(h.price <= 0 for h in h_series) or any(l.price <= 0 for l in l_series):
+            return []
+
         high_descending = len(h_series) >= 2 and h_series[-1].price < h_series[0].price
         low_ascending = len(l_series) >= 2 and l_series[-1].price > l_series[0].price
         high_flat = len(h_series) >= 2 and abs(h_series[-1].price - h_series[0].price) / h_series[0].price < 0.02
