@@ -11,7 +11,7 @@ from datetime import date, datetime, timedelta
 import pandas as pd
 
 from ..core.redis import cache_get, cache_set
-from .pattern_engine import BEARISH_PATTERNS as _BEARISH_PATTERNS, BULLISH_PATTERNS as _BULLISH_PATTERNS
+from .pattern_engine import DIRECTION_NEUTRAL_PATTERNS, resolve_pattern_direction
 
 logger = logging.getLogger(__name__)
 
@@ -48,14 +48,19 @@ def _compute_alignment(
     foreign_3d: float,
     institution_3d: float,
     pattern_type: str | None,
+    neckline: float | None = None,
+    target_level: float | None = None,
 ) -> tuple[str, str, str]:
     """Returns (alignment, alignment_label, alignment_note)."""
-    if pattern_type in _BULLISH_PATTERNS:
-        pattern_bias = "bullish"
-    elif pattern_type in _BEARISH_PATTERNS:
-        pattern_bias = "bearish"
-    else:
+    if pattern_type is None:
         return "neutral", "수급 중립", "패턴 없음"
+    # rectangle/symmetric_triangle 등은 neckline/target_level 없이는 방향을 모른다 —
+    # resolve_pattern_direction의 "정보 없으면 강세로 간주" 기본값을 여기서 그대로
+    # 쓰면 실제로는 모르는데 aligned/diverged로 단정하게 되므로, 방향중립 타입은
+    # 가격 레벨이 없을 때 명시적으로 neutral 처리한다.
+    if pattern_type in DIRECTION_NEUTRAL_PATTERNS and (neckline is None or target_level is None):
+        return "neutral", "수급 중립", "패턴 방향 미확정"
+    pattern_bias = "bullish" if resolve_pattern_direction(pattern_type, neckline, target_level) else "bearish"
 
     combined = foreign_3d * 0.6 + institution_3d * 0.4
 
@@ -83,6 +88,8 @@ def _compute_alignment(
 def _build_result(
     daily_rows: list[dict],
     pattern_type: str | None,
+    neckline: float | None = None,
+    target_level: float | None = None,
 ) -> dict:
     """daily_rows: [{date, foreign, institution}] (억원, 시간순) → 응답 dict."""
     foreign_values = [row["foreign"] for row in daily_rows]
@@ -94,7 +101,7 @@ def _build_result(
     institution_10d = round(sum(institution_values[-10:]), 1) if len(institution_values) >= 10 else 0.0
 
     alignment, alignment_label, alignment_note = _compute_alignment(
-        foreign_3d, institution_3d, pattern_type
+        foreign_3d, institution_3d, pattern_type, neckline, target_level
     )
     return {
         "foreign_net_3d": foreign_3d,
@@ -179,7 +186,12 @@ async def _fetch_daily_rows_pykrx(code: str) -> list[dict] | None:
     return rows
 
 
-async def get_money_flow(code: str, pattern_type: str | None = None) -> dict | None:
+async def get_money_flow(
+    code: str,
+    pattern_type: str | None = None,
+    neckline: float | None = None,
+    target_level: float | None = None,
+) -> dict | None:
     """
     Returns money flow dict for given stock code, or None on failure.
     {
@@ -200,6 +212,8 @@ async def get_money_flow(code: str, pattern_type: str | None = None) -> dict | N
             cached.get("foreign_net_3d", 0),
             cached.get("institution_net_3d", 0),
             pattern_type,
+            neckline,
+            target_level,
         )
         cached.update({
             "alignment": alignment,
@@ -223,7 +237,7 @@ async def get_money_flow(code: str, pattern_type: str | None = None) -> dict | N
     if not daily_rows:
         return None
 
-    result = _build_result(daily_rows, pattern_type)
+    result = _build_result(daily_rows, pattern_type, neckline, target_level)
     # 캐시 저장 (alignment 제외 버전 — alignment는 패턴에 따라 재계산)
     cacheable = {k: v for k, v in result.items() if k not in ("alignment", "alignment_label", "alignment_note")}
     await cache_set(cache_key, cacheable, ttl=_CACHE_TTL)

@@ -1361,7 +1361,9 @@ async def _enrich_money_flow_alignment(rows: list[dict[str, Any]], top_n: int = 
         if not code:
             continue
         try:
-            flow = await get_money_flow(code, pattern_type)
+            flow = await get_money_flow(
+                code, pattern_type, row.get("trigger_level"), row.get("target_level")
+            )
         except Exception:
             continue
         if not flow:

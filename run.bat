@@ -15,6 +15,17 @@ set ROOT_DIR=%~dp0
 if not exist "%ROOT_DIR%backend\.env" (
   echo No backend\.env found - using local desktop mode defaults ^(SQLite, no Postgres/Redis needed^).
   copy "%ROOT_DIR%backend\.env.local.example" "%ROOT_DIR%backend\.env" >nul
+) else (
+  findstr /R /C:"^DATABASE_URL=postgresql" "%ROOT_DIR%backend\.env" >nul 2>&1
+  if not errorlevel 1 (
+    echo.
+    echo [WARNING] backend\.env is configured for a Postgres server.
+    echo           Local desktop mode uses SQLite - if no Postgres server is running,
+    echo           API requests will fail and only show up as CORS errors in the browser.
+    echo           To switch to SQLite: delete backend\.env and re-run, or edit
+    echo           DATABASE_URL/REDIS_URL following backend\.env.local.example.
+    echo.
+  )
 )
 
 echo [1/3] Backend starting at http://localhost:%BACKEND_PORT%

@@ -98,6 +98,11 @@ class Settings(BaseSettings):
     # CORS — comma-separated list of allowed origins; "*" to allow all
     allowed_origins: str = "http://localhost:5173,http://localhost:3000"
 
+    # 텔레그램 관심종목 알림 메시지에 넣는 차트 링크의 기준 주소. 상시 서버로
+    # 호스팅할 때만 의미가 있고(로컬 데스크톱 모드는 워치리스트 알림 자체를 안 씀),
+    # 비워두면 링크 없이 종목명/코드만 보낸다.
+    frontend_base_url: str = ""
+
     model_config = SettingsConfigDict(env_file=".env")
 
 

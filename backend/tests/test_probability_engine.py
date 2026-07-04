@@ -87,6 +87,19 @@ def test_bearish_confirmed_leans_down():
     assert out.p_down > out.p_up
 
 
+def test_direction_neutral_pattern_leans_up_when_breakout_is_bullish():
+    # rectangle has no fixed direction — instance direction comes from target vs neckline.
+    pattern = make_pattern("rectangle", neckline=100.0, target_level=120.0)
+    out = compute_probability(pattern, **HEALTHY)
+    assert out.p_up > out.p_down
+
+
+def test_direction_neutral_pattern_leans_down_when_breakdown_is_bearish():
+    pattern = make_pattern("rectangle", neckline=100.0, target_level=80.0)
+    out = compute_probability(pattern, **HEALTHY)
+    assert out.p_down > out.p_up
+
+
 def test_direction_probability_is_capped_at_078():
     # Even with maxed-out inputs the directional probability must stay <= 0.78.
     args = {

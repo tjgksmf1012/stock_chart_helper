@@ -33,6 +33,14 @@ fi
 if [ ! -f .env ]; then
   echo "[backend] .env 없음 — .env.local.example로 생성 (SQLite, 스케줄러 꺼짐)"
   cp .env.local.example .env
+elif grep -qE '^DATABASE_URL=postgresql' .env; then
+  echo ""
+  echo "[경고] backend/.env 가 Postgres 서버를 쓰도록 설정되어 있습니다."
+  echo "       (로컬 데스크톱 모드는 SQLite를 씁니다 — Postgres 서버가 없으면"
+  echo "        API 요청이 전부 실패하고 브라우저에는 CORS 오류로만 보입니다.)"
+  echo "       SQLite로 바꾸려면: backend/.env 를 지우고 다시 실행하거나,"
+  echo "       backend/.env.local.example 을 참고해 DATABASE_URL/REDIS_URL 값을 고치세요."
+  echo ""
 fi
 
 # ── 2) frontend 준비 ─────────────────────────────────────────────

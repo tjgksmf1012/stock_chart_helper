@@ -704,10 +704,7 @@ def _candlestick_confirmation(df: pd.DataFrame, pattern: PatternResult) -> tuple
     if len(df) < 3:
         return 0.5, "neutral", "캔들 확인 정보가 아직 부족합니다."
 
-    bullish = pattern.pattern_type in BULLISH_PATTERNS
-    bearish = pattern.pattern_type in BEARISH_PATTERNS
-    if not bullish and not bearish:
-        return 0.5, "neutral", "캔들 확인 필터를 적용하지 않는 패턴입니다."
+    bullish = pattern_direction_is_bullish(pattern)
 
     recent = df.tail(3).reset_index(drop=True)
     prev_row = recent.iloc[-2]

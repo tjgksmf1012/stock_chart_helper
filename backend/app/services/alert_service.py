@@ -160,11 +160,9 @@ async def run_watchlist_alert_check() -> dict[str, int]:
             if await cache_get(dedup_key):
                 continue
             label = _KIND_LABELS[alert["kind"]]
-            text = (
-                f"🔔 {name}({code}) {label}\n"
-                f"기준 {alert['level']:,.0f}원 · 현재가 {price:,.0f}원\n"
-                f"https://stockcharthelper.vercel.app/chart/{code}"
-            )
+            text = f"🔔 {name}({code}) {label}\n기준 {alert['level']:,.0f}원 · 현재가 {price:,.0f}원"
+            if settings.frontend_base_url:
+                text += f"\n{settings.frontend_base_url.rstrip('/')}/chart/{code}"
             if await send_telegram_message(text):
                 await cache_set(dedup_key, {"at": datetime.now(UTC).isoformat()}, ttl=86400)
                 sent += 1

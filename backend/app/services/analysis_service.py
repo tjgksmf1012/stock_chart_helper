@@ -14,8 +14,6 @@ from pandas.tseries.offsets import BDay, DateOffset
 from ..api.schemas import AnalysisResult, PatternInfo, ProjectionPoint, ProjectionScenario, SymbolInfo
 from .backtest_engine import get_pattern_stats
 from .pattern_engine import (
-    BEARISH_PATTERNS as _BEARISH_PATTERNS,
-    BULLISH_PATTERNS as _BULLISH_PATTERNS,
     PatternEngine,
     PatternResult,
     _breakout_index as _pe_breakout_index,
@@ -3674,7 +3672,12 @@ async def analyze_symbol_dataframe(
             from ..api.schemas import MoneyFlowData, MoneyFlowDailyEntry
             primary_pattern_type = best_pattern.pattern_type if best_pattern else None
             mf_raw = await asyncio.wait_for(
-                get_money_flow(symbol.code, primary_pattern_type),
+                get_money_flow(
+                    symbol.code,
+                    primary_pattern_type,
+                    best_pattern.neckline if best_pattern else None,
+                    best_pattern.target_level if best_pattern else None,
+                ),
                 timeout=8.0,
             )
             if mf_raw:

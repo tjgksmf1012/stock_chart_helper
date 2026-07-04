@@ -11,8 +11,14 @@ from app.services.intraday_store import IntradayStore
 settings = get_settings()
 
 
-def _bars(minutes: int = 3, start: str = "2026-06-25 09:30:00") -> pd.DataFrame:
-    idx = pd.date_range(start=start, periods=minutes, freq="1min")
+def _recent_start() -> str:
+    # Relative to "now" so these tests don't silently fall outside the lookback
+    # window (and start being filtered out as "too old") as real time passes.
+    return (datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=10)).isoformat()
+
+
+def _bars(minutes: int = 3, start: str | None = None) -> pd.DataFrame:
+    idx = pd.date_range(start=start or _recent_start(), periods=minutes, freq="1min")
     return pd.DataFrame(
         {
             "datetime": idx,
@@ -121,7 +127,7 @@ async def test_storage_age_minutes_reflects_recent_fetch(store):
 @pytest.mark.anyio
 async def test_lookback_days_excludes_older_bars(store):
     old_bars = _bars(minutes=1, start=(datetime.now(UTC).replace(tzinfo=None) - timedelta(days=30)).isoformat())
-    recent_bars = _bars(minutes=1, start="2026-06-25 09:30:00")
+    recent_bars = _bars(minutes=1)
     await store.upsert_bars(symbol="005930", timeframe="1m", df=old_bars, source="kis_intraday")
     await store.upsert_bars(symbol="005930", timeframe="1m", df=recent_bars, source="kis_intraday")
 
