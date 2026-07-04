@@ -21,6 +21,7 @@ from app.services.backtest_engine import (
     _spread_sample,
     get_backtest_universe,
     get_expanded_backtest_universe,
+    run_backtest,
 )
 from app.services.pattern_engine import PatternResult, pattern_direction_is_bullish
 
@@ -187,6 +188,50 @@ class _FakeFetcher:
         if self._raises:
             raise RuntimeError("network blocked")
         return self._universe_df
+
+
+class _EmptyDataFetcher:
+    """Returns an empty frame instantly for every symbol -- run_backtest() skips
+    pattern detection for empty/too-short frames, so this exercises the full
+    per-code/timeframe loop (and the progress_callback hook) without any real I/O.
+    """
+
+    async def get_stock_ohlcv_by_timeframe(self, code: str, timeframe: str, lookback_days: int) -> pd.DataFrame:
+        return pd.DataFrame()
+
+
+class TestRunBacktestProgressCallback:
+    """Regression: run_backtest() walks the full universe x 3 timeframes with zero
+    progress output, which looks identical to a hang for a caller that awaits it
+    directly (as opposed to the app's usual fire-and-forget background task) --
+    this was confusing enough in practice that a caller genuinely couldn't tell
+    whether a multi-minute run was still working. progress_callback fixes that
+    without changing behavior for existing (callback-less) callers.
+    """
+
+    @pytest.mark.anyio
+    async def test_progress_callback_is_invoked_once_per_code_per_timeframe(self, monkeypatch):
+        monkeypatch.setattr("app.services.data_fetcher.get_data_fetcher", lambda: _EmptyDataFetcher())
+        calls: list[tuple[str, str, int, int]] = []
+        await run_backtest(progress_callback=lambda tf, code, idx, total: calls.append((tf, code, idx, total)))
+
+        assert len(calls) == len(_BACKTEST_TIMEFRAMES) * len(_BACKTEST_UNIVERSE)
+        seen_timeframes = {tf for tf, _, _, _ in calls}
+        assert seen_timeframes == set(_BACKTEST_TIMEFRAMES)
+        # index/total are 1-based and consistent with the universe size
+        assert all(total == len(_BACKTEST_UNIVERSE) for _, _, _, total in calls)
+        assert {idx for _, _, idx, _ in calls} == set(range(1, len(_BACKTEST_UNIVERSE) + 1))
+
+    @pytest.mark.anyio
+    async def test_a_raising_callback_does_not_abort_the_backtest(self, monkeypatch):
+        monkeypatch.setattr("app.services.data_fetcher.get_data_fetcher", lambda: _EmptyDataFetcher())
+
+        def _boom(timeframe: str, code: str, idx: int, total: int) -> None:
+            raise RuntimeError("progress display crashed, backtest itself must not care")
+
+        # Should complete and return normally instead of propagating the callback's error.
+        stats = await run_backtest(progress_callback=_boom)
+        assert isinstance(stats, dict)
 
 
 class TestSpreadSample:

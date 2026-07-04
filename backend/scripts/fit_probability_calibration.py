@@ -95,8 +95,15 @@ async def main() -> None:
     # 가짜 기본값만 쓰게 되어 캘리브레이션 결과 자체가 무의미해진다. 여기서 먼저
     # 끝까지 기다려서 실제 패턴별 승률이 준비된 상태로 수집을 시작한다.
     print("실제 패턴별 백테스트 통계 계산 중... (몇 분 걸릴 수 있음)")
-    await run_backtest()
-    print("백테스트 통계 준비 완료.\n")
+
+    def _backtest_progress(timeframe: str, code: str, idx: int, total: int) -> None:
+        # 79종목 x 3타임프레임을 도는 동안 화면에 아무 것도 안 찍히면 멈춘 것처럼
+        # 보인다(실제로 이 문제 때문에 헷갈렸던 적이 있음) -- 같은 줄을 계속
+        # 덮어써서 진행 중임을 보여준다.
+        print(f"\r  [{timeframe}] {idx}/{total} {code}      ", end="", flush=True)
+
+    await run_backtest(progress_callback=_backtest_progress)
+    print("\r백테스트 통계 준비 완료.                              \n")
 
     print(f"수집 시작: timeframe={args.timeframe}, target_size={args.target_size}")
     tagged_pairs, totals = await _collect_all_pairs(args.timeframe, args.target_size)
