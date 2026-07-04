@@ -30,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.api.schemas import SymbolInfo  # noqa: E402
 from app.services.backtest_engine import get_backtest_config, get_expanded_backtest_universe  # noqa: E402
+from app.services.calibration_service import build_calibration_report  # noqa: E402
 from app.services.offline_calibration import collect_symbol_pairs  # noqa: E402
 from app.services.probability_calibration import (  # noqa: E402
     MIN_FIT_SAMPLES,
@@ -38,7 +39,7 @@ from app.services.probability_calibration import (  # noqa: E402
 )
 
 
-async def _collect_all_pairs(timeframe: str, target_size: int) -> list[tuple[float, bool]]:
+async def _collect_all_pairs(timeframe: str, target_size: int) -> tuple[list[tuple[float, bool]], dict[str, int]]:
     from app.services.data_fetcher import get_data_fetcher
 
     cfg = get_backtest_config(timeframe)
@@ -46,6 +47,7 @@ async def _collect_all_pairs(timeframe: str, target_size: int) -> list[tuple[flo
     fetcher = get_data_fetcher()
 
     all_pairs: list[tuple[float, bool]] = []
+    totals = {"windows": 0, "signals": 0, "unresolved": 0}
     for i, code in enumerate(codes, start=1):
         try:
             df = await fetcher.get_stock_ohlcv_by_timeframe(code, timeframe, lookback_days=int(cfg["lookback_days"]))
@@ -58,10 +60,16 @@ async def _collect_all_pairs(timeframe: str, target_size: int) -> list[tuple[flo
                 window=int(cfg["window"]), step=int(cfg["step"]), max_forward=int(cfg["max_forward"]),
             )
             all_pairs.extend(pairs)
-            print(f"  [{i}/{len(codes)}] {code}: {len(pairs)} pairs ({meta['signals']} signals / {meta['windows']} windows)")
+            totals["windows"] += meta["windows"]
+            totals["signals"] += meta["signals"]
+            totals["unresolved"] += meta["unresolved"]
+            print(
+                f"  [{i}/{len(codes)}] {code}: {len(pairs)} pairs "
+                f"({meta['signals']} signals / {meta['windows']} windows / {meta['unresolved']} unresolved→loss)"
+            )
         except Exception as exc:
             print(f"  [{i}/{len(codes)}] {code}: failed ({exc})")
-    return all_pairs
+    return all_pairs, totals
 
 
 async def main() -> None:
@@ -74,8 +82,13 @@ async def main() -> None:
     args = parser.parse_args()
 
     print(f"수집 시작: timeframe={args.timeframe}, target_size={args.target_size}")
-    pairs = await _collect_all_pairs(args.timeframe, args.target_size)
+    pairs, totals = await _collect_all_pairs(args.timeframe, args.target_size)
     print(f"\n총 {len(pairs)}개 (예측, 결과) 쌍 수집 완료.")
+    unresolved_rate = totals["unresolved"] / max(totals["signals"], 1)
+    print(
+        f"  windows={totals['windows']}, signals={totals['signals']}, "
+        f"unresolved(→loss로 계산)={totals['unresolved']} ({unresolved_rate:.0%})"
+    )
 
     if len(pairs) < MIN_FIT_SAMPLES:
         print(
@@ -84,6 +97,17 @@ async def main() -> None:
             "실제 인터넷이 되는 환경에서 다시 실행해주세요."
         )
         return
+
+    report = build_calibration_report(pairs)
+    print(
+        f"\n보정 전 리포트: base_rate={report.base_rate:.3f}, mean_predicted={report.mean_predicted:.3f}, "
+        f"mean_gap={report.mean_gap:+.3f}, brier={report.brier_score:.3f}, ece={report.ece:.3f}\n"
+        f"  reliability: {report.reliability}"
+    )
+    print("  구간별(하한-상한 | 표본수 | 예측 | 실제 | 격차):")
+    for b in report.bins:
+        flag = " (표본부족)" if b.low_confidence else ""
+        print(f"    {b.lower:.2f}-{b.upper:.2f} | n={b.count:<4d} | pred={b.predicted:.3f} | obs={b.observed:.3f} | gap={b.gap:+.3f}{flag}")
 
     mapping = fit_calibration_mapping(pairs)
     if mapping is None:
