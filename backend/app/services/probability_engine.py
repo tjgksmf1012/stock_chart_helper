@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import math
 
 from .pattern_engine import PatternResult, pattern_direction_is_bullish
+from .probability_calibration import calibrate_probability
 from .timeframe_service import probability_threshold_profile
 
 
@@ -393,6 +394,18 @@ def compute_probability(
     p_down = _shrink_toward_even(p_down_raw)
     total_prob = max(p_up + p_down, 1e-9)
     p_up, p_down = p_up / total_prob, p_down / total_prob
+
+    # 사후 확률 보정 — "이 휴리스틱이 X%라고 할 때 실제 승률은 몇 %였나"를 과거
+    # 데이터로 학습한 매핑(scripts/fit_probability_calibration.py)이 있으면 적용.
+    # 매핑이 없으면 calibrate_probability()가 원값을 그대로 돌려주므로 무보정과
+    # 동일하게 동작한다. 패턴이 가리키는 방향(taken direction)의 확률만 보정하고
+    # 반대쪽은 1-보정값으로 재구성해 두 값의 합이 항상 1을 유지하게 한다.
+    if toward_up >= 0.5:
+        p_up = calibrate_probability(p_up)
+        p_down = 1.0 - p_up
+    else:
+        p_down = calibrate_probability(p_down)
+        p_up = 1.0 - p_down
 
     confidence = (
         0.18 * sample_reliability

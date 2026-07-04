@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import pytest
+
 from app.services.pattern_engine import PatternResult
 from app.services.probability_engine import compute_probability
 
@@ -98,6 +100,26 @@ def test_direction_neutral_pattern_leans_down_when_breakdown_is_bearish():
     pattern = make_pattern("rectangle", neckline=100.0, target_level=80.0)
     out = compute_probability(pattern, **HEALTHY)
     assert out.p_down > out.p_up
+
+
+class TestCalibrationIsApplied:
+    """Regression: compute_probability must run its raw p_up/p_down through
+    probability_calibration.calibrate_probability() before capping, otherwise
+    a fitted recalibration mapping would silently have no effect on the app.
+    """
+
+    def test_calibrated_value_propagates_into_final_p_up(self, monkeypatch):
+        import app.services.probability_engine as pe
+
+        baseline = compute_probability(make_pattern("double_bottom"), **HEALTHY)
+        assert baseline.p_up != pytest.approx(0.5)  # sanity: heuristic normally leans away from 0.5
+
+        # Pretend the fitted mapping flattens every input to exactly 0.5.
+        monkeypatch.setattr(pe, "calibrate_probability", lambda raw: 0.5)
+        out = compute_probability(make_pattern("double_bottom"), **HEALTHY)
+
+        assert out.p_up == pytest.approx(0.5, abs=1e-6)
+        assert out.p_down == pytest.approx(0.5, abs=1e-6)
 
 
 def test_direction_probability_is_capped_at_078():

@@ -20,6 +20,7 @@ yfinance==0.2.54
 # Analysis
 pandas==2.2.3
 numpy==2.1.3
+scikit-learn==1.5.2
 
 # Utils
 httpx==0.28.1

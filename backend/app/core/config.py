@@ -76,6 +76,10 @@ class Settings(BaseSettings):
     scan_results_ttl: int = 43200         # 12시간 (스캔 결과 캐시 — 다음 장까지 유지)
     dashboard_cache_ttl: int = 30         # 대시보드 폴링 간격 (변경 금지)
     intraday_storage_path: str = "data/intraday_cache.sqlite3"
+    # 규칙 기반 확률(probability_engine.py)을 실제 승률에 맞춰 사후 보정하는
+    # isotonic regression 매핑 파일. scripts/fit_probability_calibration.py로
+    # 생성 — 파일이 없으면 보정 없이(항등 함수) 그대로 동작한다.
+    probability_calibration_path: str = "data/probability_calibration.json"
     intraday_store_retention_days: int = 45
     intraday_recent_store_reuse_minutes: int = 2
     intraday_seed_limit: int = 40
