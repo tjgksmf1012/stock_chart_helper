@@ -434,6 +434,44 @@ class TestRectangleCanBreakDownBearish:
         assert rect.target_level < rect.neckline < rect.invalidation_level
 
 
+class TestCandlestickConfirmationUsesInstanceDirection:
+    """Regression: _candlestick_confirmation checked pattern_type against the static
+    BULLISH_PATTERNS/BEARISH_PATTERNS sets, so direction-neutral types (rectangle,
+    symmetric_triangle, channels) always short-circuited to a flat neutral 0.5 --
+    "필터를 적용하지 않는 패턴" -- even when the instance's own neckline/target_level
+    made the actual breakout direction obvious.
+    """
+
+    @staticmethod
+    def _bullish_confirmation_df() -> "pd.DataFrame":
+        import pandas as pd
+
+        rows = [
+            {"open": 93.0, "high": 96.0, "low": 92.0, "close": 95.0, "volume": 1000},
+            {"open": 97.0, "high": 101.0, "low": 96.0, "close": 100.0, "volume": 1000},
+            {"open": 100.0, "high": 111.0, "low": 99.0, "close": 110.0, "volume": 1000},
+        ]
+        return pd.DataFrame(rows)
+
+    def test_direction_neutral_bullish_breakout_gets_real_confirmation_score(self):
+        from datetime import datetime
+
+        from app.services.pattern_engine import _candlestick_confirmation
+
+        pattern = PatternResult(
+            pattern_type="rectangle",
+            state="confirmed",
+            grade="A",
+            start_dt=datetime(2026, 1, 1),
+            end_dt=datetime(2026, 2, 1),
+            neckline=100.0,
+            target_level=120.0,  # target above neckline -> bullish instance
+        )
+        score, label, _note = _candlestick_confirmation(self._bullish_confirmation_df(), pattern)
+        assert label != "neutral"
+        assert score > 0.5
+
+
 class TestDescendingTriangleRequiresFlatSupport:
     """Regression: descending_triangle used to match whenever highs were descending
     and lows were 'not ascending' -- which also matched lows that were clearly

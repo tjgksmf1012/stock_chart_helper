@@ -21,9 +21,10 @@ import pandas as pd
 
 from ..api.schemas import SymbolInfo
 from ..core.redis import cache_get, cache_set
-from .analysis_service import _BEARISH_PATTERNS, _BULLISH_PATTERNS, analyze_symbol_dataframe
+from .analysis_service import analyze_symbol_dataframe
 from .backtest_engine import get_backtest_config, get_backtest_universe
 from .calibration_service import build_calibration_report
+from .pattern_engine import pattern_direction_is_bullish
 
 logger = logging.getLogger(__name__)
 
@@ -128,12 +129,7 @@ async def collect_symbol_pairs(
         primary = result.patterns[0]
         if primary.target_level is None or primary.invalidation_level is None:
             continue
-        if primary.pattern_type in _BULLISH_PATTERNS:
-            bullish = True
-        elif primary.pattern_type in _BEARISH_PATTERNS:
-            bullish = False
-        else:
-            continue
+        bullish = pattern_direction_is_bullish(primary)
 
         signals += 1
         predicted = result.p_up if bullish else result.p_down

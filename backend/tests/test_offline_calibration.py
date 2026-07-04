@@ -113,6 +113,7 @@ class TestUnresolvedWindowsCountTowardCalibration:
         # isolates the unresolved-handling fix from the real pattern engine's own gating.
         class _FakePattern:
             pattern_type = "double_bottom"
+            neckline = 500_000.0
             target_level = 999_999.0
             invalidation_level = 1.0
 
@@ -138,6 +139,44 @@ class TestUnresolvedWindowsCountTowardCalibration:
         # len(pairs) would be 0 here. Now they're appended as a loss.
         assert len(pairs) == meta["signals"]
         assert all(won is False for _, won in pairs)
+
+
+class TestDirectionNeutralPatternsAreNotSkipped:
+    """Regression: collect_symbol_pairs used to check pattern_type against the static
+    BULLISH_PATTERNS/BEARISH_PATTERNS sets and `continue` (drop the whole window) for
+    anything not in either set. rectangle/symmetric_triangle/channels are direction-
+    neutral by type, so every window containing them was silently excluded from
+    offline calibration regardless of how the instance actually broke out.
+    """
+
+    @pytest.mark.anyio
+    async def test_direction_neutral_pattern_signal_is_not_dropped(self, monkeypatch):
+        class _FakePattern:
+            pattern_type = "rectangle"
+            neckline = 100.0
+            target_level = 999_999.0  # far above neckline -> bullish instance
+            invalidation_level = 1.0
+
+        class _FakeResult:
+            no_signal_flag = False
+            patterns = [_FakePattern()]
+            p_up = 0.6
+            p_down = 0.4
+
+        async def _fake_analyze(symbol, timeframe, window_df):
+            return _FakeResult()
+
+        monkeypatch.setattr("app.services.offline_calibration.analyze_symbol_dataframe", _fake_analyze)
+
+        symbol = SymbolInfo(code="005930", name="Test", market="KOSPI", sector=None, market_cap=1e12, is_in_universe=True)
+        df = _build_df([10_000.0] * 130)  # flat: forward bars never touch target or stop
+
+        pairs, meta = await collect_symbol_pairs(symbol, "1d", df, window=95, step=5, max_forward=30)
+
+        # Before the fix, rectangle (direction-neutral by type) always fell into the
+        # `else: continue` branch, so signals would stay 0 and pairs would be empty.
+        assert meta["signals"] > 0
+        assert len(pairs) > 0
 
 
 class TestSelectOfflineSymbols:

@@ -14,8 +14,6 @@ from pandas.tseries.offsets import BDay, DateOffset
 from ..api.schemas import AnalysisResult, PatternInfo, ProjectionPoint, ProjectionScenario, SymbolInfo
 from .backtest_engine import get_pattern_stats
 from .pattern_engine import (
-    BEARISH_PATTERNS as _BEARISH_PATTERNS,
-    BULLISH_PATTERNS as _BULLISH_PATTERNS,
     PatternEngine,
     PatternResult,
     _breakout_index as _pe_breakout_index,
