@@ -373,12 +373,16 @@ async def get_money_flow_endpoint(
     symbol: str,
     timeframe: str = Query(default=DEFAULT_TIMEFRAME),
     pattern_type: str | None = Query(default=None),
+    neckline: float | None = Query(default=None),
+    target_level: float | None = Query(default=None),
 ) -> dict:
     """외국인/기관 순매수 데이터 (T+1). 4시간 캐시.
 
     pattern_type을 쿼리로 받으면 그대로 정렬 판정에 사용 (프론트가 분석 결과를
     이미 알고 있을 때). 없으면 분석 캐시 참조 — 단, 분석·수급을 동시 요청하는
     첫 방문에는 캐시가 비어 '패턴 없음'으로 빠질 수 있어 쿼리 전달이 정확하다.
+    symmetric_triangle/rectangle 등 방향중립 패턴은 neckline/target_level이
+    있어야 실제 돌파 방향을 판정할 수 있다 (없으면 항상 "패턴 없음"으로 샘).
     """
     from ...services.money_flow_service import get_money_flow
 
@@ -388,8 +392,10 @@ async def get_money_flow_endpoint(
             pats = cached_analysis["patterns"]
             if pats and isinstance(pats[0], dict):
                 pattern_type = pats[0].get("pattern_type")
+                neckline = pats[0].get("neckline")
+                target_level = pats[0].get("target_level")
 
-    result = await get_money_flow(symbol, pattern_type)
+    result = await get_money_flow(symbol, pattern_type, neckline, target_level)
     if result is None:
         return {
             "foreign_net_3d": 0.0,

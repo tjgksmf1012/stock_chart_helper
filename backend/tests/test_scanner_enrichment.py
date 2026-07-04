@@ -16,7 +16,7 @@ def _row(code: str, pattern_type: str | None = "double_bottom", no_signal: bool 
 
 
 def _fake_flow_factory(alignment_by_code: dict[str, str]):
-    async def _fake(code: str, pattern_type: str | None = None):
+    async def _fake(code: str, pattern_type: str | None = None, neckline: float | None = None, target_level: float | None = None):
         alignment = alignment_by_code.get(code)
         if alignment is None:
             return None
@@ -45,7 +45,7 @@ async def test_aligned_and_diverged_boosts(monkeypatch):
 async def test_skips_no_pattern_and_no_signal_rows(monkeypatch):
     calls: list[str] = []
 
-    async def _tracking(code: str, pattern_type: str | None = None):
+    async def _tracking(code: str, pattern_type: str | None = None, neckline: float | None = None, target_level: float | None = None):
         calls.append(code)
         return {"alignment": "aligned"}
 
@@ -60,7 +60,7 @@ async def test_skips_no_pattern_and_no_signal_rows(monkeypatch):
 
 @pytest.mark.anyio
 async def test_fetch_failure_is_ignored(monkeypatch):
-    async def _boom(code: str, pattern_type: str | None = None):
+    async def _boom(code: str, pattern_type: str | None = None, neckline: float | None = None, target_level: float | None = None):
         raise RuntimeError("KIS down")
 
     monkeypatch.setattr("app.services.money_flow_service.get_money_flow", _boom)
@@ -74,7 +74,7 @@ async def test_fetch_failure_is_ignored(monkeypatch):
 async def test_respects_top_n(monkeypatch):
     calls: list[str] = []
 
-    async def _tracking(code: str, pattern_type: str | None = None):
+    async def _tracking(code: str, pattern_type: str | None = None, neckline: float | None = None, target_level: float | None = None):
         calls.append(code)
         return {"alignment": "aligned"}
 

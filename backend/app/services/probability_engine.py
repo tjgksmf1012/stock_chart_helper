@@ -7,11 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 
-from .pattern_engine import (
-    BEARISH_PATTERNS as _BEARISH_PATTERNS,
-    BULLISH_PATTERNS as _BULLISH_PATTERNS,
-    PatternResult,
-)
+from .pattern_engine import PatternResult, pattern_direction_is_bullish
 from .timeframe_service import probability_threshold_profile
 
 
@@ -79,27 +75,28 @@ def _rule_engine_prob(pattern: PatternResult) -> tuple[float, float]:
     base_down = 0.50
     formation_quality = _formation_quality(pattern)
 
-    if pattern.pattern_type in _BULLISH_PATTERNS:
+    bullish = pattern_direction_is_bullish(pattern)
+    if bullish:
         base_up = 0.55 + similarity * 0.20
         base_up = 0.5 + (base_up - 0.5) * (0.40 + 0.60 * formation_quality)
         base_down = 1 - base_up
-    elif pattern.pattern_type in _BEARISH_PATTERNS:
+    else:
         base_down = 0.55 + similarity * 0.20
         base_down = 0.5 + (base_down - 0.5) * (0.40 + 0.60 * formation_quality)
         base_up = 1 - base_down
 
     if pattern.state == "confirmed":
-        if pattern.pattern_type in _BULLISH_PATTERNS:
+        if bullish:
             base_up = min(0.86, base_up * 1.08)
             base_down = 1 - base_up
-        elif pattern.pattern_type in _BEARISH_PATTERNS:
+        else:
             base_down = min(0.86, base_down * 1.08)
             base_up = 1 - base_down
     elif pattern.state == "armed":
-        if pattern.pattern_type in _BULLISH_PATTERNS:
+        if bullish:
             base_up = min(0.80, base_up * 1.03)
             base_down = 1 - base_up
-        elif pattern.pattern_type in _BEARISH_PATTERNS:
+        else:
             base_down = min(0.80, base_down * 1.03)
             base_up = 1 - base_down
 
@@ -165,12 +162,9 @@ def _bayesian_success_rate(successes: int | None, total: int | None, prior_rate:
 
 
 def _directional_empirical_prob(pattern: PatternResult, posterior_success_rate: float) -> tuple[float, float]:
-    if pattern.pattern_type in _BULLISH_PATTERNS:
+    if pattern_direction_is_bullish(pattern):
         return posterior_success_rate, 1 - posterior_success_rate
-    if pattern.pattern_type in _BEARISH_PATTERNS:
-        return 1 - posterior_success_rate, posterior_success_rate
-    neutral = 0.5 + (posterior_success_rate - 0.5) * 0.35
-    return neutral, 1 - neutral
+    return 1 - posterior_success_rate, posterior_success_rate
 
 
 def _historical_edge(avg_mfe_pct: float, avg_mae_pct: float, avg_bars_to_outcome: float, sample_size: int) -> float:
@@ -358,12 +352,7 @@ def compute_probability(
     # they must reinforce the pattern's *own* direction. For a bullish pattern this
     # is identical to "higher == more up"; for a bearish pattern it mirrors, so a
     # well-formed double top correctly pushes p_down instead of p_up.
-    if pattern.pattern_type in _BULLISH_PATTERNS:
-        toward_up = 1.0
-    elif pattern.pattern_type in _BEARISH_PATTERNS:
-        toward_up = 0.0
-    else:
-        toward_up = 0.5
+    toward_up = 1.0 if pattern_direction_is_bullish(pattern) else 0.0
 
     def _dir(quality: float) -> tuple[float, float]:
         up = toward_up * quality + (1 - toward_up) * (1 - quality)

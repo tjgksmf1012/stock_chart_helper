@@ -31,6 +31,20 @@ class TestComputeAlignment:
         alignment, _, _ = _compute_alignment(200.0, -100.0, "double_bottom")
         assert alignment == "mixed"
 
+    def test_direction_neutral_pattern_without_levels_is_neutral(self):
+        # rectangle/symmetric_triangle can't resolve direction from type alone —
+        # without neckline/target_level we can't say bullish or bearish.
+        alignment, _, _ = _compute_alignment(100.0, 100.0, "rectangle")
+        assert alignment == "neutral"
+
+    def test_direction_neutral_pattern_resolves_bullish_via_levels(self):
+        alignment, _, _ = _compute_alignment(100.0, 100.0, "rectangle", neckline=100.0, target_level=120.0)
+        assert alignment == "aligned"
+
+    def test_direction_neutral_pattern_resolves_bearish_via_levels(self):
+        alignment, _, _ = _compute_alignment(-100.0, -100.0, "rectangle", neckline=100.0, target_level=80.0)
+        assert alignment == "aligned"
+
 
 class TestKisDailyRows:
     """KIS 투자자 동향 → 일별 억원 변환 및 미정산 당일 행 제외."""

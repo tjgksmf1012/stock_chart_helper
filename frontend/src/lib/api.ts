@@ -84,10 +84,21 @@ export const symbolsApi = {
     api.get<DeepAnalysisResponse>(`/symbols/${symbol}/deep-analysis`, { timeout: 95_000 }).then(r => r.data),
   getDeepAnalysisProgress: (symbol: string) =>
     api.get<DeepAnalysisProgress>(`/symbols/${symbol}/deep-analysis/progress`).then(r => r.data),
-  getMoneyFlow: (symbol: string, timeframe: Timeframe, patternType?: string | null) =>
+  getMoneyFlow: (
+    symbol: string,
+    timeframe: Timeframe,
+    patternType?: string | null,
+    neckline?: number | null,
+    targetLevel?: number | null,
+  ) =>
     api
       .get<MoneyFlowData>(`/symbols/${symbol}/money-flow`, {
-        params: { timeframe, ...(patternType ? { pattern_type: patternType } : {}) },
+        params: {
+          timeframe,
+          ...(patternType ? { pattern_type: patternType } : {}),
+          ...(neckline != null ? { neckline } : {}),
+          ...(targetLevel != null ? { target_level: targetLevel } : {}),
+        },
       })
       .then(r => r.data),
 }
