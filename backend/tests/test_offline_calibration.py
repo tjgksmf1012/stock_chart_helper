@@ -124,7 +124,7 @@ class TestUnresolvedWindowsCountTowardCalibration:
             p_up = 0.6
             p_down = 0.4
 
-        async def _fake_analyze(symbol, timeframe, window_df):
+        async def _fake_analyze(symbol, timeframe, window_df, feature_sink=None):
             return _FakeResult()
 
         monkeypatch.setattr("app.services.offline_calibration.analyze_symbol_dataframe", _fake_analyze)
@@ -164,7 +164,7 @@ class TestDirectionNeutralPatternsAreNotSkipped:
             p_up = 0.6
             p_down = 0.4
 
-        async def _fake_analyze(symbol, timeframe, window_df):
+        async def _fake_analyze(symbol, timeframe, window_df, feature_sink=None):
             return _FakeResult()
 
         monkeypatch.setattr("app.services.offline_calibration.analyze_symbol_dataframe", _fake_analyze)
@@ -201,7 +201,7 @@ class TestPairsAreTaggedWithPatternType:
             p_up = 0.6
             p_down = 0.4
 
-        async def _fake_analyze(symbol, timeframe, window_df):
+        async def _fake_analyze(symbol, timeframe, window_df, feature_sink=None):
             return _FakeResult()
 
         monkeypatch.setattr("app.services.offline_calibration.analyze_symbol_dataframe", _fake_analyze)
@@ -214,6 +214,78 @@ class TestPairsAreTaggedWithPatternType:
         assert meta["signals"] > 0
         assert pairs
         assert all(pattern_type == "cup_and_handle" for pattern_type, _, _ in pairs)
+
+
+class TestFeatureRowsCollection:
+    """Regression: scripts/fit_probability_model.py trains on feature_rows collected
+    via collect_symbol_pairs(feature_rows=...), which relies on analyze_symbol_dataframe's
+    feature_sink out-param actually being threaded through the window-walking loop.
+    """
+
+    @pytest.mark.anyio
+    async def test_feature_rows_populated_and_aligned_with_pairs(self, monkeypatch):
+        from app.services.probability_model import FEATURE_NAMES
+
+        class _FakePattern:
+            pattern_type = "cup_and_handle"
+            neckline = 100.0
+            target_level = 999_999.0
+            invalidation_level = 1.0
+
+        class _FakeResult:
+            no_signal_flag = False
+            patterns = [_FakePattern()]
+            p_up = 0.6
+            p_down = 0.4
+
+        async def _fake_analyze(symbol, timeframe, window_df, feature_sink=None):
+            if feature_sink is not None:
+                feature_sink.update({name: 0.5 for name in FEATURE_NAMES})
+            return _FakeResult()
+
+        monkeypatch.setattr("app.services.offline_calibration.analyze_symbol_dataframe", _fake_analyze)
+
+        symbol = SymbolInfo(code="005930", name="Test", market="KOSPI", sector=None, market_cap=1e12, is_in_universe=True)
+        df = _build_df([10_000.0] * 130)
+
+        feature_rows: list[tuple[dict[str, float], bool]] = []
+        pairs, meta = await collect_symbol_pairs(
+            symbol, "1d", df, window=95, step=5, max_forward=30, feature_rows=feature_rows,
+        )
+
+        assert meta["signals"] > 0
+        assert len(feature_rows) == len(pairs)
+        for features, won in feature_rows:
+            assert set(features.keys()) == set(FEATURE_NAMES)
+            assert isinstance(won, bool)
+
+    @pytest.mark.anyio
+    async def test_feature_rows_stays_empty_when_not_requested(self, monkeypatch):
+        class _FakePattern:
+            pattern_type = "cup_and_handle"
+            neckline = 100.0
+            target_level = 999_999.0
+            invalidation_level = 1.0
+
+        class _FakeResult:
+            no_signal_flag = False
+            patterns = [_FakePattern()]
+            p_up = 0.6
+            p_down = 0.4
+
+        async def _fake_analyze(symbol, timeframe, window_df, feature_sink=None):
+            assert feature_sink is None
+            return _FakeResult()
+
+        monkeypatch.setattr("app.services.offline_calibration.analyze_symbol_dataframe", _fake_analyze)
+
+        symbol = SymbolInfo(code="005930", name="Test", market="KOSPI", sector=None, market_cap=1e12, is_in_universe=True)
+        df = _build_df([10_000.0] * 130)
+
+        pairs, meta = await collect_symbol_pairs(symbol, "1d", df, window=95, step=5, max_forward=30)
+
+        assert meta["signals"] > 0
+        assert pairs
 
 
 class TestSelectOfflineSymbols:

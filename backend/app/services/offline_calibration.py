@@ -99,6 +99,7 @@ async def collect_symbol_pairs(
     window: int,
     step: int,
     max_forward: int,
+    feature_rows: list[tuple[dict[str, float], bool]] | None = None,
 ) -> tuple[list[tuple[str, float, bool]], dict[str, int]]:
     """Walk one symbol's history and emit (pattern_type, predicted, won) triples.
 
@@ -108,6 +109,12 @@ async def collect_symbol_pairs(
     along so callers can break the calibration report down per pattern type
     (an aggregate report can look weak/overconfident even when a subset of
     pattern types has real skill, diluted by weaker ones pooled in).
+
+    If feature_rows is passed, each resolved signal's 9-component own-direction
+    feature dict (from analyze_symbol_dataframe's feature_sink) is appended
+    alongside its outcome -- this is scripts/fit_probability_model.py's training
+    data, collected via the exact same walk so it's aligned window-for-window
+    with the calibration pairs above.
     """
     pairs: list[tuple[str, float, bool]] = []
     windows = 0
@@ -121,8 +128,9 @@ async def collect_symbol_pairs(
             break
         windows += 1
 
+        feature_sink: dict[str, float] | None = {} if feature_rows is not None else None
         try:
-            result = await analyze_symbol_dataframe(symbol, timeframe, window_df)
+            result = await analyze_symbol_dataframe(symbol, timeframe, window_df, feature_sink=feature_sink)
         except Exception as exc:
             logger.debug("offline calibration analyze failed for %s @%d: %s", symbol.code, start, exc)
             continue
@@ -152,8 +160,12 @@ async def collect_symbol_pairs(
             # timeout을 손절과 동일하게(=False) 분모에 포함시켜 같은 효과를 낸다.
             unresolved += 1
             pairs.append((pattern_type, float(predicted), False))
+            if feature_rows is not None and feature_sink:
+                feature_rows.append((dict(feature_sink), False))
             continue
         pairs.append((pattern_type, float(predicted), bool(won)))
+        if feature_rows is not None and feature_sink:
+            feature_rows.append((dict(feature_sink), bool(won)))
 
         # keep the event loop responsive during long background builds
         await asyncio.sleep(_WINDOW_BREATH_SECONDS)
