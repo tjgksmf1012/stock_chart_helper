@@ -93,6 +93,24 @@ SELF_HEALTHCHECK_URL=
 ENABLE_PLATFORM_KEEPALIVE=false
 ```
 
+## Probability Calibration (선택 사항)
+
+`probability_engine.py`가 규칙 기반으로 계산하는 `p_up`/`p_down`은 감으로 정한
+가중치라, "65%라고 표시된 신호가 실제로 65% 이겼나"를 과거 데이터로 검증·보정하는
+단계가 따로 있습니다. 실제 인터넷이 되는 환경(로컬 컴퓨터)에서 아래를 실행하면
+과거 79종목 백테스트를 다시 돌려 (예측 확률, 실제 결과) 쌍을 모으고, 이를 이용해
+isotonic regression으로 보정 매핑을 학습·저장합니다.
+
+```bash
+cd backend && source .venv/bin/activate
+python scripts/fit_probability_calibration.py
+```
+
+표본이 200건 미만이면(네트워크 문제로 데이터를 못 받아온 경우 등) 과적합을 막기
+위해 저장하지 않고 기존 상태(무보정)를 유지합니다. 매핑 파일이 없으면 앱은 항상
+보정 없이 원래 계산값을 그대로 보여줍니다 — 이 스크립트를 실행하지 않아도 앱은
+정상 동작합니다.
+
 ## KIS Setup
 
 실시간 분봉 정확도를 높이려면 `backend/.env` 또는 배포 환경 변수에 KIS 값을 넣어주세요.
