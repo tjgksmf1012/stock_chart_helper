@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import pytest
 
+import pandas as pd
+
 from app.services.backtest_engine import (
     _BACKTEST_CONFIG,
     _BACKTEST_TIMEFRAMES,
@@ -16,6 +18,9 @@ from app.services.backtest_engine import (
     _edge_score,
     _effective_sample_size,
     _resolve_bar_outcome,
+    _spread_sample,
+    get_backtest_universe,
+    get_expanded_backtest_universe,
 )
 from app.services.pattern_engine import PatternResult, pattern_direction_is_bullish
 
@@ -171,6 +176,98 @@ class TestUniverseExpansion:
     def test_config_covers_timeframes(self):
         for tf in _BACKTEST_TIMEFRAMES:
             assert tf in _BACKTEST_CONFIG
+
+
+class _FakeFetcher:
+    def __init__(self, universe_df: pd.DataFrame | None = None, raises: bool = False):
+        self._universe_df = universe_df
+        self._raises = raises
+
+    async def get_universe(self) -> pd.DataFrame:
+        if self._raises:
+            raise RuntimeError("network blocked")
+        return self._universe_df
+
+
+class TestSpreadSample:
+    def test_returns_all_codes_when_count_exceeds_length(self):
+        assert _spread_sample(["a", "b", "c"], 10) == ["a", "b", "c"]
+
+    def test_returns_empty_for_non_positive_count(self):
+        assert _spread_sample(["a", "b"], 0) == []
+
+    def test_spreads_evenly_across_the_list_instead_of_just_the_prefix(self):
+        codes = [str(i) for i in range(100)]
+        sample = _spread_sample(codes, 10)
+        assert len(sample) == 10
+        assert sample[0] == "0"
+        assert sample[-1] != "9"  # not just the first 10
+
+
+class TestExpandedBacktestUniverse:
+    """get_expanded_backtest_universe() must never invent stock codes -- it only
+    ever adds codes that came from the real live universe fetch, and falls back
+    to the curated static list untouched when that fetch fails or is empty.
+    """
+
+    @pytest.mark.anyio
+    async def test_falls_back_to_curated_list_when_universe_fetch_fails(self, monkeypatch):
+        monkeypatch.setattr(
+            "app.services.data_fetcher.get_data_fetcher", lambda: _FakeFetcher(raises=True)
+        )
+        result = await get_expanded_backtest_universe(target_size=200)
+        assert result == get_backtest_universe()
+
+    @pytest.mark.anyio
+    async def test_falls_back_to_curated_list_when_universe_is_empty(self, monkeypatch):
+        monkeypatch.setattr(
+            "app.services.data_fetcher.get_data_fetcher",
+            lambda: _FakeFetcher(universe_df=pd.DataFrame(columns=["code", "market", "name"])),
+        )
+        result = await get_expanded_backtest_universe(target_size=200)
+        assert result == get_backtest_universe()
+
+    @pytest.mark.anyio
+    async def test_adds_new_live_codes_beyond_the_curated_list(self, monkeypatch):
+        curated = get_backtest_universe()
+        new_codes = [f"{900000 + i}" for i in range(50)]
+        live_df = pd.DataFrame(
+            {
+                "code": curated[:5] + new_codes,  # overlaps + genuinely new codes
+                "market": ["KOSPI"] * (5 + len(new_codes)),
+                "name": ["회사"] * (5 + len(new_codes)),
+            }
+        )
+        monkeypatch.setattr(
+            "app.services.data_fetcher.get_data_fetcher", lambda: _FakeFetcher(universe_df=live_df)
+        )
+        result = await get_expanded_backtest_universe(target_size=len(curated) + 20)
+
+        # every curated code is preserved
+        assert set(curated).issubset(set(result))
+        # new codes were actually added, not just the curated list untouched
+        assert len(result) > len(curated)
+        # nothing in the result came from anywhere but curated+live (no invented codes)
+        assert set(result).issubset(set(curated) | set(new_codes))
+
+    @pytest.mark.anyio
+    async def test_excludes_spac_and_preferred_shares_from_live_additions(self, monkeypatch):
+        curated = get_backtest_universe()
+        live_df = pd.DataFrame(
+            {
+                "code": ["900001", "900002", "900003"],
+                "market": ["KOSPI", "KOSPI", "KOSPI"],
+                "name": ["아무개스팩1호", "정상회사", "정상회사우"],
+            }
+        )
+        monkeypatch.setattr(
+            "app.services.data_fetcher.get_data_fetcher", lambda: _FakeFetcher(universe_df=live_df)
+        )
+        result = await get_expanded_backtest_universe(target_size=len(curated) + 10)
+
+        assert "900001" not in result  # SPAC excluded
+        assert "900003" not in result  # preferred share excluded
+        assert "900002" in result  # ordinary common stock included
 
 
 class TestEffectiveSampleSize:

@@ -127,6 +127,51 @@ def get_backtest_universe() -> list[str]:
     return list(_BACKTEST_UNIVERSE)
 
 
+def _spread_sample(codes: list[str], count: int) -> list[str]:
+    if count <= 0 or not codes:
+        return []
+    if count >= len(codes):
+        return list(codes)
+    step = len(codes) / count
+    return [codes[int(i * step)] for i in range(count)]
+
+
+async def get_expanded_backtest_universe(target_size: int = 200) -> list[str]:
+    """확률 재보정 학습(scripts/fit_probability_calibration.py) 전용 — 손으로 골라
+    유지보수하는 _BACKTEST_UNIVERSE(79종목) 대신, 이미 스캔에 쓰이는 실제 KRX 전체
+    유니버스에서 골고루 샘플을 뽑아 학습 표본 다양성을 늘린다.
+
+    hardcoded 리스트를 그냥 더 늘리는 대신 이렇게 하는 이유: 상장폐지/이름 변경된
+    종목 코드를 손으로 추가하면 검증 없이 틀린 코드가 섞일 위험이 있다. 실제 KRX
+    유니버스(data_fetcher.get_universe(), 이미 스캔에서 매일 쓰는 검증된 데이터)를
+    쓰면 그 위험이 없다.
+
+    라이브 유니버스를 못 가져오면(네트워크 제한 등) 기존 고정 리스트로 그대로
+    폴백한다 — 이 함수가 있다고 해서 라이브 데이터 없이 새 종목이 생기지는 않는다.
+    """
+    curated = get_backtest_universe()
+    try:
+        from .data_fetcher import get_data_fetcher
+
+        universe_df = await get_data_fetcher().get_universe()
+    except Exception as exc:
+        logger.warning("failed to fetch live universe for expanded backtest set: %s", exc)
+        return curated
+
+    if universe_df is None or universe_df.empty or "code" not in universe_df.columns:
+        return curated
+
+    names = universe_df.get("name")
+    if names is not None:
+        is_spac = names.fillna("").astype(str).str.contains("스팩", na=False)
+        is_preferred = names.fillna("").astype(str).str.endswith("우", na=False)
+        universe_df = universe_df.loc[~(is_spac | is_preferred)]
+
+    live_codes = sorted({str(c) for c in universe_df["code"].tolist()} - set(curated))
+    extra_needed = max(0, target_size - len(curated))
+    return curated + _spread_sample(live_codes, extra_needed)
+
+
 def get_backtest_config(timeframe: str) -> dict[str, int]:
     return dict(_BACKTEST_CONFIG.get(timeframe, _BACKTEST_CONFIG["1d"]))
 
