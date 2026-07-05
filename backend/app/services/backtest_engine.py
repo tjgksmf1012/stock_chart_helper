@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import Any, Callable
 
 from ..core.redis import cache_get, cache_set
 from .pattern_engine import PatternEngine, PatternResult, pattern_direction_is_bullish
@@ -386,7 +386,18 @@ def _backtest_stock_sync(timeframe: str, bars_df: Any) -> list[dict[str, Any]]:
     return results
 
 
-async def run_backtest() -> dict[str, dict[str, dict[str, float | int | str]]]:
+async def run_backtest(
+    progress_callback: Callable[[str, str, int, int], None] | None = None,
+) -> dict[str, dict[str, dict[str, float | int | str]]]:
+    """전체 유니버스 x 3개 타임프레임 백테스트를 돌려 패턴별 통계를 계산·캐싱한다.
+
+    progress_callback(timeframe, code, index, total)은 종목 하나 처리할 때마다
+    호출된다 — 앱의 평소 fire-and-forget 호출(스케줄러/시작 워밍업)은 신경 안
+    써도 되지만(기본값 None), scripts/fit_probability_calibration.py처럼 이걸
+    직접 기다리는 짧은 프로세스에서는 진행 상황이 하나도 안 보이면 멈춘 것처럼
+    보이므로(실제로는 79종목 x 3타임프레임을 도는 데 수 분 걸릴 수 있음) 넘겨서
+    쓴다.
+    """
     global _backtest_running
     if _backtest_running:
         return await get_pattern_stats_map()
@@ -403,7 +414,12 @@ async def run_backtest() -> dict[str, dict[str, dict[str, float | int | str]]]:
 
         for timeframe in _BACKTEST_TIMEFRAMES:
             cfg = _BACKTEST_CONFIG[timeframe]
-            for code in _BACKTEST_UNIVERSE:
+            for idx, code in enumerate(_BACKTEST_UNIVERSE, start=1):
+                if progress_callback is not None:
+                    try:
+                        progress_callback(timeframe, code, idx, len(_BACKTEST_UNIVERSE))
+                    except Exception:
+                        pass
                 try:
                     df = await fetcher.get_stock_ohlcv_by_timeframe(code, timeframe, lookback_days=int(cfg["lookback_days"]))
                     if df.empty or len(df) < int(cfg["min_bars"]):

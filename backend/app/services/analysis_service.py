@@ -20,7 +20,7 @@ from .pattern_engine import (
     pattern_direction_is_bullish,
 )
 from .market_regime_service import get_market_regime
-from .probability_engine import compute_probability
+from .probability_engine import compute_probability_with_features
 from .timeframe_service import get_timeframe_spec, is_intraday_timeframe, timeframe_label
 
 # 상대강도(RS) lookback을 타임프레임별 봉 수로 환산 — 지수 RS_LOOKBACK_BARS(영업일 63일)와
@@ -3372,6 +3372,7 @@ async def analyze_symbol_dataframe(
     df: pd.DataFrame,
     *,
     fetch_money_flow: bool = False,  # 기본 False — 분석 API 블로킹 방지. 필요시 호출자가 True로 설정
+    feature_sink: dict[str, float] | None = None,  # scripts/fit_probability_model.py 학습 데이터 수집 전용
 ) -> AnalysisResult:
     profile = _data_profile(df, timeframe)
     if df.empty or len(df) < max(20, get_timeframe_spec(timeframe).min_bars):
@@ -3492,7 +3493,7 @@ async def analyze_symbol_dataframe(
         historical_edge_score=historical_edge_score,
     )
 
-    probability = compute_probability(
+    probability, prob_features = compute_probability_with_features(
         best_pattern,
         timeframe=timeframe,
         similar_win_rate=similar_win_rate,
@@ -3515,6 +3516,8 @@ async def analyze_symbol_dataframe(
         wins=wins,
         total=total,
     )
+    if feature_sink is not None and prob_features is not None:
+        feature_sink.update(prob_features)
 
     pattern_infos: list[PatternInfo] = []
     for pattern, completion, recency, pattern_bars_since_signal, target_hit_at, invalidated_at in patterns_with_meta:

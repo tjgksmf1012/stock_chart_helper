@@ -95,7 +95,8 @@ async def test_collect_symbol_pairs_yields_valid_pairs(monkeypatch):
 
     assert meta["windows"] > 0
     assert meta["signals"] >= len(pairs)
-    for predicted, won in pairs:
+    for pattern_type, predicted, won in pairs:
+        assert isinstance(pattern_type, str) and pattern_type
         assert 0.0 <= predicted <= 1.0
         assert isinstance(won, bool)
 
@@ -123,7 +124,7 @@ class TestUnresolvedWindowsCountTowardCalibration:
             p_up = 0.6
             p_down = 0.4
 
-        async def _fake_analyze(symbol, timeframe, window_df):
+        async def _fake_analyze(symbol, timeframe, window_df, feature_sink=None):
             return _FakeResult()
 
         monkeypatch.setattr("app.services.offline_calibration.analyze_symbol_dataframe", _fake_analyze)
@@ -138,7 +139,7 @@ class TestUnresolvedWindowsCountTowardCalibration:
         # Before the fix, unresolved windows were skipped entirely (never appended), so
         # len(pairs) would be 0 here. Now they're appended as a loss.
         assert len(pairs) == meta["signals"]
-        assert all(won is False for _, won in pairs)
+        assert all(won is False for _, _, won in pairs)
 
 
 class TestDirectionNeutralPatternsAreNotSkipped:
@@ -163,7 +164,7 @@ class TestDirectionNeutralPatternsAreNotSkipped:
             p_up = 0.6
             p_down = 0.4
 
-        async def _fake_analyze(symbol, timeframe, window_df):
+        async def _fake_analyze(symbol, timeframe, window_df, feature_sink=None):
             return _FakeResult()
 
         monkeypatch.setattr("app.services.offline_calibration.analyze_symbol_dataframe", _fake_analyze)
@@ -177,6 +178,114 @@ class TestDirectionNeutralPatternsAreNotSkipped:
         # `else: continue` branch, so signals would stay 0 and pairs would be empty.
         assert meta["signals"] > 0
         assert len(pairs) > 0
+
+
+class TestPairsAreTaggedWithPatternType:
+    """Regression: collect_symbol_pairs must carry the pattern_type alongside each
+    (predicted, won) pair so callers can break the calibration report down per
+    pattern type -- an aggregate report can look weak even when only some pattern
+    types are diluting genuinely skillful ones.
+    """
+
+    @pytest.mark.anyio
+    async def test_pattern_type_matches_the_analyzed_pattern(self, monkeypatch):
+        class _FakePattern:
+            pattern_type = "cup_and_handle"
+            neckline = 100.0
+            target_level = 120.0
+            invalidation_level = 90.0
+
+        class _FakeResult:
+            no_signal_flag = False
+            patterns = [_FakePattern()]
+            p_up = 0.6
+            p_down = 0.4
+
+        async def _fake_analyze(symbol, timeframe, window_df, feature_sink=None):
+            return _FakeResult()
+
+        monkeypatch.setattr("app.services.offline_calibration.analyze_symbol_dataframe", _fake_analyze)
+
+        symbol = SymbolInfo(code="005930", name="Test", market="KOSPI", sector=None, market_cap=1e12, is_in_universe=True)
+        df = _build_df([10_000.0] * 130)
+
+        pairs, meta = await collect_symbol_pairs(symbol, "1d", df, window=95, step=5, max_forward=30)
+
+        assert meta["signals"] > 0
+        assert pairs
+        assert all(pattern_type == "cup_and_handle" for pattern_type, _, _ in pairs)
+
+
+class TestFeatureRowsCollection:
+    """Regression: scripts/fit_probability_model.py trains on feature_rows collected
+    via collect_symbol_pairs(feature_rows=...), which relies on analyze_symbol_dataframe's
+    feature_sink out-param actually being threaded through the window-walking loop.
+    """
+
+    @pytest.mark.anyio
+    async def test_feature_rows_populated_and_aligned_with_pairs(self, monkeypatch):
+        from app.services.probability_model import FEATURE_NAMES
+
+        class _FakePattern:
+            pattern_type = "cup_and_handle"
+            neckline = 100.0
+            target_level = 999_999.0
+            invalidation_level = 1.0
+
+        class _FakeResult:
+            no_signal_flag = False
+            patterns = [_FakePattern()]
+            p_up = 0.6
+            p_down = 0.4
+
+        async def _fake_analyze(symbol, timeframe, window_df, feature_sink=None):
+            if feature_sink is not None:
+                feature_sink.update({name: 0.5 for name in FEATURE_NAMES})
+            return _FakeResult()
+
+        monkeypatch.setattr("app.services.offline_calibration.analyze_symbol_dataframe", _fake_analyze)
+
+        symbol = SymbolInfo(code="005930", name="Test", market="KOSPI", sector=None, market_cap=1e12, is_in_universe=True)
+        df = _build_df([10_000.0] * 130)
+
+        feature_rows: list[tuple[dict[str, float], bool]] = []
+        pairs, meta = await collect_symbol_pairs(
+            symbol, "1d", df, window=95, step=5, max_forward=30, feature_rows=feature_rows,
+        )
+
+        assert meta["signals"] > 0
+        assert len(feature_rows) == len(pairs)
+        for features, won in feature_rows:
+            assert set(features.keys()) == set(FEATURE_NAMES)
+            assert isinstance(won, bool)
+
+    @pytest.mark.anyio
+    async def test_feature_rows_stays_empty_when_not_requested(self, monkeypatch):
+        class _FakePattern:
+            pattern_type = "cup_and_handle"
+            neckline = 100.0
+            target_level = 999_999.0
+            invalidation_level = 1.0
+
+        class _FakeResult:
+            no_signal_flag = False
+            patterns = [_FakePattern()]
+            p_up = 0.6
+            p_down = 0.4
+
+        async def _fake_analyze(symbol, timeframe, window_df, feature_sink=None):
+            assert feature_sink is None
+            return _FakeResult()
+
+        monkeypatch.setattr("app.services.offline_calibration.analyze_symbol_dataframe", _fake_analyze)
+
+        symbol = SymbolInfo(code="005930", name="Test", market="KOSPI", sector=None, market_cap=1e12, is_in_universe=True)
+        df = _build_df([10_000.0] * 130)
+
+        pairs, meta = await collect_symbol_pairs(symbol, "1d", df, window=95, step=5, max_forward=30)
+
+        assert meta["signals"] > 0
+        assert pairs
 
 
 class TestSelectOfflineSymbols:

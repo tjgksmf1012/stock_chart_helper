@@ -5,7 +5,8 @@ from datetime import datetime
 import pytest
 
 from app.services.pattern_engine import PatternResult
-from app.services.probability_engine import compute_probability
+from app.services.probability_engine import compute_probability, compute_probability_with_features
+from app.services.probability_model import FEATURE_NAMES
 
 
 def make_pattern(pattern_type: str = "double_bottom", state: str = "confirmed", **over) -> PatternResult:
@@ -24,6 +25,7 @@ def make_pattern(pattern_type: str = "double_bottom", state: str = "confirmed", 
         breakout_quality_fit=0.70,
         retest_quality_fit=0.70,
         candlestick_confirmation_fit=0.70,
+        volume_context_fit=0.70,
     )
     base.update(over)
     return PatternResult(**base)
@@ -96,6 +98,20 @@ def test_direction_neutral_pattern_leans_up_when_breakout_is_bullish():
     assert out.p_up > out.p_down
 
 
+def test_volume_context_fit_moves_the_hand_tuned_probability():
+    # Regression: volume_context_fit is real research signal (breakout-day volume
+    # confirmation is one of the most consistently cited discriminators in the
+    # technical-analysis literature) but used to be folded only into
+    # textbook_similarity/formation_quality with no independent weight in either
+    # the hand-tuned formula or the trainable feature vector. It must now move
+    # its own-direction probability measurably, holding everything else fixed.
+    strong_volume = make_pattern("double_bottom", volume_context_fit=0.95)
+    weak_volume = make_pattern("double_bottom", volume_context_fit=0.10)
+    out_strong = compute_probability(strong_volume, **HEALTHY)
+    out_weak = compute_probability(weak_volume, **HEALTHY)
+    assert out_strong.p_up > out_weak.p_up
+
+
 def test_direction_neutral_pattern_leans_down_when_breakdown_is_bearish():
     pattern = make_pattern("rectangle", neckline=100.0, target_level=80.0)
     out = compute_probability(pattern, **HEALTHY)
@@ -120,6 +136,69 @@ class TestCalibrationIsApplied:
 
         assert out.p_up == pytest.approx(0.5, abs=1e-6)
         assert out.p_down == pytest.approx(0.5, abs=1e-6)
+
+
+class TestComputeProbabilityWithFeatures:
+    """compute_probability_with_features() must be a strict superset of
+    compute_probability() (same ProbabilityOutput) plus the 10-component feature
+    vector that scripts/fit_probability_model.py trains on.
+    """
+
+    def test_matches_compute_probability_and_returns_all_feature_names(self):
+        pattern = make_pattern("double_bottom")
+        plain = compute_probability(pattern, **HEALTHY)
+        out, features = compute_probability_with_features(pattern, **HEALTHY)
+
+        assert out == plain
+        assert features is not None
+        assert set(features.keys()) == set(FEATURE_NAMES)
+        assert all(0.0 <= v <= 1.0 for v in features.values())
+
+    def test_features_is_none_for_no_signal_early_returns(self):
+        _, features = compute_probability_with_features(make_pattern(state="invalidated"), **HEALTHY)
+        assert features is None
+
+        args = {**HEALTHY, "sample_size": 3, "wins": 2, "total": 3}
+        _, features = compute_probability_with_features(make_pattern(), **args)
+        assert features is None
+
+    def test_own_direction_features_match_regardless_of_bullish_or_bearish(self):
+        # A bullish and a bearish pattern built from identical underlying quality
+        # inputs (same textbook_similarity, state, etc.) should produce identical
+        # "own direction" feature values -- confidence in *its own* direction,
+        # not literal "up". Getting this backwards was a real bug caught before
+        # shipping: raw *_up values flip meaning depending on pattern direction.
+        bullish_pattern = make_pattern("double_bottom")
+        bearish_pattern = make_pattern("double_top")
+        _, bullish_features = compute_probability_with_features(bullish_pattern, **HEALTHY)
+        _, bearish_features = compute_probability_with_features(bearish_pattern, **HEALTHY)
+
+        assert bullish_features is not None and bearish_features is not None
+        for name in FEATURE_NAMES:
+            assert bullish_features[name] == pytest.approx(bearish_features[name], abs=1e-9), name
+
+
+class TestProbabilityModelOverride:
+    """Regression: a fitted probability model must actually replace the hand-tuned
+    weighted sum, otherwise scripts/fit_probability_model.py's output would
+    silently have no effect on the app (same failure mode already fixed once for
+    probability_calibration.py's isotonic mapping).
+    """
+
+    def test_model_prediction_propagates_into_final_p_up(self, monkeypatch):
+        import app.services.probability_engine as pe
+
+        baseline = compute_probability(make_pattern("double_bottom"), **HEALTHY)
+        assert baseline.p_up != pytest.approx(0.5)  # sanity: heuristic normally leans away from 0.5
+
+        # Pretend a fitted model is very confident in the *opposite* of what the
+        # hand-tuned formula would say, to make the override unmistakable.
+        monkeypatch.setattr(pe, "predict_directional_probability", lambda features: 0.05)
+        out = compute_probability(make_pattern("double_bottom"), **HEALTHY)
+
+        # own-direction p = 0.05 for a bullish pattern -> p_up_raw = 0.05 (pre-cap/
+        # pre-calibration), i.e. p_up should end up far lower than the baseline.
+        assert out.p_up < baseline.p_up
 
 
 def test_direction_probability_is_capped_at_078():

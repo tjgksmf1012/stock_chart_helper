@@ -6,9 +6,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
+from typing import Any
 
 from .pattern_engine import PatternResult, pattern_direction_is_bullish
 from .probability_calibration import calibrate_probability
+from .probability_model import predict_directional_probability
 from .timeframe_service import probability_threshold_profile
 
 
@@ -263,7 +265,26 @@ def _apply_directional_cap(p_up: float, p_down: float, cap: float) -> tuple[floa
     return p_up, p_down
 
 
-def compute_probability(
+def compute_probability(pattern: PatternResult, **kwargs: Any) -> ProbabilityOutput:
+    output, _ = _compute_probability_impl(pattern, **kwargs)
+    return output
+
+
+def compute_probability_with_features(
+    pattern: PatternResult, **kwargs: Any
+) -> tuple[ProbabilityOutput, dict[str, float] | None]:
+    """compute_probability()와 완전히 같은 계산이지만, p_up/p_down을 섞을 때 쓴
+    10개 방향정렬 하위 점수(rule/empirical/confirmation/volume/...)를 함께 반환한다.
+
+    scripts/fit_probability_model.py가 이 하위 점수들을 (특징, 승패) 학습
+    데이터로 모아서 로지스틱 회귀를 학습하는 데 쓴다 — 지금의 감으로 정한
+    가중치 합(0.25, 0.23, 0.13...)이 실제로 변별력이 있는지 데이터로
+    검증하기 위해서다.
+    """
+    return _compute_probability_impl(pattern, **kwargs)
+
+
+def _compute_probability_impl(
     pattern: PatternResult,
     timeframe: str | None = None,
     similar_win_rate: float = 0.55,
@@ -285,7 +306,7 @@ def compute_probability(
     historical_edge_score: float = 0.5,
     wins: int | None = None,
     total: int | None = None,
-) -> ProbabilityOutput:
+) -> tuple[ProbabilityOutput, dict[str, float] | None]:
     profile = probability_threshold_profile(timeframe)
     base_kwargs = {
         "textbook_similarity": pattern.textbook_similarity,
@@ -315,7 +336,7 @@ def compute_probability(
             no_signal_reason=f"패턴 상태가 이미 {_STATE_LABELS_KR.get(pattern.state, pattern.state)}로 판정되었습니다.",
             reason_summary=f"{_PATTERN_NAMES_KR.get(pattern.pattern_type, pattern.pattern_type)} 패턴은 이미 {_STATE_LABELS_KR.get(pattern.state, pattern.state)} 상태라 현재 활성 진입 신호로 보지 않습니다.",
             **base_kwargs,
-        )
+        ), None
 
     if sample_size < 6:
         return ProbabilityOutput(
@@ -330,7 +351,7 @@ def compute_probability(
             no_signal_reason="유사 패턴 표본 수가 아직 충분하지 않습니다.",
             reason_summary=f"현재 확인된 유사 표본이 {sample_size}건 수준이라 신호를 보수적으로 해석합니다.",
             **base_kwargs,
-        )
+        ), None
 
     rule_up, rule_down = _rule_engine_prob(pattern)
     formation_quality = _formation_quality(pattern)
@@ -360,6 +381,7 @@ def compute_probability(
         return up, 1 - up
 
     conf_up, conf_down = _dir(pattern_confirmation)
+    volume_up, volume_down = _dir(pattern.volume_context_fit)
     regime_up, regime_down = _dir(regime_match)
     comp_up, comp_down = _dir(completion_proximity)
     rec_up, rec_down = _dir(recency_score)
@@ -367,28 +389,62 @@ def compute_probability(
     rr_up, rr_down = _dir(rr_score)
     edge_up, edge_down = _dir(edge_score)
 
-    p_up_raw = (
-        0.27 * rule_up
-        + 0.25 * empirical_up
-        + 0.13 * conf_up
-        + 0.08 * regime_up
-        + 0.07 * comp_up
-        + 0.07 * rec_up
-        + 0.05 * dq_up
-        + 0.04 * rr_up
-        + 0.04 * edge_up
-    )
-    p_down_raw = (
-        0.27 * rule_down
-        + 0.25 * empirical_down
-        + 0.13 * conf_down
-        + 0.08 * regime_down
-        + 0.07 * comp_down
-        + 0.07 * rec_down
-        + 0.05 * dq_down
-        + 0.04 * rr_down
-        + 0.04 * edge_down
-    )
+    # 학습 데이터(collect_symbol_pairs)의 (predicted, won)은 "패턴 자체 방향이
+    # 이겼는가" 기준이라, 여기 특징도 같은 기준(own-direction)으로 맞춰야 한다.
+    # _up 값은 방향에 따라 의미가 뒤집힌다 — bullish면 rule_up=자기 방향 확신도지만
+    # bearish면 rule_up=반대 방향 확신도(=1-자기 방향)다. rule_down/empirical_down도
+    # 마찬가지로 각각 own-direction 값을 골라야 한다.
+    bullish = toward_up >= 0.5
+    features = {
+        "rule": rule_up if bullish else rule_down,
+        "empirical": empirical_up if bullish else empirical_down,
+        "confirmation": conf_up if bullish else conf_down,
+        "volume": volume_up if bullish else volume_down,
+        "regime": regime_up if bullish else regime_down,
+        "completion": comp_up if bullish else comp_down,
+        "recency": rec_up if bullish else rec_down,
+        "data_quality": dq_up if bullish else dq_down,
+        "reward_risk": rr_up if bullish else rr_down,
+        "edge": edge_up if bullish else edge_down,
+    }
+
+    # scripts/fit_probability_model.py로 학습된 모델이 있으면 감으로 정한 가중치
+    # 합 대신 그걸 쓴다 — 없으면(기본 상태) None이 반환되어 기존 공식 그대로
+    # 동작한다(무보정과 동일한 안전한 폴백). 모델 출력은 own-direction 확률이므로
+    # p_up_raw/p_down_raw(항상 "실제 위/아래" 기준) 공간으로 다시 변환해야 한다.
+    model_own_direction_p = predict_directional_probability(features)
+    if model_own_direction_p is not None:
+        if bullish:
+            p_up_raw = model_own_direction_p
+            p_down_raw = 1.0 - model_own_direction_p
+        else:
+            p_down_raw = model_own_direction_p
+            p_up_raw = 1.0 - model_own_direction_p
+    else:
+        p_up_raw = (
+            0.25 * rule_up
+            + 0.23 * empirical_up
+            + 0.13 * conf_up
+            + 0.05 * volume_up
+            + 0.08 * regime_up
+            + 0.07 * comp_up
+            + 0.06 * rec_up
+            + 0.05 * dq_up
+            + 0.04 * rr_up
+            + 0.04 * edge_up
+        )
+        p_down_raw = (
+            0.25 * rule_down
+            + 0.23 * empirical_down
+            + 0.13 * conf_down
+            + 0.05 * volume_down
+            + 0.08 * regime_down
+            + 0.07 * comp_down
+            + 0.06 * rec_down
+            + 0.05 * dq_down
+            + 0.04 * rr_down
+            + 0.04 * edge_down
+        )
 
     p_up = _shrink_toward_even(p_up_raw)
     p_down = _shrink_toward_even(p_down_raw)
@@ -523,4 +579,4 @@ def compute_probability(
         sample_size=sample_size,
         empirical_win_rate=round(posterior_success_rate, 3),
         sample_reliability=round(sample_reliability, 3),
-    )
+    ), features

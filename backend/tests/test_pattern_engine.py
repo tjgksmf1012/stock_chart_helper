@@ -512,3 +512,37 @@ class TestDescendingTriangleRequiresFlatSupport:
         assert not descending, (
             f"parallel falling highs/lows should not be classified as descending_triangle, got {results}"
         )
+
+
+class TestTriangleDetectionHandlesZeroPriceSwings:
+    """Regression: _detect_triangles divided by h_series[0].price / l_series[0].price
+    (and later apex/resistance/support) with no zero-guard. Real KRX prices are never
+    exactly 0, but degenerate/resampled data (e.g. a sparse 1mo/1wk bucket) can still
+    produce a swing point priced at 0 -- discovered via a real ZeroDivisionError crash
+    during a live backtest run against real data. detect_all()'s caller has no
+    try/except around individual detectors, so this killed backtesting for the whole
+    symbol/timeframe rather than just skipping the one degenerate pattern.
+    """
+
+    def test_zero_price_swing_is_skipped_instead_of_raising(self):
+        from app.services.pattern_engine import PatternEngine
+        from app.services.swing_points import SwingPoint
+        from datetime import datetime, timedelta
+
+        base = datetime(2023, 1, 2)
+
+        def sp(idx: int, price: float, kind: str) -> SwingPoint:
+            return SwingPoint(index=idx, datetime=base + timedelta(days=idx), price=price, kind=kind, strength=5)
+
+        swings = [
+            sp(2, 0.0, "high"),
+            sp(10, 95.0, "low"),
+            sp(20, 0.0, "high"),
+            sp(30, 105.0, "low"),
+        ]
+        df = _build_ohlcv_from_closes([100.0] * 40)
+
+        engine = PatternEngine()
+        results = engine._detect_triangles(df, swings, regime_fit=0.5, timeframe="1mo")
+
+        assert results == []
