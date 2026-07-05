@@ -110,7 +110,7 @@ async def collect_symbol_pairs(
     (an aggregate report can look weak/overconfident even when a subset of
     pattern types has real skill, diluted by weaker ones pooled in).
 
-    If feature_rows is passed, each resolved signal's 9-component own-direction
+    If feature_rows is passed, each resolved signal's 10-component own-direction
     feature dict (from analyze_symbol_dataframe's feature_sink) is appended
     alongside its outcome -- this is scripts/fit_probability_model.py's training
     data, collected via the exact same walk so it's aligned window-for-window

@@ -274,11 +274,11 @@ def compute_probability_with_features(
     pattern: PatternResult, **kwargs: Any
 ) -> tuple[ProbabilityOutput, dict[str, float] | None]:
     """compute_probability()와 완전히 같은 계산이지만, p_up/p_down을 섞을 때 쓴
-    9개 방향정렬 하위 점수(rule/empirical/confirmation/...)를 함께 반환한다.
+    10개 방향정렬 하위 점수(rule/empirical/confirmation/volume/...)를 함께 반환한다.
 
     scripts/fit_probability_model.py가 이 하위 점수들을 (특징, 승패) 학습
     데이터로 모아서 로지스틱 회귀를 학습하는 데 쓴다 — 지금의 감으로 정한
-    가중치 합(0.27, 0.25, 0.13...)이 실제로 변별력이 있는지 데이터로
+    가중치 합(0.25, 0.23, 0.13...)이 실제로 변별력이 있는지 데이터로
     검증하기 위해서다.
     """
     return _compute_probability_impl(pattern, **kwargs)
@@ -381,6 +381,7 @@ def _compute_probability_impl(
         return up, 1 - up
 
     conf_up, conf_down = _dir(pattern_confirmation)
+    volume_up, volume_down = _dir(pattern.volume_context_fit)
     regime_up, regime_down = _dir(regime_match)
     comp_up, comp_down = _dir(completion_proximity)
     rec_up, rec_down = _dir(recency_score)
@@ -398,6 +399,7 @@ def _compute_probability_impl(
         "rule": rule_up if bullish else rule_down,
         "empirical": empirical_up if bullish else empirical_down,
         "confirmation": conf_up if bullish else conf_down,
+        "volume": volume_up if bullish else volume_down,
         "regime": regime_up if bullish else regime_down,
         "completion": comp_up if bullish else comp_down,
         "recency": rec_up if bullish else rec_down,
@@ -420,23 +422,25 @@ def _compute_probability_impl(
             p_up_raw = 1.0 - model_own_direction_p
     else:
         p_up_raw = (
-            0.27 * rule_up
-            + 0.25 * empirical_up
+            0.25 * rule_up
+            + 0.23 * empirical_up
             + 0.13 * conf_up
+            + 0.05 * volume_up
             + 0.08 * regime_up
             + 0.07 * comp_up
-            + 0.07 * rec_up
+            + 0.06 * rec_up
             + 0.05 * dq_up
             + 0.04 * rr_up
             + 0.04 * edge_up
         )
         p_down_raw = (
-            0.27 * rule_down
-            + 0.25 * empirical_down
+            0.25 * rule_down
+            + 0.23 * empirical_down
             + 0.13 * conf_down
+            + 0.05 * volume_down
             + 0.08 * regime_down
             + 0.07 * comp_down
-            + 0.07 * rec_down
+            + 0.06 * rec_down
             + 0.05 * dq_down
             + 0.04 * rr_down
             + 0.04 * edge_down

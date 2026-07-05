@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""probability_engine.py의 손으로 정한 9개 하위 점수 가중치를 실제 데이터로 학습한다.
+"""probability_engine.py의 손으로 정한 10개 하위 점수 가중치를 실제 데이터로 학습한다.
 
 fit_probability_calibration.py가 이미 확인한 바로는, 지금 감으로 정한 가중치 합
 (0.27 * rule + 0.25 * empirical + ...)은 base_rate만 항상 예측하는 것보다도
 brier score가 나쁘다 -- 즉 개별 신호를 구분하는 능력이 사실상 없다. 이 스크립트는
 같은 과거 백테스트 유니버스를 실제 운영 파이프라인(analyze_symbol_dataframe)으로
-다시 돌려서 9개 방향정렬 특징(own-direction feature) + 실제 승패 표본을 모으고,
+다시 돌려서 10개 방향정렬 특징(own-direction feature) + 실제 승패 표본을 모으고,
 로지스틱 회귀로 진짜 가중치를 학습해 저장한다.
 
 fit_probability_calibration.py와 마찬가지로:

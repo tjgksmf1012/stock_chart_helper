@@ -29,13 +29,14 @@ from ..core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-# probability_engine.py의 p_up_raw/p_down_raw 가중합에 들어가는 9개 방향정렬
+# probability_engine.py의 p_up_raw/p_down_raw 가중합에 들어가는 10개 방향정렬
 # 하위 점수와 정확히 같은 이름·순서. 학습/추론 양쪽에서 이 순서를 그대로 써야
 # coef 배열의 각 자리가 어떤 특징에 대응하는지 어긋나지 않는다.
 FEATURE_NAMES: tuple[str, ...] = (
     "rule",
     "empirical",
     "confirmation",
+    "volume",
     "regime",
     "completion",
     "recency",
@@ -44,7 +45,7 @@ FEATURE_NAMES: tuple[str, ...] = (
     "edge",
 )
 
-# 로지스틱 회귀는 특징이 9개라 이 정도 표본 미만이면 과적합 위험이 크다.
+# 로지스틱 회귀는 특징이 10개라 이 정도 표본 미만이면 과적합 위험이 크다.
 MIN_FIT_SAMPLES = 200
 
 
@@ -124,7 +125,7 @@ def _load_model() -> ProbabilityModel | None:
 
 
 def predict_directional_probability(features: dict[str, float]) -> float | None:
-    """9개 방향정렬 하위 점수로 "패턴 자체 방향이 이길 확률"을 예측한다.
+    """10개 방향정렬 하위 점수로 "패턴 자체 방향이 이길 확률"을 예측한다.
 
     학습된 모델 파일이 없으면 None을 반환 -- 호출부(probability_engine.py)는
     이 경우 기존 감으로 정한 가중치 공식으로 폴백해야 한다.
@@ -145,9 +146,9 @@ def predict_directional_probability(features: dict[str, float]) -> float | None:
 def fit_probability_model(
     rows: list[tuple[dict[str, float], bool]], min_samples: int = MIN_FIT_SAMPLES
 ) -> ProbabilityModel | None:
-    """(9개 방향정렬 특징, 승패) 표본으로 로지스틱 회귀를 학습한다.
+    """(10개 방향정렬 특징, 승패) 표본으로 로지스틱 회귀를 학습한다.
 
-    표본이 min_samples 미만이면 9차원 로지스틱 회귀엔 과적합 위험이 커서
+    표본이 min_samples 미만이면 10차원 로지스틱 회귀엔 과적합 위험이 커서
     None을 반환한다.
     """
     clean = [(f, bool(w)) for f, w in rows if f]

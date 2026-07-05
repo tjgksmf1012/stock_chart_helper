@@ -25,6 +25,7 @@ def make_pattern(pattern_type: str = "double_bottom", state: str = "confirmed", 
         breakout_quality_fit=0.70,
         retest_quality_fit=0.70,
         candlestick_confirmation_fit=0.70,
+        volume_context_fit=0.70,
     )
     base.update(over)
     return PatternResult(**base)
@@ -97,6 +98,20 @@ def test_direction_neutral_pattern_leans_up_when_breakout_is_bullish():
     assert out.p_up > out.p_down
 
 
+def test_volume_context_fit_moves_the_hand_tuned_probability():
+    # Regression: volume_context_fit is real research signal (breakout-day volume
+    # confirmation is one of the most consistently cited discriminators in the
+    # technical-analysis literature) but used to be folded only into
+    # textbook_similarity/formation_quality with no independent weight in either
+    # the hand-tuned formula or the trainable feature vector. It must now move
+    # its own-direction probability measurably, holding everything else fixed.
+    strong_volume = make_pattern("double_bottom", volume_context_fit=0.95)
+    weak_volume = make_pattern("double_bottom", volume_context_fit=0.10)
+    out_strong = compute_probability(strong_volume, **HEALTHY)
+    out_weak = compute_probability(weak_volume, **HEALTHY)
+    assert out_strong.p_up > out_weak.p_up
+
+
 def test_direction_neutral_pattern_leans_down_when_breakdown_is_bearish():
     pattern = make_pattern("rectangle", neckline=100.0, target_level=80.0)
     out = compute_probability(pattern, **HEALTHY)
@@ -125,7 +140,7 @@ class TestCalibrationIsApplied:
 
 class TestComputeProbabilityWithFeatures:
     """compute_probability_with_features() must be a strict superset of
-    compute_probability() (same ProbabilityOutput) plus the 9-component feature
+    compute_probability() (same ProbabilityOutput) plus the 10-component feature
     vector that scripts/fit_probability_model.py trains on.
     """
 

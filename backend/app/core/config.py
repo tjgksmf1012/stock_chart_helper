@@ -80,7 +80,7 @@ class Settings(BaseSettings):
     # isotonic regression 매핑 파일. scripts/fit_probability_calibration.py로
     # 생성 — 파일이 없으면 보정 없이(항등 함수) 그대로 동작한다.
     probability_calibration_path: str = "data/probability_calibration.json"
-    # p_up/p_down을 섞는 9개 하위 점수의 가중치를 감 대신 실제 데이터(로지스틱
+    # p_up/p_down을 섞는 10개 하위 점수의 가중치를 감 대신 실제 데이터(로지스틱
     # 회귀)로 학습한 모델 파일. scripts/fit_probability_model.py로 생성 — 파일이
     # 없으면 probability_engine.py의 기존 손으로 정한 가중치 공식 그대로 동작한다.
     probability_model_path: str = "data/probability_model.json"
