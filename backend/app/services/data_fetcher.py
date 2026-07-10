@@ -35,6 +35,13 @@ YAHOO_INTRADAY_COOLDOWN_PREFIX = "yahoo:intraday:cooldown"
 KRX_COOLDOWN_KEY = "krx:cooldown:v1"
 KRX_COOLDOWN_TTL_SECONDS = 900  # 15분
 
+# FDR(FinanceDataReader) 서킷브레이커 — pykrx가 이미 cooldown 상태라 매 종목이
+# FDR로 폴백하는 상황에서, FDR 자체도 막혀 있으면(레이트리밋/사이트 구조 변경 등)
+# 종목마다 새 타임아웃을 기다리며 스캔이 수십 분씩 늘어진다. 두 소스가 동시에
+# 막힌 경우를 짧게 감지해 남은 종목은 즉시 실패 처리하고 저장 캐시로 넘어가게 한다.
+FDR_COOLDOWN_KEY = "fdr:cooldown:v1"
+FDR_COOLDOWN_TTL_SECONDS = 300  # 5분 — KRX보다 짧게: 네트워크 일시 문제일 가능성도 있어 더 자주 재시도
+
 
 async def krx_in_cooldown() -> bool:
     return bool(await cache_get(KRX_COOLDOWN_KEY))
@@ -44,6 +51,18 @@ async def mark_krx_cooldown(reason: str) -> None:
     try:
         await cache_set(KRX_COOLDOWN_KEY, {"reason": str(reason)[:200]}, ttl=KRX_COOLDOWN_TTL_SECONDS)
         logger.warning("KRX cooldown engaged for %ss: %s", KRX_COOLDOWN_TTL_SECONDS, str(reason)[:200])
+    except Exception:
+        pass
+
+
+async def fdr_in_cooldown() -> bool:
+    return bool(await cache_get(FDR_COOLDOWN_KEY))
+
+
+async def mark_fdr_cooldown(reason: str) -> None:
+    try:
+        await cache_set(FDR_COOLDOWN_KEY, {"reason": str(reason)[:200]}, ttl=FDR_COOLDOWN_TTL_SECONDS)
+        logger.warning("FDR cooldown engaged for %ss: %s", FDR_COOLDOWN_TTL_SECONDS, str(reason)[:200])
     except Exception:
         pass
 
@@ -622,6 +641,12 @@ class KRXDataFetcher:
         return f"{FETCH_STATUS_MESSAGES['stored_fallback']} {base_message}{age_text}"
 
     async def _fdr_fallback(self, code: str, start: date, end: date) -> pd.DataFrame:
+        if await fdr_in_cooldown():
+            return self._empty_frame(
+                data_source="fdr_daily",
+                fetch_status="daily_error",
+                fetch_message="FinanceDataReader가 최근 실패가 반복돼 잠시 건너뛰는 중입니다.",
+            )
         try:
             import FinanceDataReader as fdr
 
@@ -638,6 +663,7 @@ class KRXDataFetcher:
                 fetch_status="daily_ok",
             )
         except Exception as exc:
+            await mark_fdr_cooldown(f"daily ohlcv {code}: {exc}")
             logger.error("FinanceDataReader also failed for %s: %s", code, exc)
             return self._empty_frame(
                 data_source="fdr_daily",

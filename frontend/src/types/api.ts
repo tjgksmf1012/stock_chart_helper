@@ -491,6 +491,7 @@ export interface ScanStatusResponse {
   timeframe_label: string
   status: string
   is_running: boolean
+  cancel_requested?: boolean
   source: string | null
   candidate_source: string | null
   candidate_count: number | null
@@ -505,6 +506,8 @@ export interface ScanStatusResponse {
   last_error: string | null
   duration_ms: number | null
   trigger_accepted?: boolean | null
+  data_source_degraded?: boolean
+  data_source_note?: string | null
 }
 
 export interface DeepAnalysisProgress {

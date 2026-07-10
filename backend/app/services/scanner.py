@@ -177,6 +177,7 @@ def _status_template(timeframe: str) -> dict[str, Any]:
         "timeframe_label": timeframe_label(timeframe),
         "status": "idle",
         "is_running": False,
+        "cancel_requested": False,
         "source": None,
         "candidate_source": None,
         "candidate_count": None,
@@ -199,6 +200,16 @@ def _update_scan_status(timeframe: str, **kwargs: Any) -> None:
 
 def _status_snapshot(timeframe: str) -> dict[str, Any]:
     return dict(_scan_status.get(timeframe, _status_template(timeframe)))
+
+
+def request_scan_cancel(timeframe: str) -> bool:
+    """실행 중인 스캔에 취소를 요청한다. 다음 배치 경계에서 반영되어 그때까지
+    모인 부분 결과는 그대로 저장된다 (런타임 상한 초과 시 동작과 동일한 경로)."""
+    status = _scan_status.get(timeframe)
+    if status is None or not status.get("is_running"):
+        return False
+    status["cancel_requested"] = True
+    return True
 
 
 def _fallback_universe_rows(universe, limit: int) -> list[tuple[str, str, str]]:
@@ -686,6 +697,19 @@ async def get_scan_status(timeframe: str = DEFAULT_TIMEFRAME) -> dict[str, Any]:
     if task and not task.done():
         status["is_running"] = True
         status["status"] = "warming" if status.get("cached_result_count", 0) > 0 else "queued"
+
+    # 결과가 0건일 때 "오늘은 후보가 없음"과 "데이터 수집 자체가 실패함"을
+    # 화면에서 구분할 수 있도록, 두 소스가 최근 실패해 쿨다운 중인지 알려준다.
+    from .data_fetcher import fdr_in_cooldown, krx_in_cooldown
+
+    krx_down, fdr_down = await asyncio.gather(krx_in_cooldown(), fdr_in_cooldown())
+    status["data_source_degraded"] = bool(krx_down and fdr_down)
+    status["data_source_note"] = (
+        "KRX·FinanceDataReader 데이터 수집이 최근 반복 실패해 잠시 쉬는 중입니다. "
+        "결과가 비어 있다면 신호가 없어서가 아니라 데이터를 못 가져온 것일 수 있습니다."
+        if status["data_source_degraded"]
+        else None
+    )
     return status
 
 
@@ -827,16 +851,27 @@ async def _fetch_universe_codes(limit: int = 100) -> tuple[list[tuple[str, str, 
         today = reference_day.strftime("%Y%m%d")
         rows: list[tuple[str, str, str, float, float]] = []  # code, name, market, mktcap, turnover
 
+        # 시장별로 개별 try/except — KOSPI 조회가 pykrx 내부 오류(예: 휴장일 판정
+        # 컬럼 누락)로 실패해도 KOSDAQ까지 통째로 포기하지 않도록 한다. 두 시장이
+        # 모두 실패하면 아래 rows가 비어 있어 기존과 동일하게 폴백 경로를 탄다.
+        market_errors: list[str] = []
         for market in ("KOSPI", "KOSDAQ"):
-            cap_df = await asyncio.wait_for(
-                asyncio.to_thread(krx.get_market_cap_by_ticker, today, market=market),
-                timeout=25.0,  # 시장별 타임아웃 — 첫 호출은 KRX 로그인 포함이라 여유 확보
-            )
+            try:
+                cap_df = await asyncio.wait_for(
+                    asyncio.to_thread(krx.get_market_cap_by_ticker, today, market=market),
+                    timeout=25.0,  # 시장별 타임아웃 — 첫 호출은 KRX 로그인 포함이라 여유 확보
+                )
+            except Exception as exc:
+                market_errors.append(f"{market}: {exc}")
+                logger.warning("Market-cap fetch failed for %s: %s", market, exc)
+                continue
             if cap_df is None or cap_df.empty:
                 continue
             market_cap_col = next((column for column in ("시가총액", "MarketCap", "market_cap") if column in cap_df.columns), None)
             if market_cap_col is None:
-                raise KeyError(f"market cap column missing: {list(cap_df.columns)}")
+                market_errors.append(f"{market}: market cap column missing ({list(cap_df.columns)})")
+                logger.warning("Market-cap fetch for %s missing expected column: %s", market, list(cap_df.columns))
+                continue
             turnover_col = next((col for col in ("거래대금",) if col in cap_df.columns), None)
             for code, row in cap_df.iterrows():
                 market_cap = float(row.get(market_cap_col, 0)) / 1e8
@@ -845,6 +880,9 @@ async def _fetch_universe_codes(limit: int = 100) -> tuple[list[tuple[str, str, 
                 code_str = str(code)
                 turnover = float(row.get(turnover_col, 0)) if turnover_col else 0.0
                 rows.append((code_str, universe_names.get(code_str, code_str), market, market_cap, turnover))
+
+        if market_errors and not rows:
+            raise RuntimeError("; ".join(market_errors))
 
         if rows:
             # Liquidity filter: remove bottom 52% by single-day trading value (거래대금).
@@ -1396,6 +1434,7 @@ async def run_scan(
             timeframe,
             status="running",
             is_running=True,
+            cancel_requested=False,
             source=source,
             last_started_at=started_at.isoformat(),
             last_error=None,
@@ -1461,6 +1500,14 @@ async def run_scan(
                 if elapsed >= max_duration_seconds and results:
                     logger.warning(
                         "Market scan reached runtime cap for %s after %d/%d candidates; saving partial results",
+                        timeframe,
+                        index,
+                        len(universe),
+                    )
+                    break
+                if _scan_status.get(timeframe, {}).get("cancel_requested"):
+                    logger.info(
+                        "Market scan cancelled by user for %s after %d/%d candidates; saving partial results",
                         timeframe,
                         index,
                         len(universe),

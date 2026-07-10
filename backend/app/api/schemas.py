@@ -414,6 +414,7 @@ class ScanStatusResponse(BaseModel):
     timeframe_label: str
     status: str
     is_running: bool
+    cancel_requested: bool = False
     source: str | None = None
     candidate_source: str | None = None
     candidate_count: int | None = None
@@ -428,6 +429,8 @@ class ScanStatusResponse(BaseModel):
     last_error: str | None = None
     duration_ms: int | None = None
     trigger_accepted: bool | None = None
+    data_source_degraded: bool = False
+    data_source_note: str | None = None
 
 
 class KisRuntimeStatus(BaseModel):

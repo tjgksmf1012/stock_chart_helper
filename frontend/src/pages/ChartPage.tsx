@@ -1138,37 +1138,3 @@ function actionPlanVariant(plan: string): 'bullish' | 'warning' | 'muted' | 'neu
   if (plan === 'recheck') return 'warning'
   return 'muted'
 }
-
-function buildReferenceCases(
-  analysis: AnalysisResult | undefined,
-  symbol: string | undefined,
-  timeframe: Timeframe,
-) {
-  const patternType = analysis?.patterns[0]?.pattern_type ?? 'double_bottom'
-  const symbolLabel = analysis?.symbol.name ?? symbol ?? '현재 종목'
-  const timeframeText = timeframeLabel(timeframe)
-
-  return [
-    {
-      key: 'double-bottom-breakout',
-      title: '쌍바닥 돌파 상승',
-      tag: '정석 breakout',
-      summary: `${symbolLabel}의 ${timeframeText} 구조와 비교하기 좋은 기본 레퍼런스입니다. neckline 돌파 뒤 눌림이 짧고, 이전 공급대까지 한 번에 정리하는 흐름을 보여줍니다.`,
-      focus: '체크 포인트: neckline 안착 -> 이전 고점 정리 -> 거래량 유지',
-    },
-    {
-      key: 'double-bottom-partial-breakout',
-      title: '직전 고점만 넘긴 케이스',
-      tag: 'partial breakout',
-      summary: `${symbolLabel}처럼 위쪽 매물대가 남아 있을 때 참고하기 좋은 유형입니다. 바로 앞 고점은 넘지만 전전 고점에서 다시 쉬거나 되밀리는 흐름을 비교할 수 있습니다.`,
-      focus: '체크 포인트: 1차 전고점 돌파 성공, 2차 전고점 저항 확인',
-    },
-    {
-      key: patternType === 'double_bottom' ? 'double-bottom-cloud-support' : 'cloud-support-relaunch',
-      title: '구름대 상단 지지 후 재출발',
-      tag: 'Ichimoku pullback',
-      summary: '228,500원처럼 바로 못 넘는 가격대가 있을 때, 구름 상단까지 쉬었다가 지지받고 다시 가는 상황을 따로 비교할 수 있게 준비했습니다.',
-      focus: '체크 포인트: 구름 상단 터치 -> 지지 확인 -> 재가속',
-    },
-  ]
-}

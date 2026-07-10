@@ -159,6 +159,17 @@ export default function DashboardPage() {
     }
   }
 
+  const [isCancellingScan, setIsCancellingScan] = useState(false)
+  const cancelScan = async () => {
+    setIsCancellingScan(true)
+    try {
+      await dashboardApi.cancelScan(timeframe)
+      await statusQ.refetch()
+    } finally {
+      setIsCancellingScan(false)
+    }
+  }
+
   // 스캔 결과가 오래됐으면(기본 90분) 사용자가 직접 "빠른 갱신"을 누르지 않아도
   // 자동으로 한 번 새로고침한다. 하루 1회(타임프레임별)로 제한해 예약 스캔과
   // 겹치지 않는 시간대에도 방문 시점 기준으로 어느 정도 신선함을 보장하면서,
@@ -317,6 +328,11 @@ export default function DashboardPage() {
           {regimeWarning}
         </div>
       )}
+      {status?.data_source_degraded && (
+        <div className="rounded-lg border border-red-400/25 bg-red-400/8 px-3 py-2 text-xs font-medium text-red-300">
+          ⚠️ {status.data_source_note}
+        </div>
+      )}
 
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1.3fr)_360px]">
         <Card className="space-y-5 border-primary/15 bg-[linear-gradient(180deg,rgba(37,99,235,0.12),rgba(15,23,42,0.18))]">
@@ -460,9 +476,22 @@ export default function DashboardPage() {
             <div className="space-y-1">
               <div className="flex items-center justify-between text-[11px] text-muted-foreground">
                 <span>스캔 진행</span>
-                <span className="font-mono">
-                  {status?.scanned_count ?? 0} / {status?.universe_size}종목
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono">
+                    {status?.scanned_count ?? 0} / {status?.universe_size}종목
+                  </span>
+                  {!status?.cancel_requested ? (
+                    <button
+                      onClick={cancelScan}
+                      disabled={isCancellingScan}
+                      className="text-muted-foreground underline decoration-dotted transition-colors hover:text-foreground disabled:opacity-50"
+                    >
+                      {isCancellingScan ? '취소 중...' : '취소'}
+                    </button>
+                  ) : (
+                    <span>취소 반영 중</span>
+                  )}
+                </div>
               </div>
               <div className="h-1.5 overflow-hidden rounded-full bg-muted/40">
                 <div
