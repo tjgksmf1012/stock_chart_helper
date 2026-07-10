@@ -28,8 +28,18 @@ if not exist "%ROOT_DIR%backend\.env" (
   )
 )
 
+if not exist "%ROOT_DIR%backend\.venv\Scripts\python.exe" (
+  echo.
+  echo [ERROR] backend\.venv 가상환경을 찾을 수 없습니다. backend 폴더에서 먼저 실행하세요:
+  echo           python -m venv .venv
+  echo           .venv\Scripts\pip install -r requirements.txt
+  echo.
+  pause
+  exit /b 1
+)
+
 echo [1/3] Backend starting at http://localhost:%BACKEND_PORT%
-start "Backend" cmd /k "cd /d "%ROOT_DIR%backend" && python -m uvicorn app.main:app --reload --port %BACKEND_PORT%"
+start "Backend" cmd /k "cd /d "%ROOT_DIR%backend" && .venv\Scripts\python.exe -m uvicorn app.main:app --reload --reload-exclude "data/*" --port %BACKEND_PORT%"
 
 echo [2/3] Frontend starting at http://localhost:%FRONTEND_PORT%
 start "Frontend" cmd /k "cd /d "%ROOT_DIR%frontend" && npm run dev"

@@ -1,4 +1,12 @@
 import asyncio
+import sys
+
+if sys.platform == "win32":
+    # Windows 콘솔의 기본 코드페이지(cp949 등)는 로그에 쓰이는 em dash(—), 화살표(→)
+    # 같은 유니코드 문자를 인코딩하지 못해 UnicodeEncodeError로 앱이 죽는다.
+    # stdout/stderr를 UTF-8로 강제해 어떤 콘솔 코드페이지에서도 죽지 않게 한다.
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 import structlog
 from fastapi import FastAPI

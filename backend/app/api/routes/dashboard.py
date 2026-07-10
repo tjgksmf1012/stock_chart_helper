@@ -14,7 +14,7 @@ from ..schemas import (
 )
 from ...core.config import get_settings
 from ...services.market_regime_service import get_market_regime
-from ...services.scanner import get_scan_results, get_scan_status, trigger_scan
+from ...services.scanner import get_scan_results, get_scan_status, request_scan_cancel, trigger_scan
 from ...services.sector_service import build_sector_heatmap, get_sector_map
 from ...services.timeframe_service import DEFAULT_TIMEFRAME, timeframe_label
 
@@ -337,6 +337,12 @@ async def dashboard_scan_refresh(
             )
         )
     )
+
+
+@router.post("/scan-cancel", response_model=ScanStatusResponse)
+async def dashboard_scan_cancel(timeframe: str = Query(default=DEFAULT_TIMEFRAME)) -> ScanStatusResponse:
+    request_scan_cancel(_timeframe_query(timeframe))
+    return ScanStatusResponse(**(await get_scan_status(_timeframe_query(timeframe))))
 
 
 @router.get("/long-high-probability")
