@@ -47,3 +47,23 @@ async def fetch_point_in_time_universe(asof: date, top_n: int, max_back_days: in
         except Exception as exc:
             logger.warning("point-in-time universe fetch failed for %s: %s", stamp, exc)
     return []
+
+
+async def fetch_current_universe_biased(top_n: int) -> list[str]:
+    """현재 상장 목록 기준 시총 상위 — 시점 고정이 아니라 **생존 편향이 있다**.
+
+    KRX 로그인(KRX_ID/KRX_PW) 없이 pykrx 시점 조회가 막힌 환경을 위한 명시적
+    대체 모드. 과거에 상폐·편출된 종목이 빠져 있어 성적이 실제보다 좋게 나오는
+    방향의 편향이므로, 이 모드로 낸 결과는 리포트에 편향을 기록해야 하고
+    'pass' 판정의 근거로 쓸 수 없다 (호출부가 watch로 강등).
+    """
+    from ..services.data_fetcher import get_data_fetcher
+
+    universe = await get_data_fetcher().get_universe()
+    if universe.empty or "market_cap" not in universe.columns:
+        return []
+    caps = pd.Series(
+        pd.to_numeric(universe["market_cap"], errors="coerce").values,
+        index=universe["code"].astype(str),
+    )
+    return select_top_by_market_cap(caps, top_n)

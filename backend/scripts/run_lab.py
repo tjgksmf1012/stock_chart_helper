@@ -22,7 +22,7 @@ from app.lab.baselines import random_benchmark_signals  # noqa: E402
 from app.lab.costs import CostModel  # noqa: E402
 from app.lab.metrics import decide_verdict, summarize  # noqa: E402
 from app.lab.simulate import simulate_trades  # noqa: E402
-from app.lab.universe import fetch_point_in_time_universe  # noqa: E402
+from app.lab.universe import fetch_current_universe_biased, fetch_point_in_time_universe  # noqa: E402
 from app.lab.walkforward import run_walk_forward, walk_forward_windows  # noqa: E402
 
 STRATEGIES = {}
@@ -59,6 +59,10 @@ async def main() -> None:
     parser.add_argument("--top-n", type=int, default=100)
     parser.add_argument("--train-years", type=int, default=2)
     parser.add_argument("--test-months", type=int, default=6)
+    parser.add_argument(
+        "--universe", choices=["pit", "current"], default="pit",
+        help="pit=시점 고정(KRX 로그인 필요할 수 있음), current=현재 상장 목록(생존 편향 — pass 불가)",
+    )
     args = parser.parse_args()
 
     _register_strategies()
@@ -68,12 +72,26 @@ async def main() -> None:
         print("검증 윈도우를 만들 수 없습니다 (기간이 너무 짧음).")
         return
 
-    # 시점 고정 유니버스: 각 검증 시작일 기준. 실패한 윈도우는 커버리지에 기록.
+    # 유니버스 구성 — pit(시점 고정)이 원칙, current는 명시적 편향 모드
     universes: dict = {}
-    for w in windows:
-        codes = await fetch_point_in_time_universe(w.test_start, args.top_n)
-        universes[w] = codes
-        print(f"유니버스 {w.test_start}: {len(codes)}종목")
+    if args.universe == "pit":
+        for w in windows:
+            codes = await fetch_point_in_time_universe(w.test_start, args.top_n)
+            universes[w] = codes
+            print(f"유니버스 {w.test_start}: {len(codes)}종목")
+        if not any(universes.values()):
+            print(
+                "\n[중단] 시점 고정 유니버스를 한 윈도우도 못 만들었습니다.\n"
+                "  - KRX 로그인(.env의 KRX_ID/KRX_PW)을 설정하면 pit 모드를 쓸 수 있습니다.\n"
+                "  - 당장 파이프라인을 돌려보려면 --universe current (생존 편향 명시 모드)를 쓰세요.\n"
+                "    이 모드의 결과는 pass 판정이 불가능하며 리포트에 편향이 기록됩니다."
+            )
+            return
+    else:
+        codes = await fetch_current_universe_biased(args.top_n)
+        print(f"유니버스(현재 목록, 생존 편향): {len(codes)}종목 — 모든 윈도우에 동일 적용")
+        for w in windows:
+            universes[w] = codes
 
     all_codes = sorted({c for codes in universes.values() for c in codes})
     lookback = (args.end - args.start).days + 800  # 학습 워밍업 여유
@@ -113,6 +131,13 @@ async def main() -> None:
 
     # 랜덤 벤치마크 반영해 판정 재계산
     verdict = decide_verdict(result.summary.ev_pct, result.ci[0], random_ev) if result.summary.n else "fail"
+    universe_note = None
+    if args.universe == "current" and verdict == "pass":
+        # 생존 편향 유니버스로는 통과 자격이 없다 — 성적이 실제보다 좋게 나오는 편향
+        verdict = "watch"
+        universe_note = "현재 상장 목록(생존 편향) 기준이라 pass를 watch로 강등했습니다. KRX_ID/KRX_PW 설정 후 pit 모드로 재검증하세요."
+    elif args.universe == "current":
+        universe_note = "현재 상장 목록(생존 편향) 기준 — 실제 성적은 이보다 나쁠 수 있습니다."
 
     report = {
         "strategy": strategy.id,
@@ -120,6 +145,8 @@ async def main() -> None:
         "period": {"start": args.start.isoformat(), "end": args.end.isoformat()},
         "config": {"top_n": args.top_n, "train_years": args.train_years,
                    "test_months": args.test_months, "round_trip_cost_pct": cost_model.round_trip_pct},
+        "universe_mode": args.universe,
+        "universe_note": universe_note,
         "data_coverage": round(coverage, 3),
         "n_trades": result.summary.n,
         "ev_pct": round(result.summary.ev_pct, 5),
@@ -147,6 +174,8 @@ async def main() -> None:
     print(f"승률 {report['win_rate']:.0%}, 손익비 {report['payoff_ratio']}, MDD {report['mdd_pct']:.0%}")
     print(f"랜덤 벤치마크 EV: {report['random_benchmark_ev_pct']}")
     print(f"판정: {verdict.upper()}")
+    if universe_note:
+        print(f"주의: {universe_note}")
     print(f"저장: {out_path}")
 
 
