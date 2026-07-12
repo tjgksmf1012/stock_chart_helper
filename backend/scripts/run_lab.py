@@ -18,6 +18,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+# Windows 콘솔(cp949)에서 한글/유니코드 출력이 깨지지 않게
+if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 from app.lab.baselines import random_benchmark_signals  # noqa: E402
 from app.lab.costs import CostModel  # noqa: E402
 from app.lab.metrics import decide_verdict, summarize  # noqa: E402
