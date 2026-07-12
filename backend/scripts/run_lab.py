@@ -26,6 +26,7 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
 from app.lab.baselines import random_benchmark_signals  # noqa: E402
 from app.lab.costs import CostModel  # noqa: E402
 from app.lab.metrics import decide_verdict, summarize  # noqa: E402
+from app.lab.portfolio import portfolio_equity_metrics  # noqa: E402
 from app.lab.simulate import simulate_trades  # noqa: E402
 from app.lab.universe import fetch_current_universe_biased, fetch_point_in_time_universe  # noqa: E402
 from app.lab.walkforward import run_walk_forward, walk_forward_windows  # noqa: E402
@@ -152,7 +153,9 @@ async def main() -> None:
         "ci_95": [round(result.ci[0], 5), round(result.ci[1], 5)],
         "win_rate": round(result.summary.win_rate, 3),
         "payoff_ratio": round(result.summary.payoff_ratio, 2),
-        "mdd_pct": round(result.summary.mdd_pct, 3),
+        # 순차 복리 MDD는 다종목에서 과장되므로 참고용, 대표 지표는 포트폴리오 기준
+        "sequential_mdd_pct": round(result.summary.mdd_pct, 3),
+        **{k: round(v, 4) for k, v in portfolio_equity_metrics(result.trades, bars, slots=10).items()},
         "random_benchmark_ev_pct": round(random_ev, 5) if random_ev is not None else None,
         "verdict": verdict,
         "generated_at": datetime.now().isoformat(),
@@ -170,7 +173,8 @@ async def main() -> None:
     print(f"전략: {strategy.label}")
     print(f"트레이드: {report['n_trades']}건, 커버리지 {coverage:.0%}")
     print(f"거래당 EV(비용 차감): {report['ev_pct']:+.3%}  (95% CI {report['ci_95'][0]:+.3%} ~ {report['ci_95'][1]:+.3%})")
-    print(f"승률 {report['win_rate']:.0%}, 손익비 {report['payoff_ratio']}, MDD {report['mdd_pct']:.0%}")
+    print(f"승률 {report['win_rate']:.0%}, 손익비 {report['payoff_ratio']}")
+    print(f"포트폴리오(10슬롯): 누적 {report['portfolio_total_return_pct']:+.1%}, MDD {report['portfolio_mdd_pct']:.1%}")
     print(f"랜덤 벤치마크 EV: {report['random_benchmark_ev_pct']}")
     print(f"판정: {verdict.upper()}")
     if universe_note:
