@@ -89,6 +89,54 @@ class TestHarness:
         for seen, w in zip(strategy.seen_train_end, windows):
             assert seen.date() <= w.train_end
 
+    def test_causal_strategy_computes_signals_once_per_code(self):
+        # causal_signals=True인 고정 규칙 전략은 종목당 signals()를 1회만 호출한다
+        # (윈도우마다 재계산하던 것이 런타임의 주범이었음)
+        class _CausalCounting(_FixedStrategy):
+            causal_signals = True
+
+            def __init__(self):
+                super().__init__()
+                self.signal_calls = 0
+
+            def signals(self, code, bars, params):
+                self.signal_calls += 1
+                return super().signals(code, bars, params)
+
+        bars = {"A": _monotone_bars("2020-01-01", 700), "B": _monotone_bars("2020-01-01", 700)}
+        strategy = _CausalCounting()
+        windows = walk_forward_windows(
+            start=date(2020, 1, 1), end=date(2022, 6, 30),
+            train_years=1, test_months=6, step_months=6,
+        )
+        result = run_walk_forward(
+            strategy=strategy, bars_by_code=bars,
+            universe_fn=lambda w: ["A", "B"], cost_model=NO_COST, windows=windows,
+        )
+        assert strategy.signal_calls == 2  # 종목 수만큼만
+        assert result.summary.n > 0
+        # 결과에 검증 구간 신호가 실려 온다 (CLI 벤치마크 재사용)
+        assert result.signals
+        assert all(any(w.test_start <= s.signal_date <= w.test_end for w in windows) for s in result.signals)
+
+    def test_causal_strategy_no_overlapping_trades_per_code(self):
+        # 전역 1종목 1포지션 — 윈도우 경계를 넘어도 보유 중 중복 진입 금지
+        class _Causal(_FixedStrategy):
+            causal_signals = True
+
+        bars = {"A": _monotone_bars("2020-01-01", 700)}
+        result = run_walk_forward(
+            strategy=_Causal(), bars_by_code=bars,
+            universe_fn=lambda w: ["A"], cost_model=NO_COST,
+            windows=walk_forward_windows(
+                start=date(2020, 1, 1), end=date(2022, 6, 30),
+                train_years=1, test_months=6, step_months=6,
+            ),
+        )
+        ordered = sorted(result.trades, key=lambda t: t.entry_date)
+        for prev, nxt in zip(ordered, ordered[1:]):
+            assert nxt.entry_date > prev.exit_date
+
     def test_verdict_present(self):
         bars = {"A": _monotone_bars("2020-01-01", 700)}
         result = run_walk_forward(

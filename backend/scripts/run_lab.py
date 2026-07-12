@@ -113,14 +113,8 @@ async def main() -> None:
     )
 
     # 랜덤 벤치마크: 피검체와 같은 신호 수, 동일 청산 근사
-    subject_signals = []
-    for w in windows:
-        for code in universes.get(w, []):
-            if code in bars:
-                subject_signals.extend(
-                    s for s in strategy.signals(code, bars[code], {})
-                    if w.test_start <= s.signal_date <= w.test_end
-                )
+    # (하네스가 실제 사용한 신호를 그대로 재사용 — 재계산 없음)
+    subject_signals = result.signals
     random_evs = []
     for seed in range(5):  # 5회 평균으로 랜덤 노이즈 완화
         rnd_signals = random_benchmark_signals(bars, subject_signals, n_signals=len(subject_signals), seed=seed)

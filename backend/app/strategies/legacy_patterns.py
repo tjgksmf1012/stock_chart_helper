@@ -24,6 +24,8 @@ _MAX_HOLDING = 40
 class LegacyPatternStrategy:
     id = "legacy_patterns"
     label = "기존 패턴 엔진 (confirmed 롱)"
+    # truncation 회귀 테스트로 검증된 인과성 — 하네스가 종목당 1회 계산 경로 사용
+    causal_signals = True
 
     def fit(self, train_bars: dict[str, pd.DataFrame]) -> dict:
         return {}  # 고정 규칙 — 학습 파라미터 없음
