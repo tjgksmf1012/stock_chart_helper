@@ -177,17 +177,23 @@ function DeepAnalysisBody({ data }: { data: DeepAnalysisResponse }) {
           <div className="grid gap-1.5 sm:grid-cols-2">
             {data.cases.slice(0, 8).map((c: DeepPatternCase) => {
               const outcome = OUTCOME_LABELS[c.outcome]
+              // pnl_pct는 패턴 방향 반영 손익(숏 성공 = +수익). 구버전 캐시 응답에는
+              // 없을 수 있어 move_pct로 폴백한다.
+              const pnl = c.pnl_pct ?? c.move_pct
               return (
                 <div
                   key={`${c.pattern_type}-${c.signal_date}`}
                   className="flex items-center justify-between gap-2 rounded-lg border border-border/50 bg-background/40 px-3 py-2 text-xs"
                 >
                   <span className="font-mono text-muted-foreground">{c.signal_date}</span>
-                  <span className="min-w-0 flex-1 truncate">{patternName(c.pattern_type)}</span>
+                  <span className="min-w-0 flex-1 truncate">
+                    {patternName(c.pattern_type)}
+                    {c.direction === 'short' && <span className="ml-1 text-[10px] text-muted-foreground">(숏)</span>}
+                  </span>
                   <span className={cn('font-semibold', outcome.cls)}>{outcome.text}</span>
-                  <span className={cn('font-mono', c.move_pct >= 0 ? 'text-emerald-300' : 'text-red-300')}>
-                    {c.move_pct >= 0 ? '+' : ''}
-                    {pct(c.move_pct)}
+                  <span className={cn('font-mono', pnl >= 0 ? 'text-emerald-300' : 'text-red-300')}>
+                    {pnl >= 0 ? '+' : ''}
+                    {pct(pnl)}
                   </span>
                   <span className="text-muted-foreground">{c.bars_to_outcome !== null ? `${c.bars_to_outcome}봉` : '-'}</span>
                 </div>
@@ -198,8 +204,8 @@ function DeepAnalysisBody({ data }: { data: DeepAnalysisResponse }) {
       )}
 
       <p className="text-[11px] leading-relaxed text-muted-foreground/80">
-        과거 성적은 미래를 보장하지 않습니다. 같은 패턴이라도 시장 국면·수급에 따라 결과가 달라질 수 있으니 현재 분석과 함께
-        참고용으로만 사용하세요.
+        수익률은 패턴 방향 기준입니다 — 하락 패턴(숏)은 가격이 내려간 만큼이 +수익으로 집계됩니다. 과거 성적은 미래를 보장하지
+        않습니다. 같은 패턴이라도 시장 국면·수급에 따라 결과가 달라질 수 있으니 현재 분석과 함께 참고용으로만 사용하세요.
       </p>
     </div>
   )

@@ -92,6 +92,15 @@ def _replay_pattern_cases_sync(bars_df: pd.DataFrame, progress_code: str | None 
             # pattern_direction_is_bullish로 이 인스턴스의 실제 target_level 기준
             # 방향을 판정한다 — 안 그러면 이런 타입은 항상 하락으로 잘못 취급된다.
             bullish = pattern_direction_is_bullish(pattern)
+
+            # 진입가가 목표/손절의 올바른 사이에 있지 않은 퇴화 케이스는 건너뛴다 —
+            # 목표가 이미 지난 신호는 첫 봉에 "1봉 성공 -10%" 같은 무의미한 표본이 되고,
+            # 손절이 진입가 위에 있는 롱은 "실패 +24.9%" 같은 모순 표기를 만든다.
+            if bullish and not (pattern.target_level > entry_price > pattern.invalidation_level):
+                continue
+            if not bullish and not (pattern.target_level < entry_price < pattern.invalidation_level):
+                continue
+
             forward = bars_df.iloc[start_idx + _WINDOW:start_idx + _WINDOW + _MAX_FORWARD]
 
             outcome = "timeout"
@@ -139,7 +148,11 @@ def _replay_pattern_cases_sync(bars_df: pd.DataFrame, progress_code: str | None 
                     "signal_date": signal_date,
                     "outcome": outcome,
                     "bars_to_outcome": bars_to_outcome,
+                    # move_pct는 부호 있는 "가격 변화"라 숏 패턴의 성공이 음수로 보인다.
+                    # 손익 표시는 방향 반영 pnl_pct를 쓴다 (숏 성공 = 가격 하락 = +수익).
                     "move_pct": round(move_pct, 4),
+                    "pnl_pct": round(move_pct if bullish else -move_pct, 4),
+                    "direction": "long" if bullish else "short",
                     "mfe_pct": round(mfe, 4),
                     "mae_pct": round(mae, 4),
                 }
@@ -175,8 +188,11 @@ def _summarize_cases(cases: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "win_rate": round(len(wins) / attempts, 3) if attempts else None,
                 "resolution_rate": round(len(resolved) / attempts, 3) if attempts else None,
                 "avg_bars_to_outcome": round(sum(resolved_bars) / len(resolved_bars), 1) if resolved_bars else None,
-                "avg_win_move_pct": round(sum(row["move_pct"] for row in wins) / len(wins), 4) if wins else None,
-                "avg_loss_move_pct": round(sum(row["move_pct"] for row in losses) / len(losses), 4) if losses else None,
+                # 방향 반영 손익(pnl_pct) 기준 — "평균 성공 수익"이 음수로 나오는 표기
+                # 모순(숏 패턴 성공 = 가격 하락)을 막는다. 키 이름은 API 호환을 위해 유지.
+                # pnl_pct가 없는 구버전 캐시 케이스는 move_pct로 폴백(롱 기준).
+                "avg_win_move_pct": round(sum(row.get("pnl_pct", row["move_pct"]) for row in wins) / len(wins), 4) if wins else None,
+                "avg_loss_move_pct": round(sum(row.get("pnl_pct", row["move_pct"]) for row in losses) / len(losses), 4) if losses else None,
             }
         )
 

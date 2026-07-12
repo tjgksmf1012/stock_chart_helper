@@ -7,7 +7,7 @@ import { Card } from '@/components/ui/Card'
 import { QueryError } from '@/components/ui/QueryError'
 import { CalibrationPanel } from '@/components/CalibrationPanel'
 import { outcomesApi, patternsApi } from '@/lib/api'
-import { fmtPct, PATTERN_NAMES } from '@/lib/utils'
+import { attachJosa, fmtPct, PATTERN_NAMES } from '@/lib/utils'
 import type { OutcomeRecord, OutcomeStatus, PatternStatsEntry } from '@/types/api'
 
 type ReportTimeframe = '1mo' | '1wk' | '1d'
@@ -72,13 +72,13 @@ export default function PatternPerformancePage() {
     if (!filtered.length) return null
     const avgEdge = filtered.reduce((sum, item) => sum + item.historical_edge_score, 0) / filtered.length
     const avgWinRate = filtered.reduce((sum, item) => sum + item.win_rate, 0) / filtered.length
-    const totalSamples = filtered.reduce((sum, item) => sum + item.sample_size, 0)
+    const totalAttempts = filtered.reduce((sum, item) => sum + item.total, 0)
     const robustCount = filtered.filter(item => item.sample_size >= 30 && item.historical_edge_score >= 0.55).length
     const top = filtered[0]
     const caution = [...filtered]
       .filter(item => item.sample_size >= 15)
       .sort((a, b) => a.historical_edge_score - b.historical_edge_score)[0]
-    return { avgEdge, avgWinRate, totalSamples, robustCount, top, caution }
+    return { avgEdge, avgWinRate, totalAttempts, robustCount, top, caution }
   }, [filtered])
 
   return (
@@ -148,7 +148,7 @@ export default function PatternPerformancePage() {
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <SummaryCell icon={<ShieldCheck size={14} className="text-primary" />} label="평균 우위" value={fmtPct(summary.avgEdge, 0)} />
                 <SummaryCell icon={<Target size={14} className="text-primary" />} label="평균 승률" value={fmtPct(summary.avgWinRate, 0)} />
-                <SummaryCell icon={<Activity size={14} className="text-primary" />} label="총 표본 수" value={`${summary.totalSamples.toLocaleString('ko-KR')}건`} />
+                <SummaryCell icon={<Activity size={14} className="text-primary" />} label="총 시도 수" value={`${summary.totalAttempts.toLocaleString('ko-KR')}건`} />
                 <SummaryCell icon={<ShieldAlert size={14} className="text-primary" />} label="참고 강한 패턴 수" value={`${summary.robustCount}개`} />
               </div>
             )}
@@ -162,7 +162,7 @@ export default function PatternPerformancePage() {
                 item={summary.top}
                 description={
                   summary.top
-                    ? `${PATTERN_NAMES[summary.top.pattern_type] ?? summary.top.pattern_type}은 현재 ${timeframeLabel(timeframe)} 기준으로 우위와 승률이 모두 상위권입니다. 다만 현재 차트의 신선도와 진입 구간까지 함께 봐야 실제 매매 품질이 맞춰집니다.`
+                    ? `${attachJosa(PATTERN_NAMES[summary.top.pattern_type] ?? summary.top.pattern_type, '은/는')} 현재 ${timeframeLabel(timeframe)} 기준으로 우위와 승률이 모두 상위권입니다. 다만 현재 차트의 신선도와 진입 구간까지 함께 봐야 실제 매매 품질이 맞춰집니다.`
                     : '아직 상위 패턴을 계산할 데이터가 부족합니다.'
                 }
               />
@@ -172,7 +172,7 @@ export default function PatternPerformancePage() {
                 item={summary.caution}
                 description={
                   summary.caution
-                    ? `${PATTERN_NAMES[summary.caution.pattern_type] ?? summary.caution.pattern_type}은 표본이 어느 정도 있지만 상대적 우위가 낮은 편입니다. 차트가 좋아 보여도 추가 확인 신호 없이 바로 추격하는 건 보수적으로 보는 편이 안전합니다.`
+                    ? `${attachJosa(PATTERN_NAMES[summary.caution.pattern_type] ?? summary.caution.pattern_type, '은/는')} 표본이 어느 정도 있지만 상대적 우위가 낮은 편입니다. 차트가 좋아 보여도 추가 확인 신호 없이 바로 추격하는 건 보수적으로 보는 편이 안전합니다.`
                     : '아직 경고 패턴을 분리할 만큼 표본이 충분하지 않습니다.'
                 }
               />
@@ -255,7 +255,7 @@ function InsightCard({
             </Badge>
             <span className="text-sm font-semibold">{PATTERN_NAMES[item.pattern_type] ?? item.pattern_type}</span>
             <span className="text-xs text-muted-foreground">
-              승률 {fmtPct(item.win_rate, 0)} · 표본 {item.sample_size.toLocaleString('ko-KR')}건
+              승률 {fmtPct(item.win_rate, 0)} · 시도 {item.total.toLocaleString('ko-KR')}건
             </span>
           </div>
           <p className="text-xs leading-relaxed text-muted-foreground">{description}</p>
@@ -283,7 +283,9 @@ function PatternStatCard({ item, rank }: { item: PatternStatsEntry; rank: number
             {item.is_synthetic && <Badge variant="warning">추정치</Badge>}
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
-            승률 {fmtPct(item.win_rate, 0)} / 표본 {item.sample_size.toLocaleString('ko-KR')}건 / 성공 {item.wins}건
+            {/* total=시도(해소+미해소), wins=성공, sample_size=신뢰구간용 유효 표본(중첩 할인값).
+                셋을 같은 "표본" 라벨로 섞으면 표본 61건에 성공 305건 같은 모순으로 읽힌다 */}
+            승률 {fmtPct(item.win_rate, 0)} / 시도 {item.total.toLocaleString('ko-KR')}건 / 성공 {item.wins}건
           </div>
         </div>
       </div>
@@ -296,13 +298,14 @@ function PatternStatCard({ item, rank }: { item: PatternStatsEntry; rank: number
           평균 결과 도달 {item.avg_bars_to_outcome.toFixed(1)}바
         </span>
         <span className="text-right">
-          {item.wins}승 / 해소 {item.total}건
+          {item.wins}승 / 해소 {(item.total - (item.timeouts ?? 0)).toLocaleString('ko-KR')}건 · 유효 표본 {item.sample_size.toLocaleString('ko-KR')}건
         </span>
         {item.resolution_rate != null && (item.timeouts ?? 0) > 0 && (
           <span className="col-span-2 text-[11px] text-muted-foreground/80">
             * 승률은 목표·손절 중 하나에 닿은 경우뿐 아니라 미해소(흐지부지 끝난) 표본까지
             포함한 전체 시도 기준입니다. 해소율 {fmtPct(item.resolution_rate, 0)} (미해소 {item.timeouts}건은
-            승률 분모에는 포함되지만 평균 MFE/MAE 계산에서는 제외).
+            승률 분모에는 포함되지만 평균 MFE/MAE 계산에서는 제외). 유효 표본은 겹치는
+            구간 표본을 할인해 신뢰도 계산에 쓰는 값이라 시도 수보다 작습니다.
           </span>
         )}
         {item.is_synthetic && (
@@ -321,17 +324,17 @@ function PatternStatCard({ item, rank }: { item: PatternStatsEntry; rank: number
 }
 
 function patternInterpretation(item: PatternStatsEntry): string {
-  const name = PATTERN_NAMES[item.pattern_type] ?? item.pattern_type
+  const subject = attachJosa(PATTERN_NAMES[item.pattern_type] ?? item.pattern_type, '은/는')
   if (item.sample_size < 15) {
-    return `${name}은 아직 표본이 작아서 수치가 좋아 보여도 참고용으로만 보는 편이 안전합니다.`
+    return `${subject} 아직 표본이 작아서 수치가 좋아 보여도 참고용으로만 보는 편이 안전합니다.`
   }
   if (item.historical_edge_score >= 0.65 && item.win_rate >= 0.55) {
-    return `${name}은 통계상 상대적으로 강한 편입니다. 현재 차트에서도 신선도와 진입 구간이 받쳐주면 우선순위를 높여 볼 만합니다.`
+    return `${subject} 통계상 상대적으로 강한 편입니다. 현재 차트에서도 신선도와 진입 구간이 받쳐주면 우선순위를 높여 볼 만합니다.`
   }
   if (item.historical_edge_score >= 0.5) {
-    return `${name}은 중립 이상 패턴입니다. 숫자만 믿기보다 현재 거래대금과 위치를 함께 확인하면 해석이 더 안정적입니다.`
+    return `${subject} 중립 이상 패턴입니다. 숫자만 믿기보다 현재 거래대금과 위치를 함께 확인하면 해석이 더 안정적입니다.`
   }
-  return `${name}은 상대적으로 우위가 약한 편입니다. 현재 차트가 좋아 보여도 추가 확인 신호 없이 바로 추격하는 것은 보수적으로 볼 필요가 있습니다.`
+  return `${subject} 상대적으로 우위가 약한 편입니다. 현재 차트가 좋아 보여도 추가 확인 신호 없이 바로 추격하는 것은 보수적으로 볼 필요가 있습니다.`
 }
 
 function timeframeLabel(timeframe: ReportTimeframe): string {

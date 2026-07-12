@@ -25,7 +25,9 @@ export function buildDashboardSummary(sections: Array<DashboardResponse | undefi
 
   const readyCount = items.filter(item => item.action_plan === 'ready_now').length
   const watchCount = items.filter(item => item.action_plan === 'watch').length
-  const riskCount = items.filter(item => item.no_signal_flag || item.action_plan === 'recheck').length
+  // 나머지는 전부 관망/점검으로 묶어 ready + watch + risk = total이 되도록 유지
+  // (헤드라인 힌트의 산수가 total과 안 맞으면 집계 자체를 의심하게 된다)
+  const riskCount = items.length - readyCount - watchCount
 
   return {
     totalCount: items.length,

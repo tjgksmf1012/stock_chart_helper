@@ -64,13 +64,30 @@ def _ensure_sqlite_parent_dir(database_url: str) -> None:
 def _create_engine():
     database_url, connect_args = normalize_database_url(settings.database_url)
     _ensure_sqlite_parent_dir(database_url)
+    is_sqlite = make_url(database_url).drivername.startswith("sqlite")
+    if is_sqlite:
+        # 로컬 모드에서 백그라운드 스캔이 scan-history를 쓰는 동안 사용자 요청
+        # (판단 닫기 PATCH 등)이 "database is locked" 500으로 즉사하는 걸 막는다:
+        # timeout은 잠금 대기(기본 5초 → 15초), WAL은 읽기-쓰기 동시성 허용.
+        connect_args = {**connect_args, "timeout": 15}
     engine_kwargs: dict[str, Any] = {
         "echo": settings.debug,
         "pool_pre_ping": True,
     }
     if connect_args:
         engine_kwargs["connect_args"] = connect_args
-    return create_async_engine(database_url, **engine_kwargs)
+    engine = create_async_engine(database_url, **engine_kwargs)
+    if is_sqlite:
+        from sqlalchemy import event
+
+        @event.listens_for(engine.sync_engine, "connect")
+        def _set_sqlite_pragma(dbapi_connection, _record):
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA busy_timeout=15000")
+            cursor.close()
+
+    return engine
 
 
 engine = _create_engine()

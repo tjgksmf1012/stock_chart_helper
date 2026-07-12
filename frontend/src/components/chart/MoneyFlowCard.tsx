@@ -77,6 +77,29 @@ export function MoneyFlowCard({ data }: MoneyFlowCardProps) {
   const align = data.alignment as keyof typeof ALIGN_CFG
   const cfg = ALIGN_CFG[align] ?? ALIGN_CFG.neutral
 
+  // 값이 전부 0이고 일별 데이터도 없으면 "중립"이 아니라 데이터를 못 받아온 상태다 —
+  // 0억을 사실처럼 보여주면 실제로 수급이 균형인 것과 구분이 안 된다
+  const hasData =
+    data.daily.length > 0 ||
+    [data.foreign_net_3d, data.foreign_net_10d, data.institution_net_3d, data.institution_net_10d].some(value => value !== 0)
+
+  if (!hasData) {
+    return (
+      <Card className="space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-semibold">외국인 / 기관 수급</span>
+          <span className="rounded border border-border bg-background/40 px-2 py-0.5 text-xs font-semibold text-muted-foreground">
+            데이터 없음
+          </span>
+        </div>
+        <p className="rounded border border-border bg-muted/20 p-2 text-xs leading-relaxed text-muted-foreground">
+          아직 수급 데이터를 받아오지 못했습니다 (주말·장외 시간이거나 소스 응답 없음).
+          데이터가 수집되면 외국인/기관 순매수와 정렬 판정이 여기에 표시됩니다.
+        </p>
+      </Card>
+    )
+  }
+
   return (
     <Card className="space-y-3">
       <div className="flex items-center justify-between">

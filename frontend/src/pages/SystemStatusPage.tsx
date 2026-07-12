@@ -439,9 +439,12 @@ export default function SystemStatusPage() {
               <div className="flex items-center gap-2 text-sm font-semibold">
                 <Clock3 size={15} className="text-primary" />
                 자동 예열 스케줄
+                {!data.scheduler_enabled && <Badge variant="warning">스케줄러 꺼짐 — 실행되지 않음</Badge>}
               </div>
               <p className="text-xs leading-relaxed text-muted-foreground">
-                장중에 상위 후보군을 다시 골라 분봉 캐시를 자동으로 채웁니다. 기본은 저장소 우선 방식이고, 필요한 경우만 KIS 포함 예열을 사용합니다.
+                {data.scheduler_enabled
+                  ? '장중에 상위 후보군을 다시 골라 분봉 캐시를 자동으로 채웁니다. 기본은 저장소 우선 방식이고, 필요한 경우만 KIS 포함 예열을 사용합니다.'
+                  : '아래는 상시 서버 모드(ENABLE_SCHEDULER=true)에서만 도는 스케줄 정의입니다. 지금은 로컬 모드라 자동 실행되지 않으며, 위의 예열 버튼으로 수동 실행해야 합니다.'}
               </p>
               <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
                 {data.scheduled_warmups.map(plan => (
@@ -484,9 +487,12 @@ export default function SystemStatusPage() {
               <div className="flex items-center gap-2 text-sm font-semibold">
                 <Clock3 size={15} className="text-primary" />
                 자동 일봉 스캔 스케줄
+                {!data.scheduler_enabled && <Badge variant="warning">스케줄러 꺼짐 — 실행되지 않음</Badge>}
               </div>
               <p className="text-xs leading-relaxed text-muted-foreground">
-                장마감 후 확정 일봉 스캔이 scan-history에 저장되어 다음날 후보, 품질 리포트, 신호 검증의 기준 데이터가 됩니다.
+                {data.scheduler_enabled
+                  ? '장마감 후 확정 일봉 스캔이 scan-history에 저장되어 다음날 후보, 품질 리포트, 신호 검증의 기준 데이터가 됩니다.'
+                  : '아래는 상시 서버 모드(ENABLE_SCHEDULER=true)에서만 도는 스케줄 정의입니다. 지금은 로컬 모드라 자동 실행되지 않으며, 대시보드를 열 때와 수동 갱신 버튼으로만 스캔됩니다.'}
               </p>
               <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
                 {(data.scheduled_daily_scans ?? []).map(plan => (
@@ -512,7 +518,7 @@ export default function SystemStatusPage() {
                 저장소 역할 분리
               </div>
               <p className="text-xs leading-relaxed text-muted-foreground">
-                Redis는 빠르게 다시 만들 수 있는 캐시, Neon은 오래 남겨야 하는 운용 기록, 로컬 SQLite는 분봉 체감 속도용 저장소로 분리해서 봅니다.
+                캐시는 빠르게 다시 만들 수 있는 값, DB는 오래 남겨야 하는 운용 기록, 분봉 저장소는 체감 속도용으로 분리해서 봅니다.
               </p>
               <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
                 {(data.storage_roles ?? []).map(role => (

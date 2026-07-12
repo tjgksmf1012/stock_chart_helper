@@ -85,6 +85,19 @@ def _load_mapping() -> CalibrationMapping | None:
     return mapping
 
 
+def calibration_base_rate() -> float | None:
+    """보정 매핑이 학습된 데이터의 기저 승률 근사 (y 그리드 평균).
+
+    매핑의 y값은 "휴리스틱이 x%라 할 때의 실측 승률"(승/패/미해소 3분법)이라
+    상보적 방향 확률이 아니다. probability_engine이 기저율 대비 초과분만 방향
+    우위로 변환할 때 앵커로 쓴다. 매핑이 없으면 None.
+    """
+    mapping = _load_mapping()
+    if mapping is None or len(mapping.y) < 2:
+        return None
+    return float(np.mean(mapping.y))
+
+
 def calibrate_probability(raw_prob: float) -> float:
     """raw_prob(휴리스틱이 낸 방향 확률)를 학습된 매핑으로 보정.
 

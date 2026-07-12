@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy import select
 
 from ..core.database import AsyncSessionLocal
+from ..core.korean import attach_josa
 from ..models.outcome import SignalOutcome
 from .timeframe_service import timeframe_label
 
@@ -269,10 +270,10 @@ def score_personal_fit(row: dict[str, Any], snapshot: dict[str, Any] | None) -> 
 
     if inferred_intent == style_profile.get("primary_intent"):
         score += 0.10
-        reasons.append(f"현재 후보는 내 주 성향인 {style_profile.get('primary_intent_label')}과 잘 맞습니다.")
+        reasons.append(f"현재 후보는 내 주 성향인 {attach_josa(str(style_profile.get('primary_intent_label')), '과/와')} 잘 맞습니다.")
     elif inferred_intent == style_profile.get("secondary_intent"):
         score += 0.05
-        reasons.append(f"현재 후보는 보조 성향인 {style_profile.get('secondary_intent_label')}과도 맞닿아 있습니다.")
+        reasons.append(f"현재 후보는 보조 성향인 {attach_josa(str(style_profile.get('secondary_intent_label')), '과/와')}도 맞닿아 있습니다.")
 
     if pattern_key and pattern_key == style_profile.get("best_pattern"):
         score += 0.05

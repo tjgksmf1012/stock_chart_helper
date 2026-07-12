@@ -38,6 +38,22 @@ if not exist "%ROOT_DIR%backend\.venv\Scripts\python.exe" (
   exit /b 1
 )
 
+rem venv 폴더는 있어도, 만들 때 쓴 Python이 삭제됐거나 프로젝트 폴더를 옮겼으면
+rem python.exe가 "No Python at ..." 오류로 실행 자체가 안 된다 - 미리 감지해서 안내.
+"%ROOT_DIR%backend\.venv\Scripts\python.exe" -c "import sys" >nul 2>&1
+if errorlevel 1 (
+  echo.
+  echo [ERROR] backend\.venv 가상환경이 깨져 있습니다.
+  echo         ^(만들 때 사용한 Python이 삭제됐거나, 프로젝트 폴더를 이동한 경우^)
+  echo         backend 폴더에서 venv를 다시 만들어 주세요:
+  echo           rmdir /s /q .venv
+  echo           python -m venv .venv
+  echo           .venv\Scripts\pip install -r requirements.txt
+  echo.
+  pause
+  exit /b 1
+)
+
 echo [1/3] Backend starting at http://localhost:%BACKEND_PORT%
 start "Backend" cmd /k "cd /d "%ROOT_DIR%backend" && .venv\Scripts\python.exe -m uvicorn app.main:app --reload --reload-exclude "data/*" --port %BACKEND_PORT%"
 

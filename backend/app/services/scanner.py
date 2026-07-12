@@ -704,12 +704,20 @@ async def get_scan_status(timeframe: str = DEFAULT_TIMEFRAME) -> dict[str, Any]:
 
     krx_down, fdr_down = await asyncio.gather(krx_in_cooldown(), fdr_in_cooldown())
     status["data_source_degraded"] = bool(krx_down and fdr_down)
-    status["data_source_note"] = (
-        "KRX·FinanceDataReader 데이터 수집이 최근 반복 실패해 잠시 쉬는 중입니다. "
-        "결과가 비어 있다면 신호가 없어서가 아니라 데이터를 못 가져온 것일 수 있습니다."
-        if status["data_source_degraded"]
-        else None
-    )
+    if status["data_source_degraded"]:
+        status["data_source_note"] = (
+            "KRX·FinanceDataReader 데이터 수집이 최근 반복 실패해 잠시 쉬는 중입니다. "
+            "결과가 비어 있다면 신호가 없어서가 아니라 데이터를 못 가져온 것일 수 있습니다."
+        )
+    elif krx_down:
+        # 한쪽만 죽은 부분 저하 — 스캔은 FDR 대체 유니버스로 계속 돌지만, 시가총액 상위
+        # 기준이 아니게 된 사실은 알려야 후보 구성이 평소와 달라진 이유를 알 수 있다.
+        status["data_source_note"] = (
+            "KRX 조회가 잠시 실패해 FinanceDataReader 대체 유니버스로 스캔 중입니다. "
+            "시가총액 상위 기준 대신 대체 목록이 사용되어 후보 구성이 평소와 다를 수 있습니다."
+        )
+    else:
+        status["data_source_note"] = None
     return status
 
 
@@ -1430,11 +1438,14 @@ async def run_scan(
     )
 
     async with _scan_lock:
+        # cancel_requested는 여기서 리셋하지 않는다 — trigger_scan()이 요청을 수락한
+        # 시점(HTTP 응답 전)과 이 태스크가 실제로 시작되는 시점 사이에 도착한 취소가
+        # 여기서 지워지는 레이스가 있었다 (사용자가 취소를 눌렀는데 스캔이 완주).
+        # 리셋은 trigger_scan() 수락 시점과 아래 종료 경로들에서만 한다.
         _update_scan_status(
             timeframe,
             status="running",
             is_running=True,
-            cancel_requested=False,
             source=source,
             last_started_at=started_at.isoformat(),
             last_error=None,
@@ -1469,6 +1480,7 @@ async def run_scan(
                 timeframe,
                 status="ready",
                 is_running=False,
+                cancel_requested=False,
                 cached_result_count=len(cached),
                 last_finished_at=_utc_now_iso(),
                 duration_ms=int((datetime.now(UTC).replace(tzinfo=None) - started_at).total_seconds() * 1000),
@@ -1580,6 +1592,7 @@ async def run_scan(
                 timeframe,
                 status="ready",
                 is_running=False,
+                cancel_requested=False,
                 source=source,
                 cached_result_count=len(results),
                 last_finished_at=finished_at.isoformat(),
@@ -1598,6 +1611,7 @@ async def run_scan(
                 timeframe,
                 status="error",
                 is_running=False,
+                cancel_requested=False,
                 last_error=str(exc),
                 last_finished_at=finished_at.isoformat(),
                 duration_ms=int((finished_at - started_at).total_seconds() * 1000),
@@ -1636,6 +1650,9 @@ async def trigger_scan(
         timeframe,
         status="queued",
         is_running=True,
+        # 새 런 수락 시점에 취소 플래그를 리셋한다 — 이후(태스크 시작 전 포함)에
+        # 도착한 취소는 이 런에 대한 요청이므로 run_scan이 지우면 안 된다.
+        cancel_requested=False,
         source=source,
         last_started_at=_utc_now_iso(),
         last_error=None,

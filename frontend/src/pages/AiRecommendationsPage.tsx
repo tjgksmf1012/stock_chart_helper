@@ -82,10 +82,11 @@ export default function AiRecommendationsPage() {
         <div>
           <div className="flex items-center gap-2 text-xl font-bold">
             <Sparkles size={20} className="text-primary" />
-            AI 종목 추천
+            오늘의 추천
           </div>
           <p className="mt-1 max-w-3xl text-sm leading-relaxed text-muted-foreground">
             점수, 진입 준비도, 데이터 품질, 내 과거 성과를 묶어서 오늘 먼저 볼 종목과 기다릴 종목을 구분해 보여줍니다.
+            기본은 규칙 기반 코멘트이고, OpenAI 키를 설정하면 AI 코멘트로 바뀝니다.
           </p>
         </div>
 
@@ -112,7 +113,7 @@ export default function AiRecommendationsPage() {
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-sm font-semibold">
               <ShieldCheck size={16} className="text-primary" />
-              오늘의 AI 의견
+              오늘의 의견
             </div>
             <button
               onClick={() => recommendationsQ.refetch()}
@@ -126,12 +127,12 @@ export default function AiRecommendationsPage() {
           {recommendationsQ.isLoading ? (
             <div className="flex min-h-36 flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
               <Loader2 size={20} className="animate-spin" />
-              <p>AI 브리핑 생성 중입니다...</p>
+              <p>브리핑 생성 중입니다...</p>
               <p className="text-xs text-muted-foreground/70">OpenAI 코멘트 설정 시 최대 20~30초 소요될 수 있습니다.</p>
             </div>
           ) : recommendationsQ.isError ? (
             <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-4 text-sm text-red-100">
-              AI 추천 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.
+              추천 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.
             </div>
           ) : (
             <>
@@ -145,11 +146,16 @@ export default function AiRecommendationsPage() {
               <p className="text-sm leading-relaxed text-muted-foreground">{data?.portfolio_guidance}</p>
 
               <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                <Metric label="우선 검토" value={`${data?.priority_items.length ?? 0}개`} />
-                <Metric label="대기 종목" value={`${data?.watch_items.length ?? 0}개`} />
-                <Metric label="주의 종목" value={`${data?.risk_items.length ?? 0}개`} />
+                {/* 칩은 전체 구간 카운트(*_total) 기준 — 카드 리스트(limit으로 잘림) 개수를
+                    쓰면 위의 market_brief 숫자와 어긋나 보인다 */}
+                <Metric label="우선 검토" value={`${data?.priority_total ?? data?.priority_items.length ?? 0}개`} />
+                <Metric label="대기 종목" value={`${data?.watch_total ?? data?.watch_items.length ?? 0}개`} />
+                <Metric label="주의 종목" value={`${data?.risk_total ?? data?.risk_items.length ?? 0}개`} />
                 <Metric label="업데이트" value={fmtDateTime(data?.generated_at)} />
               </div>
+              <p className="text-[11px] text-muted-foreground/80">
+                아래 카드에는 각 구간의 상위 후보만 표시됩니다.
+              </p>
             </>
           )}
         </Card>

@@ -152,8 +152,10 @@ export default function WatchlistPage() {
     const caution = analyses.filter(
       entry => entry.analysis.action_plan === 'recheck' || entry.analysis.no_signal_flag || (entry.analysis.trade_readiness_score ?? 0) < 0.45,
     )
+    // 무신호 종목은 확률이 없는 것이지 0%인 게 아니므로 평균에서 제외한다
+    const withSignal = analyses.filter(entry => !entry.analysis.no_signal_flag)
     const avgUp =
-      analyses.length > 0 ? analyses.reduce((sum, entry) => sum + (entry.analysis.no_signal_flag ? 0 : entry.analysis.p_up), 0) / analyses.length : 0
+      withSignal.length > 0 ? withSignal.reduce((sum, entry) => sum + entry.analysis.p_up, 0) / withSignal.length : null
     const avgReadiness =
       analyses.length > 0 ? analyses.reduce((sum, entry) => sum + (entry.analysis.trade_readiness_score ?? 0), 0) / analyses.length : 0
 
@@ -245,7 +247,7 @@ export default function WatchlistPage() {
         </div>
         <p className="text-xs leading-relaxed text-muted-foreground">
           지금 바로 볼 종목은 {summary.actionableCount}개, 조금 더 지켜볼 종목은 {summary.watchCount}개입니다. 일봉 기준 평균 상승 확률은{' '}
-          {fmtPct(summary.avgUp, 0)}이고, 전체 평균 거래 준비도는 {fmtPct(summary.avgReadiness, 0)}입니다.
+          {summary.avgUp !== null ? fmtPct(summary.avgUp, 0) : '아직 집계 전(신호 있는 종목 없음)'}이고, 전체 평균 거래 준비도는 {fmtPct(summary.avgReadiness, 0)}입니다.
         </p>
         {summary.focusList.length > 0 ? (
           <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">

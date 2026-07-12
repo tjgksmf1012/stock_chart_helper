@@ -124,6 +124,19 @@ def _load_model() -> ProbabilityModel | None:
     return model
 
 
+def model_base_rate() -> float | None:
+    """학습 데이터의 기저 승률 근사 — 표준화 특징이 전부 평균(0)일 때의 예측값.
+
+    이 모델의 라벨은 "패턴 자체 방향으로 목표가를 손절 전에 쳤는가"(승/패/미해소
+    3분법)라서, 예측값을 상보적 방향 확률로 그대로 쓰면 안 된다. probability_
+    engine이 기저율 대비 초과분만 방향 우위로 변환할 때 이 값을 앵커로 쓴다.
+    """
+    model = _load_model()
+    if model is None:
+        return None
+    return 1.0 / (1.0 + math.exp(-model.intercept))
+
+
 def predict_directional_probability(features: dict[str, float]) -> float | None:
     """10개 방향정렬 하위 점수로 "패턴 자체 방향이 이길 확률"을 예측한다.
 

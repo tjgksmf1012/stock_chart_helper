@@ -9,8 +9,8 @@ import math
 from typing import Any
 
 from .pattern_engine import PatternResult, pattern_direction_is_bullish
-from .probability_calibration import calibrate_probability
-from .probability_model import predict_directional_probability
+from .probability_calibration import calibrate_probability, calibration_base_rate
+from .probability_model import model_base_rate, predict_directional_probability
 from .timeframe_service import probability_threshold_profile
 
 
@@ -38,6 +38,10 @@ class ProbabilityOutput:
     sample_size: int
     empirical_win_rate: float
     sample_reliability: float
+    # 자기 방향으로 목표가를 손절 전에 칠 확률의 실측(모델/보정) 추정치.
+    # 승/패/미해소 3분법 승률이라 p_up/p_down(방향 확률)과는 다른 지표다 —
+    # 기저율이 30%대여도 방향 확률과 모순이 아니다. 학습 산출물이 없으면 None.
+    pattern_win_rate: float | None = None
 
 
 _STATE_CONFIRMATION_SCORE = {
@@ -257,6 +261,17 @@ def _readable_summary(
     )
 
 
+def _win_rate_to_direction_lean(win_prob: float, base_rate: float, gain: float = 1.6) -> float:
+    """자기 방향 '목표가 선터치' 승률(승/패/미해소 3분법)을 방향 확률로 변환.
+
+    승률 w를 (w, 1-w)로 상보 확률에 그대로 넣으면 '못 이김'(횡보·미해소 포함)이
+    전부 '반대 방향'으로 둔갑한다 — 기저율이 30%대인 학습 데이터에서는 모든 약세
+    패턴이 상승 확률 70%로 표시되는 방향 반전이 일어난다(2026-07 실측 버그).
+    기저율 대비 초과분만 방향 우위로 반영하고 나머지는 중립(0.5) 주변에 남긴다.
+    """
+    return max(0.2, min(0.8, 0.5 + (win_prob - base_rate) * gain))
+
+
 def _apply_directional_cap(p_up: float, p_down: float, cap: float) -> tuple[float, float]:
     if p_up >= p_down and p_up > cap:
         return cap, 1 - cap
@@ -410,16 +425,18 @@ def _compute_probability_impl(
 
     # scripts/fit_probability_model.py로 학습된 모델이 있으면 감으로 정한 가중치
     # 합 대신 그걸 쓴다 — 없으면(기본 상태) None이 반환되어 기존 공식 그대로
-    # 동작한다(무보정과 동일한 안전한 폴백). 모델 출력은 own-direction 확률이므로
-    # p_up_raw/p_down_raw(항상 "실제 위/아래" 기준) 공간으로 다시 변환해야 한다.
-    model_own_direction_p = predict_directional_probability(features)
-    if model_own_direction_p is not None:
+    # 동작한다(무보정과 동일한 안전한 폴백). 모델 출력은 "자기 방향으로 목표가를
+    # 손절 전에 칠" 3분법 승률이라 (w, 1-w)로 상보 확률에 그대로 넣으면 안 되고
+    # (미해소가 전부 반대 방향으로 둔갑한다), 기저율 앵커로 방향 우위만 뽑는다.
+    model_own_win_rate = predict_directional_probability(features)
+    if model_own_win_rate is not None:
+        own_lean = _win_rate_to_direction_lean(model_own_win_rate, model_base_rate() or 0.5)
         if bullish:
-            p_up_raw = model_own_direction_p
-            p_down_raw = 1.0 - model_own_direction_p
+            p_up_raw = own_lean
+            p_down_raw = 1.0 - own_lean
         else:
-            p_down_raw = model_own_direction_p
-            p_up_raw = 1.0 - model_own_direction_p
+            p_down_raw = own_lean
+            p_up_raw = 1.0 - own_lean
     else:
         p_up_raw = (
             0.25 * rule_up
@@ -453,15 +470,25 @@ def _compute_probability_impl(
 
     # 사후 확률 보정 — "이 휴리스틱이 X%라고 할 때 실제 승률은 몇 %였나"를 과거
     # 데이터로 학습한 매핑(scripts/fit_probability_calibration.py)이 있으면 적용.
-    # 매핑이 없으면 calibrate_probability()가 원값을 그대로 돌려주므로 무보정과
-    # 동일하게 동작한다. 패턴이 가리키는 방향(taken direction)의 확률만 보정하고
-    # 반대쪽은 1-보정값으로 재구성해 두 값의 합이 항상 1을 유지하게 한다.
-    if toward_up >= 0.5:
-        p_up = calibrate_probability(p_up)
-        p_down = 1.0 - p_up
-    else:
-        p_down = calibrate_probability(p_down)
-        p_up = 1.0 - p_down
+    # 보정 결과 역시 3분법 승률이므로 (c, 1-c)로 상보 확률에 그대로 넣으면 방향이
+    # 반전된다 — 모델과 같은 기저율 앵커 방식으로 방향 우위만 반영한다. 학습 모델이
+    # 이미 쓰였다면 같은 데이터에 대한 이중 보정이 되므로 이 단계는 건너뛴다.
+    taken_prob = p_up if toward_up >= 0.5 else p_down
+    calibrated_win_rate = calibrate_probability(taken_prob)
+    cal_base = calibration_base_rate()
+    if model_own_win_rate is None and cal_base is not None:
+        lean = _win_rate_to_direction_lean(calibrated_win_rate, cal_base)
+        if toward_up >= 0.5:
+            p_up, p_down = lean, 1.0 - lean
+        else:
+            p_down, p_up = lean, 1.0 - lean
+
+    # 화면의 "상승/하락 확률"(방향)과 별개로, 실측 기준 자기 방향 승률은 그대로 노출
+    pattern_win_rate = (
+        model_own_win_rate
+        if model_own_win_rate is not None
+        else (calibrated_win_rate if cal_base is not None else None)
+    )
 
     confidence = (
         0.18 * sample_reliability
@@ -579,4 +606,5 @@ def _compute_probability_impl(
         sample_size=sample_size,
         empirical_win_rate=round(posterior_success_rate, 3),
         sample_reliability=round(sample_reliability, 3),
+        pattern_win_rate=round(pattern_win_rate, 3) if pattern_win_rate is not None else None,
     ), features

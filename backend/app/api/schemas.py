@@ -808,6 +808,11 @@ class AiRecommendationResponse(BaseModel):
     risk_items: list[AiRecommendationItem]
     watchlist_focus_items: list[AiRecommendationItem] = Field(default_factory=list)
     personalized_items: list[AiRecommendationItem] = Field(default_factory=list)
+    # 각 구간의 전체 후보 수 — 카드 리스트는 limit으로 잘리므로, 집계 칩은 이 값을
+    # 써야 market_brief 문구와 화면 숫자가 어긋나지 않는다
+    priority_total: int = 0
+    watch_total: int = 0
+    risk_total: int = 0
     personal_style: PersonalStyleProfile = Field(default_factory=PersonalStyleProfile)
     disclaimer: str
     llm_enabled: bool = False

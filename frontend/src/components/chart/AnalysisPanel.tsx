@@ -866,7 +866,9 @@ function buildNoSignalAction(analysis: AnalysisResult): string {
     return '데이터 품질이 낮아 점수를 확정값처럼 보기 어렵습니다. 분봉 예열이나 저장 데이터가 더 쌓인 뒤 재확인해 보세요.'
   }
   if (analysis.next_trigger) {
-    return `바로 진입하기보다 다음 트리거인 "${analysis.next_trigger}"가 나오는지 먼저 확인하는 흐름이 좋습니다.`
+    // next_trigger는 그 자체가 완결된 문장이라 다른 문장 안에 따옴표로 끼워 넣으면
+    // 문장 속 문장이 되어 읽기 어렵다 — 짧은 리드 뒤에 그대로 이어 붙인다
+    return `바로 진입하기보다 다음 확인이 먼저입니다. ${analysis.next_trigger}`
   }
   return '현재는 억지로 패턴을 붙이기보다 관망 우선 구간으로 보고, 신선도와 거래 준비도가 더 살아나는지 기다리는 편이 좋습니다.'
 }
