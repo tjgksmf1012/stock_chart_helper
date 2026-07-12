@@ -88,6 +88,31 @@ class TestOverlap:
         assert len(trades) == 1  # 1종목 1포지션
 
 
+class TestBadDataGuards:
+    def test_zero_open_entry_bar_skips_signal(self):
+        # 거래정지 등으로 시가 0인 봉 — 진입 불가로 신호 폐기 (실데이터 발견 케이스)
+        bars = make_bars([
+            ("2025-01-02", 100, 101, 99, 100),
+            ("2025-01-03", 0, 0, 0, 0),
+            ("2025-01-06", 100, 101, 99, 100),
+        ])
+        sig = Signal(code="A", signal_date=date(2025, 1, 2), stop_price=95.0)
+        assert simulate_trades(bars, [sig], NO_COST, strategy_id="t") == []
+
+    def test_zero_price_bar_during_holding_is_ignored(self):
+        # 보유 중간의 0가격 봉은 손절/목표 판정에서 건너뛴다 (가짜 손절 방지)
+        bars = make_bars([
+            ("2025-01-02", 100, 101, 99, 100),
+            ("2025-01-03", 100, 101, 99, 100),
+            ("2025-01-06", 0, 0, 0, 0),
+            ("2025-01-07", 101, 112, 100, 111),
+        ])
+        sig = Signal(code="A", signal_date=date(2025, 1, 2), stop_price=95.0, target_price=110.0)
+        trades = simulate_trades(bars, [sig], NO_COST, strategy_id="t")
+        assert len(trades) == 1
+        assert trades[0].exit_reason == "target"
+
+
 class TestCostsApplied:
     def test_net_return_uses_cost_model(self):
         bars = make_bars([

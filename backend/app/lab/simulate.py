@@ -39,7 +39,11 @@ def simulate_trades(
             continue  # 1종목 1포지션
 
         entry_price = float(bars.iloc[entry_idx]["open"])
+        if entry_price <= 0:
+            continue  # 거래정지 등 0가격 봉 — 진입 불가 (실데이터 케이스)
         exit_idx, exit_price, exit_reason = _resolve_exit(bars, entry_idx, signal)
+        if exit_price <= 0:
+            continue  # 청산가가 유효하지 않으면 트레이드로 집계하지 않는다
         gross = exit_price / entry_price - 1
         trades.append(
             Trade(
@@ -66,6 +70,8 @@ def _resolve_exit(bars: pd.DataFrame, entry_idx: int, signal: Signal) -> tuple[i
     for idx in range(entry_idx, time_exit_idx + 1):
         bar = bars.iloc[idx]
         open_, high, low = float(bar["open"]), float(bar["high"]), float(bar["low"])
+        if open_ <= 0 or high <= 0 or low <= 0:
+            continue  # 거래정지 등 0가격 봉은 판정에서 제외 (가짜 손절 방지)
         # ① 손절 우선 (보수적) — 갭다운이면 실제 체결 가능한 시가로
         if low <= signal.stop_price:
             return idx, min(open_, signal.stop_price), "stop"
