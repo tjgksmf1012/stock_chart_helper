@@ -75,8 +75,12 @@ async def main() -> None:
     parser.add_argument("--train-years", type=int, default=2)
     parser.add_argument("--test-months", type=int, default=6)
     parser.add_argument(
-        "--universe", choices=["pit", "current"], default="pit",
-        help="pit=시점 고정(KRX 로그인 필요할 수 있음), current=현재 상장 목록(생존 편향 — pass 불가)",
+        "--universe", choices=["marcap", "pit", "current"], default="marcap",
+        help=(
+            "marcap=시점 고정, 상폐 포함 (FinanceData/marcap parquet — 권장), "
+            "pit=pykrx 시점 조회(KRX 로그인 필요할 수 있음), "
+            "current=현재 상장 목록(생존 편향 — pass 불가)"
+        ),
     )
     args = parser.parse_args()
 
@@ -87,9 +91,23 @@ async def main() -> None:
         print("검증 윈도우를 만들 수 없습니다 (기간이 너무 짧음).")
         return
 
-    # 유니버스 구성 — pit(시점 고정)이 원칙, current는 명시적 편향 모드
+    # 유니버스 구성 — marcap/pit(시점 고정)이 원칙, current는 명시적 편향 모드
     universes: dict = {}
-    if args.universe == "pit":
+    if args.universe == "marcap":
+        from app.lab.marcap import point_in_time_universe_from_marcap
+
+        for w in windows:
+            codes = point_in_time_universe_from_marcap(w.test_start, args.top_n)
+            universes[w] = codes
+            print(f"유니버스(marcap) {w.test_start}: {len(codes)}종목")
+        if not any(universes.values()):
+            print(
+                "\n[중단] marcap 파일이 없습니다. backend/data/marcap/ 에 연도별 parquet을 받아주세요:\n"
+                "  curl -sL -o data/marcap/marcap-2022.parquet "
+                "https://github.com/FinanceData/marcap/raw/master/data/marcap-2022.parquet"
+            )
+            return
+    elif args.universe == "pit":
         for w in windows:
             codes = await fetch_point_in_time_universe(w.test_start, args.top_n)
             universes[w] = codes
@@ -144,9 +162,16 @@ async def main() -> None:
     if args.universe == "current" and verdict == "pass":
         # 생존 편향 유니버스로는 통과 자격이 없다 — 성적이 실제보다 좋게 나오는 편향
         verdict = "watch"
-        universe_note = "현재 상장 목록(생존 편향) 기준이라 pass를 watch로 강등했습니다. KRX_ID/KRX_PW 설정 후 pit 모드로 재검증하세요."
+        universe_note = "현재 상장 목록(생존 편향) 기준이라 pass를 watch로 강등했습니다. --universe marcap으로 재검증하세요."
     elif args.universe == "current":
         universe_note = "현재 상장 목록(생존 편향) 기준 — 실제 성적은 이보다 나쁠 수 있습니다."
+    elif args.universe == "marcap" and coverage < 0.9 and verdict == "pass":
+        # 유니버스 선정은 시점 고정이지만, 뽑힌 상폐 종목의 시세를 못 구하면
+        # 그 종목들의 트레이드(대개 나쁜 쪽)가 빠지는 잔여 편향이 남는다
+        verdict = "watch"
+        universe_note = f"시세 커버리지 {coverage:.0%} < 90% — 상폐 종목 시세 누락 편향 가능성으로 pass를 watch로 강등했습니다."
+    elif args.universe == "marcap" and coverage < 0.9:
+        universe_note = f"시세 커버리지 {coverage:.0%} — 상폐 종목 시세 누락으로 실제 성적은 이보다 나쁠 수 있습니다."
 
     report = {
         "strategy": strategy.id,
