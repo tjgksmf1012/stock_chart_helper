@@ -1029,3 +1029,28 @@ export interface LabReport {
 export interface LabReportsResponse {
   reports: LabReport[]
 }
+
+export interface LabSignal {
+  strategy_id: string
+  strategy_label: string
+  code: string
+  signal_date: string
+  stop_price: number
+  target_price: number | null
+  max_holding_days: number
+  verdict: 'pass' | 'watch' | 'fail' | null
+}
+
+export interface LabEligibleStrategy {
+  strategy_id: string
+  label: string
+  verdict: 'pass' | 'watch' | 'fail' | null
+}
+
+export interface LabSignalsResponse {
+  generated_at: string
+  eligible_strategies: LabEligibleStrategy[]
+  universe_size?: number
+  signals: LabSignal[]
+  note: string | null
+}

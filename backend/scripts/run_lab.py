@@ -31,19 +31,9 @@ from app.lab.simulate import simulate_trades  # noqa: E402
 from app.lab.universe import fetch_current_universe_biased, fetch_point_in_time_universe  # noqa: E402
 from app.lab.walkforward import run_walk_forward, walk_forward_windows  # noqa: E402
 
-STRATEGIES = {}
+from app.strategies.registry import STRATEGY_REGISTRY  # noqa: E402
 
-
-def _register_strategies() -> None:
-    from app.strategies.high52_breakout import High52BreakoutStrategy
-    from app.strategies.legacy_patterns import LegacyPatternStrategy
-    from app.strategies.trend_tsmom import TrendTsmomStrategy
-    from app.strategies.vol_breakout import VolBreakoutStrategy
-
-    STRATEGIES["legacy_patterns"] = LegacyPatternStrategy
-    STRATEGIES["vol_breakout"] = VolBreakoutStrategy
-    STRATEGIES["high52_breakout"] = High52BreakoutStrategy
-    STRATEGIES["trend_tsmom"] = TrendTsmomStrategy
+STRATEGIES = STRATEGY_REGISTRY
 
 
 async def _load_bars(codes: list[str], lookback_days: int) -> dict:
@@ -65,10 +55,7 @@ async def _load_bars(codes: list[str], lookback_days: int) -> dict:
 
 async def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--strategy", required=True,
-        choices=["legacy_patterns", "vol_breakout", "high52_breakout", "trend_tsmom"],
-    )
+    parser.add_argument("--strategy", required=True, choices=sorted(STRATEGY_REGISTRY))
     parser.add_argument("--start", type=date.fromisoformat, default=date(2019, 1, 1))
     parser.add_argument("--end", type=date.fromisoformat, default=date.today())
     parser.add_argument("--top-n", type=int, default=100)
@@ -84,7 +71,6 @@ async def main() -> None:
     )
     args = parser.parse_args()
 
-    _register_strategies()
     strategy = STRATEGIES[args.strategy]()
     windows = walk_forward_windows(args.start, args.end, args.train_years, args.test_months, args.test_months)
     if not windows:

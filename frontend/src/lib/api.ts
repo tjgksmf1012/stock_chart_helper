@@ -7,7 +7,7 @@ import type {
   IntradayCandidateWarmupRequest, IntradayWarmupJobStatus, IntradayWarmupRequest, IntradayWarmupResponse, KisPrimeStatus, PatternStatsResponse, RuntimeStatusResponse, ScanHistoryRunSummary, ScanQualityReportResponse,
   WatchlistItem, OutcomeEvaluationResponse, OutcomeRecord, OutcomesSummary, OutcomeStatus, CalibrationReport, OfflineCalibrationResponse,
   MarketRegimeResponse, SectorHeatmapResponse, MoneyFlowData, DeepAnalysisResponse, DeepAnalysisProgress,
-  LabReportsResponse,
+  LabReportsResponse, LabSignalsResponse,
 } from '@/types/api'
 
 function resolveApiBase() {
@@ -393,4 +393,5 @@ export const systemApi = {
 
 export const labApi = {
   reports: () => api.get<LabReportsResponse>('/lab/reports').then(r => r.data),
+  signals: () => api.get<LabSignalsResponse>('/lab/signals').then(r => r.data),
 }
