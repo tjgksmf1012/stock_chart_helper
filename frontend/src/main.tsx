@@ -31,6 +31,7 @@ const ReferenceChartsPage = lazyWithRetry(() => import('./pages/ReferenceChartsP
 const ScreenerPage = lazyWithRetry(() => import('./pages/ScreenerPage'), 'ScreenerPage')
 const WatchlistPage = lazyWithRetry(() => import('./pages/WatchlistPage'), 'WatchlistPage')
 const SystemStatusPage = lazyWithRetry(() => import('./pages/SystemStatusPage'), 'SystemStatusPage')
+const LabPage = lazyWithRetry(() => import('./pages/LabPage'), 'LabPage')
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -67,6 +68,7 @@ createRoot(document.getElementById('root')!).render(
                 <Route path="library" element={<PatternLibraryPage />} />
                 <Route path="reports/patterns" element={<PatternPerformancePage />} />
                 <Route path="screener" element={<ScreenerPage />} />
+                <Route path="lab" element={<LabPage />} />
                 <Route path="system" element={<SystemStatusPage />} />
               </Route>
             </Routes>

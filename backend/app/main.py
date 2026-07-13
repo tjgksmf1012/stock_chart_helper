@@ -12,7 +12,7 @@ import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api.routes import ai, dashboard, outcomes, patterns, screener, symbols, system, watchlist
+from .api.routes import ai, dashboard, lab, outcomes, patterns, screener, symbols, system, watchlist
 from .core.config import get_settings
 
 logger = structlog.get_logger()
@@ -45,6 +45,7 @@ app.include_router(screener.router, prefix="/api/v1")
 app.include_router(system.router, prefix="/api/v1")
 app.include_router(watchlist.router, prefix="/api/v1")
 app.include_router(outcomes.router, prefix="/api/v1")
+app.include_router(lab.router, prefix="/api/v1")
 
 
 @app.api_route("/health", methods=["GET", "HEAD"])

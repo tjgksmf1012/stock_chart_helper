@@ -1003,3 +1003,54 @@ export interface DeepAnalysisResponse {
   long_context: DeepLongContext
   note: string
 }
+
+// 실험실 (전략 검증 리포트 — scripts/run_lab.py 산출물)
+export interface LabReport {
+  strategy: string
+  label: string
+  period: { start: string; end: string }
+  config: { top_n: number; train_years: number; test_months: number; round_trip_cost_pct: number }
+  universe_mode: 'marcap' | 'pit' | 'current'
+  universe_note: string | null
+  data_coverage: number
+  n_trades: number
+  ev_pct: number
+  ci_95: [number, number]
+  win_rate: number
+  payoff_ratio: number
+  sequential_mdd_pct?: number
+  portfolio_mdd_pct?: number
+  portfolio_total_return_pct?: number
+  random_benchmark_ev_pct: number | null
+  verdict: 'pass' | 'watch' | 'fail'
+  generated_at: string
+}
+
+export interface LabReportsResponse {
+  reports: LabReport[]
+}
+
+export interface LabSignal {
+  strategy_id: string
+  strategy_label: string
+  code: string
+  signal_date: string
+  stop_price: number
+  target_price: number | null
+  max_holding_days: number
+  verdict: 'pass' | 'watch' | 'fail' | null
+}
+
+export interface LabEligibleStrategy {
+  strategy_id: string
+  label: string
+  verdict: 'pass' | 'watch' | 'fail' | null
+}
+
+export interface LabSignalsResponse {
+  generated_at: string
+  eligible_strategies: LabEligibleStrategy[]
+  universe_size?: number
+  signals: LabSignal[]
+  note: string | null
+}
