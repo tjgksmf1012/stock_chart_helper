@@ -328,6 +328,8 @@ export default function DashboardPage() {
           {regimeWarning}
         </div>
       )}
+      {/* 부분 저하(note만 존재)는 노란색, 완전 저하는 빨간색 — main의 degraded 전용
+          배너를 포괄하는 상위집합이라 이쪽을 유지 */}
       {status?.data_source_note && (
         <div
           className={cn(

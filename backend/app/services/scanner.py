@@ -704,6 +704,7 @@ async def get_scan_status(timeframe: str = DEFAULT_TIMEFRAME) -> dict[str, Any]:
 
     krx_down, fdr_down = await asyncio.gather(krx_in_cooldown(), fdr_in_cooldown())
     status["data_source_degraded"] = bool(krx_down and fdr_down)
+    # main의 완전 저하 노트에 부분 저하(krx만 다운) 케이스를 더한 상위집합 유지
     if status["data_source_degraded"]:
         status["data_source_note"] = (
             "KRX·FinanceDataReader 데이터 수집이 최근 반복 실패해 잠시 쉬는 중입니다. "
@@ -1446,6 +1447,7 @@ async def run_scan(
             timeframe,
             status="running",
             is_running=True,
+            cancel_requested=False,
             source=source,
             last_started_at=started_at.isoformat(),
             last_error=None,
