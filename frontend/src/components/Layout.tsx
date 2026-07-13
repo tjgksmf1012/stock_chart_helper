@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
-import { BarChart2, BookOpen, LayoutDashboard, ServerCog, SlidersHorizontal, Sparkles, Star, TrendingUp } from 'lucide-react'
+import { BarChart2, BookOpen, FlaskConical, LayoutDashboard, ServerCog, SlidersHorizontal, Sparkles, Star, TrendingUp } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { to: '/library', label: '패턴 사전', icon: BookOpen, end: true },
   { to: '/reports/patterns', label: '패턴 적중률', icon: TrendingUp, end: true },
   { to: '/screener', label: '종목 필터', icon: SlidersHorizontal, end: true },
+  { to: '/lab', label: '실험실', icon: FlaskConical, end: true },
   { to: '/system', label: '시스템 상태', icon: ServerCog, end: true },
 ]
 

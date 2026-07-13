@@ -7,6 +7,7 @@ import type {
   IntradayCandidateWarmupRequest, IntradayWarmupJobStatus, IntradayWarmupRequest, IntradayWarmupResponse, KisPrimeStatus, PatternStatsResponse, RuntimeStatusResponse, ScanHistoryRunSummary, ScanQualityReportResponse,
   WatchlistItem, OutcomeEvaluationResponse, OutcomeRecord, OutcomesSummary, OutcomeStatus, CalibrationReport, OfflineCalibrationResponse,
   MarketRegimeResponse, SectorHeatmapResponse, MoneyFlowData, DeepAnalysisResponse, DeepAnalysisProgress,
+  LabReportsResponse,
 } from '@/types/api'
 
 function resolveApiBase() {
@@ -388,4 +389,8 @@ export const systemApi = {
     api.post<IntradayWarmupJobStatus>('/system/intraday/warmup/background', req).then(r => r.data),
   warmupCandidatesBackground: (req: IntradayCandidateWarmupRequest) =>
     api.post<IntradayWarmupJobStatus>('/system/intraday/warmup-candidates/background', req).then(r => r.data),
+}
+
+export const labApi = {
+  reports: () => api.get<LabReportsResponse>('/lab/reports').then(r => r.data),
 }
