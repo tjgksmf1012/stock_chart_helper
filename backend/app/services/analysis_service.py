@@ -2322,9 +2322,8 @@ def _decision_support_profile(
     else:
         next_trigger = "현재는 목표 소진·패턴 실패 여부와 같은 종료 신호를 우선 확인하는 편이 좋습니다."
 
-    if ichimoku.get("summary"):
-        next_trigger = f"{next_trigger} {ichimoku['summary']}"
-
+    # ichimoku 요약은 action_plan_summary(실전 판단)에도 그대로 붙기 때문에 여기에
+    # 또 붙이면 카드에서 같은 두 문장이 연달아 두 번 보인다 — 다음 확인은 한 줄 액션만 유지
     if not flags:
         flags.append("크게 치명적인 리스크는 보이지 않지만 손절 기준가 확인은 여전히 필요합니다.")
 

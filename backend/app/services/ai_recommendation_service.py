@@ -7,6 +7,7 @@ from collections import Counter
 from datetime import UTC, datetime
 
 from ..api.schemas import AiRecommendationItem, AiRecommendationResponse, SymbolInfo
+from ..core.korean import attach_josa
 from ..core.redis import cache_get, cache_set
 from .openai_recommendation_service import apply_openai_recommendation_overlay
 from .personalization_service import load_personalization_snapshot, score_personal_fit
@@ -26,6 +27,24 @@ STANCE_LABELS = {
 
 _RECOMMENDATION_CACHE_PREFIX = "ai:recommendations:v3"
 _IN_FLIGHT_RECOMMENDATIONS: set[str] = set()
+
+# 추천 문장에 raw pattern_type("double_top")이 그대로 노출되지 않도록 한글 이름으로 변환
+_PATTERN_NAMES_KR = {
+    "double_bottom": "이중 바닥 (W)",
+    "double_top": "이중 천장 (M)",
+    "head_and_shoulders": "헤드 앤 숄더",
+    "inverse_head_and_shoulders": "역헤드 앤 숄더",
+    "ascending_triangle": "상승 삼각형",
+    "descending_triangle": "하락 삼각형",
+    "symmetric_triangle": "대칭 삼각형",
+    "rectangle": "박스권",
+    "rising_channel": "상승 채널",
+    "falling_channel": "하락 채널",
+    "cup_and_handle": "컵 앤 핸들",
+    "rounding_bottom": "라운딩 바닥",
+    "vcp": "VCP 변동성 수축",
+    "momentum_breakout": "모멘텀 브레이크아웃",
+}
 
 
 async def build_ai_recommendations(timeframe: str = DEFAULT_TIMEFRAME, limit: int = 8) -> AiRecommendationResponse:
@@ -112,6 +131,9 @@ async def build_ai_recommendations(timeframe: str = DEFAULT_TIMEFRAME, limit: in
             risk_items=risk_items,
             watchlist_focus_items=watchlist_focus_items,
             personalized_items=personalized_items,
+            priority_total=sum(1 for item in ranked if item.stance == "priority_watch"),
+            watch_total=sum(1 for item in ranked if item.stance in {"wait_for_trigger", "avoid_chase"}),
+            risk_total=sum(1 for item in ranked if item.stance == "risk_review"),
             personal_style=personalization.get("style_profile") or {},
             disclaimer=DISCLAIMER,
         )
@@ -295,15 +317,17 @@ def _stance(row: dict, score: float) -> str:
 
 def _summary(row: dict, stance: str) -> str:
     name = row.get("name", row.get("code", "종목"))
-    pattern = row.get("pattern_type") or "구조 미확인"
+    subject = attach_josa(str(name), "은/는")
+    raw_pattern = row.get("pattern_type")
+    pattern = _PATTERN_NAMES_KR.get(raw_pattern, raw_pattern) if raw_pattern else "구조 미확인"
     readiness = row.get("trade_readiness_label") or "준비도 확인 필요"
     if stance == "priority_watch":
-        return f"{name}은 {pattern} 구조가 살아 있고 {readiness} 구간이라 오늘 바로 체크할 후보입니다."
+        return f"{subject} {pattern} 구조가 살아 있고 {readiness} 구간이라 오늘 바로 체크할 후보입니다."
     if stance == "wait_for_trigger":
-        return f"{name}은 구조는 유지되지만 아직 트리거 확인이 먼저인 대기 후보입니다."
+        return f"{subject} 구조는 유지되지만 아직 트리거 확인이 먼저인 대기 후보입니다."
     if stance == "avoid_chase":
-        return f"{name}은 방향성은 좋지만 이미 앞서가 있어 추격 대신 눌림 확인이 더 중요합니다."
-    return f"{name}은 지금은 방어적으로 봐야 하는 후보입니다. 리스크와 데이터 상태를 먼저 점검해야 합니다."
+        return f"{subject} 방향성은 좋지만 이미 앞서가 있어 추격 대신 눌림 확인이 더 중요합니다."
+    return f"{subject} 지금은 방어적으로 봐야 하는 후보입니다. 리스크와 데이터 상태를 먼저 점검해야 합니다."
 
 
 def _reasons(row: dict) -> list[str]:
@@ -449,7 +473,7 @@ def _portfolio_guidance(
     if watchlist_focus_items:
         lead = watchlist_focus_items[0]
         return (
-            f"관심종목에서는 {lead.symbol.name}을 먼저 보세요. "
+            f"관심종목에서는 {attach_josa(lead.symbol.name, '을/를')} 먼저 보세요. "
             "이미 들고 있거나 계속 추적하는 종목과 신규 후보가 같은 방향으로 겹치면 비중이 몰릴 수 있습니다."
         )
     if priority_items:

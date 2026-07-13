@@ -7,7 +7,7 @@ import { useAppStore } from '@/store/app'
 
 const NAV_ITEMS = [
   { to: '/', label: '대시보드', icon: LayoutDashboard, end: true },
-  { to: '/ai', label: 'AI 추천', icon: Sparkles, end: true },
+  { to: '/ai', label: '오늘의 추천', icon: Sparkles, end: true },
   { to: '/chart', label: '차트 분석', icon: BarChart2, end: false },
   { to: '/watchlist', label: '관심종목', icon: Star, end: true },
   { to: '/library', label: '패턴 사전', icon: BookOpen, end: true },
@@ -37,7 +37,9 @@ export function Layout() {
             </div>
           </div>
 
-          <nav className="flex items-center gap-1 overflow-x-auto pb-1 md:pb-0">
+          {/* 모바일에서는 내비가 가로 스크롤로 잘리는데, 잘린다는 시각적 힌트가 없으면
+              뒤쪽 메뉴(패턴 사전~시스템 상태)가 없는 것처럼 보인다 — 우측 페이드로 표시 */}
+          <nav className="flex items-center gap-1 overflow-x-auto pb-1 md:pb-0 max-md:[mask-image:linear-gradient(to_right,black_88%,transparent)]">
             {NAV_ITEMS.map(item => (
               <NavLink
                 key={item.to}

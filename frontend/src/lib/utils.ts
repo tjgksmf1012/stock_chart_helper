@@ -24,6 +24,45 @@ export function fmtTurnoverBillion(val: number | null | undefined): string {
   return `${val.toFixed(1)}억`
 }
 
+const JOSA_PAIRS: Record<string, [string, string]> = {
+  '은/는': ['은', '는'],
+  '이/가': ['이', '가'],
+  '을/를': ['을', '를'],
+  '과/와': ['과', '와'],
+}
+
+// 한글로 읽었을 때 받침이 있는 숫자 (영·일·삼·육·칠·팔)
+const DIGITS_WITH_FINAL = new Set(['0', '1', '3', '6', '7', '8'])
+
+/**
+ * 받침 유무에 따라 조사를 붙인다: attachJosa('삼성전자', '은/는') === '삼성전자는'.
+ * 영문/기호로 끝나면 관용 표기에 맞춰 받침 없는 쪽(는/가/를)을 쓴다.
+ */
+export function attachJosa(word: string, pair: keyof typeof JOSA_PAIRS): string {
+  const [withFinal, withoutFinal] = JOSA_PAIRS[pair]
+  for (let i = word.length - 1; i >= 0; i--) {
+    const ch = word[i]
+    const code = ch.charCodeAt(0)
+    if (code >= 0xac00 && code <= 0xd7a3) {
+      return `${word}${(code - 0xac00) % 28 !== 0 ? withFinal : withoutFinal}`
+    }
+    if (/\d/.test(ch)) return `${word}${DIGITS_WITH_FINAL.has(ch) ? withFinal : withoutFinal}`
+    if (/[a-zA-Z]/.test(ch)) return `${word}${withoutFinal}`
+    // 괄호·공백 등은 건너뛰고 앞 글자로 판별
+  }
+  return `${word}${withoutFinal}`
+}
+
+/** 시가총액(억원 단위 값) → "1,666조 원" / "8,450억 원" */
+export function fmtMarketCap(valueInEokWon: number | null | undefined): string {
+  if (valueInEokWon === null || valueInEokWon === undefined || Number.isNaN(valueInEokWon) || valueInEokWon <= 0) return '-'
+  if (valueInEokWon >= 10_000) {
+    const jo = valueInEokWon / 10_000
+    return `${jo >= 100 ? Math.round(jo).toLocaleString('ko-KR') : jo.toFixed(1)}조 원`
+  }
+  return `${Math.round(valueInEokWon).toLocaleString('ko-KR')}억 원`
+}
+
 export function fmtDateTime(value: string | null | undefined): string {
   if (!value) return '-'
 

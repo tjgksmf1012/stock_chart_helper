@@ -14,11 +14,28 @@ const REGIME_CFG = {
   unknown:    { label: '확인 중',  color: 'text-muted-foreground', bg: 'bg-muted/10 border-border' },
 } as const
 
+/** 현재가 대비 이평선 이격(%) — ma가 없으면 null */
+function maDistancePct(current: number, ma: number | null): number | null {
+  if (!ma || current <= 0) return null
+  return ((current - ma) / ma) * 100
+}
+
+function formatSignedPct(value: number): string {
+  return `${value > 0 ? '+' : ''}${value.toFixed(1)}%`
+}
+
+// 체제 판정 규칙(backend market_regime_service._classify_regime)과 같은 기준의 이평선을
+// 보여준다 — 판정에 쓰이지 않는 120일선만 보여주면 라벨과 숫자가 모순돼 보인다.
+const REGIME_RULE_NOTE =
+  '판정 기준: 종가가 20일선 위 + 20일선이 60일선 위 = 상승 추세 · 종가가 60일선 아래 = 하락 추세 · 그 사이 = 조정 구간'
+
 function IndexChip({ name, regime }: { name: string; regime: IndexRegime }) {
   const cfg = REGIME_CFG[regime.regime] ?? REGIME_CFG.unknown
   const isUp = regime.change_pct >= 0
+  const dist20 = maDistancePct(regime.current, regime.ma20)
+  const dist60 = maDistancePct(regime.current, regime.ma60)
   return (
-    <div className={cn('flex items-center gap-2 rounded-lg border px-3 py-1.5', cfg.bg)}>
+    <div className={cn('flex items-center gap-2 rounded-lg border px-3 py-1.5', cfg.bg)} title={REGIME_RULE_NOTE}>
       <span className="text-xs font-semibold text-muted-foreground">{name}</span>
       {regime.current > 0 && (
         <span className="font-mono text-sm font-semibold tabular-nums">
@@ -34,9 +51,11 @@ function IndexChip({ name, regime }: { name: string; regime: IndexRegime }) {
       <span className={cn('rounded px-1.5 py-0.5 text-xs font-semibold', cfg.color)}>
         {cfg.label}
       </span>
-      {regime.distance_from_ma120_pct !== 0 && (
+      {(dist20 !== null || dist60 !== null) && (
         <span className="hidden text-xs text-muted-foreground lg:inline">
-          120일선 {regime.distance_from_ma120_pct > 0 ? '+' : ''}{regime.distance_from_ma120_pct.toFixed(1)}%
+          {dist20 !== null && <>20일선 {formatSignedPct(dist20)}</>}
+          {dist20 !== null && dist60 !== null && ' · '}
+          {dist60 !== null && <>60일선 {formatSignedPct(dist60)}</>}
         </span>
       )}
     </div>

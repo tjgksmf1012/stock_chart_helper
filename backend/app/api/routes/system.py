@@ -144,28 +144,38 @@ SCHEDULED_DAILY_SCAN_PLANS: list[dict[str, str]] = [
 
 def _storage_roles(cache_status: dict[str, Any], intraday_store_status: dict[str, Any]) -> list[StorageRoleStatus]:
     redis_state = "연결됨" if cache_status.get("redis_available") else "메모리 fallback"
+    # 실제 DATABASE_URL 기준으로 표기 — 로컬 데스크톱 모드(SQLite)인데 "Neon
+    # PostgreSQL"이라고 고정 표기하면 시스템 페이지가 거짓말을 하게 된다.
+    db_is_sqlite = settings.database_url.startswith("sqlite")
+    db_name = "로컬 SQLite (data/local.db)" if db_is_sqlite else "PostgreSQL"
+    db_backend = "sqlite" if db_is_sqlite else "postgresql"
+    db_persistence = (
+        "영속 저장 (로컬 파일). scan-history, 후보 스냅샷, 저장 신호 결과를 보관합니다."
+        if db_is_sqlite
+        else "영속 저장. scan-history, 후보 스냅샷, 저장 신호 결과를 장기 분석 재료로 보관합니다."
+    )
     return [
         StorageRoleStatus(
-            name="Redis / Upstash",
+            name="Redis" if cache_status.get("redis_available") else "메모리 캐시 (Redis 미설정)",
             backend=str(cache_status.get("backend") or "unknown"),
             role="빠른 응답을 위한 단기 캐시",
-            persistence=f"{redis_state}. 재계산 가능한 스캔 결과, AI 코멘트, 품질 리포트 캐시를 보관합니다.",
+            persistence=f"{redis_state}. 재계산 가능한 스캔 결과, 추천 코멘트, 품질 리포트 캐시를 보관합니다.",
             examples=["dashboard scan cache", "AI recommendation cache", "scan quality report cache"],
         ),
         StorageRoleStatus(
-            name="Neon PostgreSQL",
-            backend="postgresql",
+            name=db_name,
+            backend=db_backend,
             role="장기 보존이 필요한 운용 기록",
-            persistence="영속 저장. scan-history, 후보 스냅샷, 저장 신호 결과를 장기 분석 재료로 보관합니다.",
+            persistence=db_persistence,
             examples=["scan_runs", "scan_candidate_snapshots", "signal_outcomes"],
         ),
         StorageRoleStatus(
-            name="Render local SQLite",
+            name="분봉 저장소 SQLite",
             backend="sqlite",
             role="분봉 체감 속도를 위한 로컬 저장소",
             persistence=(
                 f"{intraday_store_status.get('retention_days', 45)}일 보관. "
-                "운영 인스턴스 재배포/디스크 정책에 영향을 받을 수 있어 장기 성과 데이터로 보지 않습니다."
+                "다시 수집할 수 있는 캐시 성격이라 장기 성과 데이터로 보지 않습니다."
             ),
             examples=["intraday 1m/15m/30m/60m cache"],
         ),
@@ -272,7 +282,9 @@ async def get_runtime_status() -> RuntimeStatusResponse:
         ),
         cache=CacheRuntimeStatus(**cache_status),
         intraday_store=IntradayStoreStatus(**intraday_store_status),
-        scheduler_enabled=True,
+        # 하드코딩 금지 — 로컬 모드(ENABLE_SCHEDULER=false)에서 자동 스케줄이 켜져
+        # 있다고 표시되면 사용자가 아침 자동 스캔을 기다리게 된다.
+        scheduler_enabled=settings.enable_scheduler,
         scheduled_daily_scans=[ScheduledDailyScanPlan(**plan) for plan in SCHEDULED_DAILY_SCAN_PLANS],
         scheduled_warmups=SCHEDULED_INTRADAY_WARMUP_PLANS,
         storage_roles=_storage_roles(cache_status, intraday_store_status),

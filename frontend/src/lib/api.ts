@@ -1,4 +1,6 @@
 import axios, { type InternalAxiosRequestConfig } from 'axios'
+
+import { attachJosa } from './utils'
 import type {
   SymbolInfo, OHLCVBar, AnalysisResult, PriceInfo,
   AiRecommendationItem, AiRecommendationResponse, DashboardOverviewResponse, DashboardResponse, PatternLibraryEntry, ScreenerRequest, DashboardItem, ReferenceCaseResponse, ScanStatusResponse, Timeframe,
@@ -219,12 +221,12 @@ function makeFallbackRecommendation(item: DashboardItem): AiRecommendationItem {
     watchlist_priority: false,
     summary:
       stance === 'priority_watch'
-        ? `${item.symbol.name}은 준비도와 구조가 살아 있어 오늘 우선 검토 후보입니다.`
+        ? `${attachJosa(item.symbol.name, '은/는')} 준비도와 구조가 살아 있어 오늘 우선 검토 후보입니다.`
         : stance === 'avoid_chase'
-          ? `${item.symbol.name}은 방향성은 좋지만 추격보다 눌림 확인이 더 중요합니다.`
+          ? `${attachJosa(item.symbol.name, '은/는')} 방향성은 좋지만 추격보다 눌림 확인이 더 중요합니다.`
           : stance === 'wait_for_trigger'
-            ? `${item.symbol.name}은 구조는 유지되지만 트리거 확인이 먼저입니다.`
-            : `${item.symbol.name}은 리스크와 데이터 상태를 먼저 점검해야 합니다.`,
+            ? `${attachJosa(item.symbol.name, '은/는')} 구조는 유지되지만 트리거 확인이 먼저입니다.`
+            : `${attachJosa(item.symbol.name, '은/는')} 리스크와 데이터 상태를 먼저 점검해야 합니다.`,
     action_line: `지금 할 일: ${doNow}`,
     do_now: doNow,
     avoid_if: avoidIf,

@@ -475,6 +475,9 @@ export interface AiRecommendationResponse {
   risk_items: AiRecommendationItem[]
   watchlist_focus_items?: AiRecommendationItem[]
   personalized_items?: AiRecommendationItem[]
+  priority_total?: number
+  watch_total?: number
+  risk_total?: number
   personal_style?: PersonalStyleProfile
   disclaimer: string
   llm_enabled?: boolean
@@ -960,7 +963,11 @@ export interface DeepPatternCase {
   signal_date: string
   outcome: 'success' | 'fail' | 'timeout'
   bars_to_outcome: number | null
+  /** 부호 있는 가격 변화 (숏 패턴 성공이면 음수) — 표시용으로는 pnl_pct를 쓸 것 */
   move_pct: number
+  /** 패턴 방향 반영 손익 (숏 성공 = +). 구버전 캐시 응답엔 없을 수 있음 */
+  pnl_pct?: number
+  direction?: 'long' | 'short'
   mfe_pct: number
   mae_pct: number
 }

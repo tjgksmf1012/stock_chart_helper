@@ -78,6 +78,20 @@ class TestSummarize:
         assert stats["vcp"]["win_rate"] == 1.0
         assert stats["vcp"]["resolution_rate"] == 1.0
 
+    def test_short_pattern_win_reports_positive_pnl(self):
+        # 숏 패턴(이중 천장)의 성공은 가격 하락(move_pct 음수)이지만, 손익 표기는
+        # 방향 반영 pnl_pct 기준이라 양수여야 한다 — "평균 성공 수익 -5%" 표기 모순 방지.
+        cases = [
+            {"pattern_type": "double_top", "outcome": "success", "bars_to_outcome": 5,
+             "move_pct": -0.06, "pnl_pct": 0.06, "direction": "short"},
+            {"pattern_type": "double_top", "outcome": "fail", "bars_to_outcome": 3,
+             "move_pct": 0.04, "pnl_pct": -0.04, "direction": "short"},
+        ]
+        stats = {s["pattern_type"]: s for s in _summarize_cases(cases)}
+        top = stats["double_top"]
+        assert top["avg_win_move_pct"] == 0.06   # 성공 수익은 양수
+        assert top["avg_loss_move_pct"] == -0.04  # 실패 손실은 음수
+
 
 class TestLongContext:
     def test_position_and_regime(self, sample_ohlcv_df_long):

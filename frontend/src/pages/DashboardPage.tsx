@@ -328,8 +328,17 @@ export default function DashboardPage() {
           {regimeWarning}
         </div>
       )}
-      {status?.data_source_degraded && (
-        <div className="rounded-lg border border-red-400/25 bg-red-400/8 px-3 py-2 text-xs font-medium text-red-300">
+      {/* 부분 저하(note만 존재)는 노란색, 완전 저하는 빨간색 — main의 degraded 전용
+          배너를 포괄하는 상위집합이라 이쪽을 유지 */}
+      {status?.data_source_note && (
+        <div
+          className={cn(
+            'rounded-lg border px-3 py-2 text-xs font-medium',
+            status.data_source_degraded
+              ? 'border-red-400/25 bg-red-400/8 text-red-300'
+              : 'border-amber-400/25 bg-amber-400/8 text-amber-300',
+          )}
+        >
           ⚠️ {status.data_source_note}
         </div>
       )}
@@ -373,7 +382,11 @@ export default function DashboardPage() {
             <HeroMetric
               label="오늘 주목할 종목"
               value={overviewQ.isLoading ? '-' : `${summary.totalCount}개`}
-              hint={overviewQ.isLoading ? '스캔 결과 불러오는 중...' : `지금 바로 ${summary.readyCount}개 · 대기 중 ${summary.watchCount}개`}
+              hint={
+                overviewQ.isLoading
+                  ? '스캔 결과 불러오는 중...'
+                  : `지금 바로 ${summary.readyCount} · 대기 ${summary.watchCount} · 관망/점검 ${summary.riskCount} (고유 종목 기준, 섹션 간 중복 제외)`
+              }
             />
             <HeroMetric
               label="평균 오를 확률"
@@ -478,7 +491,8 @@ export default function DashboardPage() {
                 <span>스캔 진행</span>
                 <div className="flex items-center gap-2">
                   <span className="font-mono">
-                    {status?.scanned_count ?? 0} / {status?.universe_size}종목
+                    {/* 워밍업 단계에선 직전 런의 카운트가 placeholder 유니버스보다 클 수 있어 클램프 */}
+                    {Math.min(status?.scanned_count ?? 0, status?.universe_size ?? 0)} / {status?.universe_size}종목
                   </span>
                   {!status?.cancel_requested ? (
                     <button
@@ -1217,6 +1231,24 @@ function PendingDecisionDesk({
   onUpdate: (id: number, outcome: OutcomeStatus) => void
   onEvaluate: () => void
 }) {
+  // 원클릭 오확정 방지 — 첫 클릭은 확정 대기 상태로만 만들고, 같은 버튼을 한 번 더
+  // 눌러야 실제로 닫는다 (몇 초 지나면 자동 해제).
+  const [confirming, setConfirming] = useState<{ id: number; outcome: OutcomeStatus } | null>(null)
+
+  useEffect(() => {
+    if (!confirming) return
+    const timer = window.setTimeout(() => setConfirming(null), 4000)
+    return () => window.clearTimeout(timer)
+  }, [confirming])
+
+  const handleOutcomeClick = (id: number, outcome: OutcomeStatus) => {
+    if (confirming && confirming.id === id && confirming.outcome === outcome) {
+      setConfirming(null)
+      onUpdate(id, outcome)
+      return
+    }
+    setConfirming({ id, outcome })
+  }
   if (isLoading || records.length === 0) {
     return (
       <section className="rounded-lg border border-border bg-card/55 p-4">
@@ -1299,19 +1331,23 @@ function PendingDecisionDesk({
 
               {record.id != null && (
                 <div className="flex shrink-0 flex-wrap justify-end gap-1">
-                  {(['win', 'loss', 'stopped_out', 'cancelled'] as OutcomeStatus[]).map(outcome => (
-                    <button
-                      key={outcome}
-                      onClick={() => onUpdate(record.id!, outcome)}
-                      disabled={isUpdating}
-                      className={cn(
-                        'rounded-md border px-2 py-1 text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-50',
-                        PENDING_OUTCOME_TONES[outcome],
-                      )}
-                    >
-                      {PENDING_OUTCOME_LABELS[outcome]}
-                    </button>
-                  ))}
+                  {(['win', 'loss', 'stopped_out', 'cancelled'] as OutcomeStatus[]).map(outcome => {
+                    const isArmed = confirming?.id === record.id && confirming?.outcome === outcome
+                    return (
+                      <button
+                        key={outcome}
+                        onClick={() => handleOutcomeClick(record.id!, outcome)}
+                        disabled={isUpdating}
+                        className={cn(
+                          'rounded-md border px-2 py-1 text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+                          PENDING_OUTCOME_TONES[outcome],
+                          isArmed && 'ring-1 ring-inset ring-current font-semibold',
+                        )}
+                      >
+                        {isArmed ? `${PENDING_OUTCOME_LABELS[outcome]} 확정?` : PENDING_OUTCOME_LABELS[outcome]}
+                      </button>
+                    )
+                  })}
                 </div>
               )}
             </div>

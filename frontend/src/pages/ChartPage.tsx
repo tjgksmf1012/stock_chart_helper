@@ -31,7 +31,7 @@ import {
   normalizeDisplayTimeframe,
   timeframeLabel,
 } from '@/lib/timeframes'
-import { cn, fmtDateTime, fmtNumber, fmtPct, fmtPrice, PATTERN_NAMES } from '@/lib/utils'
+import { cn, fmtDateTime, fmtMarketCap, fmtPct, fmtPrice, PATTERN_NAMES } from '@/lib/utils'
 import { buildChartSummary, type ChartSummary } from '@/lib/chartSummary'
 import { useAppStore } from '@/store/app'
 import type { AnalysisResult, OutcomeIntent, OutcomeRecord, OutcomeStatus, PatternInfo, PatternStatsEntry, Timeframe } from '@/types/api'
@@ -528,6 +528,15 @@ export default function ChartPage() {
                   </button>
                 ))}
               </div>
+
+              {/* 익절/손절 기준가 없이 저장된 판단은 자동 점검(터치 판정)이 닫아줄 수 없어
+                  영원히 '대기'로 남는다 — 저장 전에 미리 알려준다 */}
+              {!savedRecord && savedId == null && (!primaryPattern?.target_level || !primaryPattern?.invalidation_level) && (
+                <p className="mt-2 rounded-md border border-amber-400/20 bg-amber-400/5 px-2.5 py-1.5 text-[11px] leading-relaxed text-amber-200/90">
+                  지금은 익절·손절 기준가가 없는 상태라 이 판단은 자동 점검으로 닫히지 않습니다.
+                  저장 후 대시보드의 미정리 판단에서 직접 성공/실패/취소로 닫아야 성과에 반영됩니다.
+                </p>
+              )}
             </div>
 
             <PriceActionBar analysis={analysis} currentPrice={priceQ.data?.close ?? null} pattern={primaryPattern} stats={activePatternStats} />
@@ -599,7 +608,7 @@ export default function ChartPage() {
               <HeroMetric label="데이터 품질" value={fmtPct(analysis.data_quality, 0)} />
               <HeroMetric label="표본 신뢰도" value={fmtPct(analysis.sample_reliability, 0)} />
               <HeroMetric label="사용 바 수" value={`${analysis.available_bars.toLocaleString('ko-KR')}개`} />
-              <HeroMetric label="시가총액" value={analysis.symbol.market_cap ? fmtNumber(analysis.symbol.market_cap) : '-'} />
+              <HeroMetric label="시가총액" value={fmtMarketCap(analysis.symbol.market_cap)} />
             </div>
             <div className="rounded-lg border border-border bg-background/55 p-3 text-xs leading-relaxed text-muted-foreground">
               {buildDataReadinessSummary(analysis, timeframe)}
@@ -1040,7 +1049,10 @@ function ContextCard({
     <Card className={isPrimary ? 'border-primary/40' : undefined}>
       <div className="flex items-center justify-between gap-2">
         <div className="text-sm font-semibold">{labelOverride ?? analysis.timeframe_label}</div>
-        {isPrimary && <Badge variant="default">현재</Badge>}
+        <div className="flex items-center gap-1">
+          {analysis.is_provisional && <Badge variant="muted">임시</Badge>}
+          {isPrimary && <Badge variant="default">현재</Badge>}
+        </div>
       </div>
       <div className="mt-3 grid gap-2 text-xs text-muted-foreground">
         <MetricLine label="상승 확률" value={fmtPct(analysis.p_up, 0)} />
@@ -1066,9 +1078,16 @@ function summarizeContext(primary: AnalysisResult | undefined, contexts: Analysi
   if (!primary) return '현재 분석 결과가 아직 없습니다.'
   if (contexts.length === 0) return `${primary.timeframe_label} 기준 단일 분석만 준비된 상태입니다.`
 
-  const strongest = [...contexts].sort(
-    (left, right) => (right.trade_readiness_score ?? 0) + right.p_up - ((left.trade_readiness_score ?? 0) + left.p_up),
-  )[0]
+  const scoreOf = (ctx: AnalysisResult) => (ctx.trade_readiness_score ?? 0) + ctx.p_up
+  const sorted = [...contexts].sort((left, right) => scoreOf(right) - scoreOf(left))
+  const strongest = sorted[0]
+  // 보조 타임프레임 점수가 사실상 같으면 "어느 쪽이 가장 강하다"는 말 자체가 성립하지
+  // 않는다 — 그때는 비교 대신 중립 문장으로 처리
+  const hasSpread = sorted.length > 1 && scoreOf(strongest) - scoreOf(sorted[sorted.length - 1]) > 0.02
+
+  if (!hasSpread) {
+    return `${primary.timeframe_label} 기준 현재 판단은 ${primary.action_plan_label}입니다. 보조 타임프레임(${contexts.map(ctx => ctx.timeframe_label).join('/')})도 비슷한 수준이라 아직 특정 타임프레임의 우위는 뚜렷하지 않습니다.`
+  }
 
   return `${primary.timeframe_label} 기준 현재 판단은 ${primary.action_plan_label}입니다. 보조 타임프레임 중에서는 ${strongest.timeframe_label} 쪽이 가장 강하며 준비도 ${fmtPct(strongest.trade_readiness_score ?? 0, 0)}, 신선도 ${fmtPct(strongest.freshness_score ?? 0, 0)}로 읽힙니다.`
 }

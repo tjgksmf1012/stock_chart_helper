@@ -119,23 +119,40 @@ def test_direction_neutral_pattern_leans_down_when_breakdown_is_bearish():
 
 
 class TestCalibrationIsApplied:
-    """Regression: compute_probability must run its raw p_up/p_down through
-    probability_calibration.calibrate_probability() before capping, otherwise
-    a fitted recalibration mapping would silently have no effect on the app.
+    """Regression: 학습 모델이 없고 보정 매핑이 있으면 최종 p_up에 반영돼야 한다.
+
+    단, 보정 결과는 3분법(승/패/미해소) 승률이므로 (c, 1-c)로 그대로 넣지 않고
+    기저율 대비 초과분만 방향 우위로 반영한다 — 기저율 30%대 매핑이 약세 패턴을
+    "상승 70%"로 반전시키던 버그(2026-07)의 회귀 방지.
     """
 
-    def test_calibrated_value_propagates_into_final_p_up(self, monkeypatch):
+    def test_flat_mapping_at_base_rate_neutralizes_direction(self, monkeypatch):
         import app.services.probability_engine as pe
 
         baseline = compute_probability(make_pattern("double_bottom"), **HEALTHY)
         assert baseline.p_up != pytest.approx(0.5)  # sanity: heuristic normally leans away from 0.5
 
-        # Pretend the fitted mapping flattens every input to exactly 0.5.
-        monkeypatch.setattr(pe, "calibrate_probability", lambda raw: 0.5)
+        # 매핑이 모든 입력을 기저율로 납작하게 만들면 방향 우위는 사라져 0.5가 된다.
+        monkeypatch.setattr(pe, "calibrate_probability", lambda raw: 0.30)
+        monkeypatch.setattr(pe, "calibration_base_rate", lambda: 0.30)
         out = compute_probability(make_pattern("double_bottom"), **HEALTHY)
 
         assert out.p_up == pytest.approx(0.5, abs=1e-6)
         assert out.p_down == pytest.approx(0.5, abs=1e-6)
+        assert out.pattern_win_rate == pytest.approx(0.30)  # 실측 승률은 별도 필드로 노출
+
+    def test_calibration_shifts_direction_relative_to_base_rate(self, monkeypatch):
+        import app.services.probability_engine as pe
+
+        monkeypatch.setattr(pe, "calibration_base_rate", lambda: 0.30)
+
+        monkeypatch.setattr(pe, "calibrate_probability", lambda raw: 0.40)
+        up = compute_probability(make_pattern("double_bottom"), **HEALTHY)
+        assert up.p_up > 0.5  # 기저율보다 나은 셋업 → 자기 방향 우위
+
+        monkeypatch.setattr(pe, "calibrate_probability", lambda raw: 0.20)
+        down = compute_probability(make_pattern("double_bottom"), **HEALTHY)
+        assert down.p_up < 0.5  # 기저율보다 나쁜 셋업 → 자기 방향 확신 하락
 
 
 class TestComputeProbabilityWithFeatures:
@@ -217,3 +234,33 @@ def test_direction_probability_is_capped_at_078():
     }
     out = compute_probability(make_pattern(textbook_similarity=0.95), **args)
     assert max(out.p_up, out.p_down) <= 0.78
+
+
+def test_low_base_rate_model_does_not_invert_direction(monkeypatch):
+    # 실측 기저 승률이 30%대인 학습 모델이 있어도, 약세 패턴이 "상승 69%"로
+    # 반전되면 안 된다 (2026-07 실측 버그 회귀 방지). 모델 출력은 3분법 승률이라
+    # 기저율 대비 초과분만 방향 우위로 반영돼야 한다.
+    monkeypatch.setattr(
+        "app.services.probability_engine.predict_directional_probability", lambda features: 0.31
+    )
+    monkeypatch.setattr("app.services.probability_engine.model_base_rate", lambda: 0.30)
+
+    up = compute_probability(make_pattern("double_bottom"), **HEALTHY)
+    down = compute_probability(make_pattern("double_top"), **HEALTHY)
+
+    assert up.p_up > up.p_down          # 기저율보다 나은 강세 셋업은 여전히 위쪽으로
+    assert down.p_down > down.p_up      # 약세 패턴이 상승 우위로 뒤집히지 않음
+    assert up.pattern_win_rate == pytest.approx(0.31)  # 실측 승률은 별도 지표로 그대로 노출
+
+
+def test_below_base_rate_model_leans_against_pattern(monkeypatch):
+    # 기저율보다 나쁜 셋업이면 자기 방향 확신이 0.5 아래로 내려가는 건 정상이지만,
+    # 클램프(0.2) 밖으로 폭주하지 않아야 한다.
+    monkeypatch.setattr(
+        "app.services.probability_engine.predict_directional_probability", lambda features: 0.05
+    )
+    monkeypatch.setattr("app.services.probability_engine.model_base_rate", lambda: 0.30)
+
+    out = compute_probability(make_pattern("double_bottom"), **HEALTHY)
+    assert out.p_up < 0.5
+    assert out.p_up >= 0.2
