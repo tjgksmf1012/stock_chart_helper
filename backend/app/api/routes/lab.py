@@ -16,7 +16,19 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
+from sqlalchemy import select
+
+from ...core.database import AsyncSessionLocal
 from ...core.redis import cache_get, cache_set
+from ...lab.costs import CostModel
+from ...models.lab_paper_trade import LabPaperTrade
+from ...services.lab_paper_trading import (
+    dedupe_key,
+    drift_status,
+    evaluate_paper_trade,
+    new_paper_trade_signals,
+    realized_summary_by_strategy,
+)
 from ...services.lab_signals import collect_recent_signals, eligible_strategy_ids
 from ...strategies.registry import make_strategy
 
@@ -148,6 +160,15 @@ async def _compute_live_signals() -> dict[str, Any]:
         all_signals.extend(signals)
 
     all_signals.sort(key=lambda s: (_VERDICT_ORDER.get(s.get("verdict"), 3), s["signal_date"]), reverse=False)
+
+    # 자동 종이매매: 새로 나온 신호를 open 상태로 기록 (중복은 무시). 실측 성적을
+    # 쌓아 백테스트와의 드리프트를 감시하는 재료가 된다.
+    recorded = 0
+    try:
+        recorded = await _record_paper_trades(all_signals)
+    except Exception as exc:
+        logger.warning("종이매매 기록 실패: %s", exc)
+
     return {
         "generated_at": datetime.now(UTC).replace(tzinfo=None).isoformat(),
         "eligible_strategies": [
@@ -156,7 +177,137 @@ async def _compute_live_signals() -> dict[str, Any]:
         ],
         "universe_size": len(bars_by_code),
         "signals": all_signals,
+        "recorded_paper_trades": recorded,
         # 라이브 유니버스는 현재 상장 종목이라 백테스트와 달리 생존 편향이 없다
         # (오늘 거래 가능한 종목에 대한 오늘의 신호이므로).
         "note": None,
     }
+
+
+async def _record_paper_trades(signals: list[dict[str, Any]]) -> int:
+    """새 신호를 open 종이매매로 기록. 이미 있는(전략+종목+신호일) 건 건너뛴다."""
+    if not signals:
+        return 0
+    async with AsyncSessionLocal() as session:
+        rows = (await session.execute(select(
+            LabPaperTrade.strategy_id, LabPaperTrade.code, LabPaperTrade.signal_date
+        ))).all()
+        existing = {dedupe_key(r[0], r[1], r[2]) for r in rows}
+        fresh = new_paper_trade_signals(signals, existing)
+        for sig in fresh:
+            session.add(LabPaperTrade(
+                strategy_id=sig["strategy_id"], code=sig["code"], signal_date=sig["signal_date"],
+                stop_price=float(sig["stop_price"]),
+                target_price=sig.get("target_price"),
+                max_holding_days=int(sig.get("max_holding_days", 40)),
+                status="open", recorded_at=datetime.now(),
+            ))
+        if fresh:
+            await session.commit()
+        return len(fresh)
+
+
+@router.post("/paper-trades/evaluate")
+async def evaluate_paper_trades() -> dict[str, Any]:
+    """열린 종이매매를 백테스트와 같은 규칙으로 청산 시도. 스케줄러/수동 호출용."""
+    from ...services.data_fetcher import get_data_fetcher
+
+    cost_model = CostModel()
+    fetcher = get_data_fetcher()
+    checked = 0
+    closed = 0
+    async with AsyncSessionLocal() as session:
+        opens = (await session.execute(
+            select(LabPaperTrade).where(LabPaperTrade.status == "open")
+        )).scalars().all()
+
+        # 종목별로 시세를 한 번만 로드 (여러 전략이 같은 종목을 열 수 있음)
+        codes = sorted({t.code for t in opens})
+        bars_by_code: dict[str, Any] = {}
+        for code in codes:
+            try:
+                df = await fetcher.get_stock_ohlcv_by_timeframe(code, "1d", lookback_days=_LIVE_LOOKBACK_BARS)
+                if df is not None and not df.empty:
+                    bars_by_code[code] = df.reset_index(drop=True)
+            except Exception as exc:
+                logger.warning("종이매매 평가: 시세 실패 %s: %s", code, exc)
+
+        for trade in opens:
+            bars = bars_by_code.get(trade.code)
+            if bars is None:
+                continue
+            checked += 1
+            result = evaluate_paper_trade(
+                {
+                    "code": trade.code, "signal_date": trade.signal_date,
+                    "stop_price": trade.stop_price, "target_price": trade.target_price,
+                    "max_holding_days": trade.max_holding_days, "strategy_id": trade.strategy_id,
+                },
+                bars, cost_model,
+            )
+            if result is None:
+                continue  # 아직 보유 중
+            trade.status = "closed"
+            trade.entry_date = result["entry_date"]
+            trade.entry_price = result["entry_price"]
+            trade.exit_date = result["exit_date"]
+            trade.exit_price = result["exit_price"]
+            trade.exit_reason = result["exit_reason"]
+            trade.net_return_pct = result["net_return_pct"]
+            trade.closed_at = datetime.now()
+            closed += 1
+
+        if closed:
+            await session.commit()
+
+    return {"status": "ok", "open_checked": checked, "closed": closed}
+
+
+async def run_scheduled_paper_trade_evaluation() -> None:
+    """APScheduler에서 종이매매 청산 평가를 돌린다 (장마감 후)."""
+    try:
+        result = await evaluate_paper_trades()
+        logger.info("scheduled paper-trade eval: checked=%s closed=%s", result["open_checked"], result["closed"])
+    except Exception as exc:
+        logger.warning("scheduled paper-trade eval 실패: %s", exc)
+
+
+@router.get("/paper-trades/summary")
+async def paper_trades_summary() -> dict[str, Any]:
+    """전략별 실측 종이매매 성적 + 백테스트 대비 드리프트 판정."""
+    reports = load_latest_reports(_LAB_DIR)
+    ci_low_by_id = {
+        r["strategy"]: (r["ci_95"][0] if isinstance(r.get("ci_95"), list) and r["ci_95"] else None)
+        for r in reports if r.get("strategy")
+    }
+    label_by_id = {r["strategy"]: r.get("label", r["strategy"]) for r in reports if r.get("strategy")}
+
+    async with AsyncSessionLocal() as session:
+        rows = (await session.execute(select(LabPaperTrade))).scalars().all()
+
+    open_counts: dict[str, int] = {}
+    closed_dicts: list[dict[str, Any]] = []
+    for t in rows:
+        if t.status == "open":
+            open_counts[t.strategy_id] = open_counts.get(t.strategy_id, 0) + 1
+        else:
+            closed_dicts.append({
+                "strategy_id": t.strategy_id, "status": "closed", "net_return_pct": t.net_return_pct,
+            })
+
+    realized = realized_summary_by_strategy(closed_dicts)
+    strategies = []
+    for strategy_id in sorted(set(list(realized) + list(open_counts) + list(ci_low_by_id))):
+        stat = realized.get(strategy_id, {"n": 0, "ev_pct": None, "win_rate": None})
+        ci_low = ci_low_by_id.get(strategy_id)
+        strategies.append({
+            "strategy_id": strategy_id,
+            "label": label_by_id.get(strategy_id, strategy_id),
+            "realized_n": stat["n"],
+            "realized_ev_pct": stat["ev_pct"],
+            "realized_win_rate": stat["win_rate"],
+            "open_count": open_counts.get(strategy_id, 0),
+            "backtest_ci_low": ci_low,
+            "drift": drift_status(stat["ev_pct"], stat["n"], ci_low),
+        })
+    return {"strategies": strategies}

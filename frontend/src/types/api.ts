@@ -1054,3 +1054,18 @@ export interface LabSignalsResponse {
   signals: LabSignal[]
   note: string | null
 }
+
+export interface LabPaperTradeSummaryItem {
+  strategy_id: string
+  label: string
+  realized_n: number
+  realized_ev_pct: number | null
+  realized_win_rate: number | null
+  open_count: number
+  backtest_ci_low: number | null
+  drift: 'ok' | 'drifting' | 'insufficient' | 'unknown'
+}
+
+export interface LabPaperTradesSummaryResponse {
+  strategies: LabPaperTradeSummaryItem[]
+}
