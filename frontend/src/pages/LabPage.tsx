@@ -47,9 +47,16 @@ const DRIFT_CFG: Record<string, { label: string; cls: string } | undefined> = {
 
 export default function LabPage() {
   const reportsQ = useQuery({ queryKey: ['lab-reports'], queryFn: labApi.reports, staleTime: 60_000 })
-  const signalsQ = useQuery({ queryKey: ['lab-signals'], queryFn: labApi.signals, staleTime: 300_000 })
+  const signalsQ = useQuery({
+    queryKey: ['lab-signals'],
+    queryFn: labApi.signals,
+    staleTime: 300_000,
+    // 백엔드가 백그라운드로 계산 중(status=computing)이면 5초마다 폴링해 ready를 기다린다
+    refetchInterval: q => (q.state.data?.status === 'computing' ? 5_000 : false),
+  })
   const paperQ = useQuery({ queryKey: ['lab-paper-summary'], queryFn: labApi.paperTradesSummary, staleTime: 120_000 })
   const paperById = new Map((paperQ.data?.strategies ?? []).map(s => [s.strategy_id, s]))
+  const signalsComputing = signalsQ.data?.status === 'computing'
 
   return (
     <div className="space-y-6">
@@ -65,12 +72,12 @@ export default function LabPage() {
       </div>
 
       <LiveSignals
-        loading={signalsQ.isLoading}
+        loading={signalsQ.isLoading || signalsComputing}
         error={signalsQ.isError}
         onRetry={() => signalsQ.refetch()}
         signals={signalsQ.data?.signals ?? []}
-        note={signalsQ.data?.note ?? null}
-        generatedAt={signalsQ.data?.generated_at}
+        note={signalsComputing ? null : signalsQ.data?.note ?? null}
+        generatedAt={signalsQ.data?.generated_at ?? undefined}
       />
 
       {reportsQ.isLoading && <Card className="text-sm text-muted-foreground">검증 리포트를 불러오는 중...</Card>}
