@@ -6,7 +6,7 @@ import { Card } from '@/components/ui/Card'
 import { QueryError } from '@/components/ui/QueryError'
 import { labApi } from '@/lib/api'
 import { cn, fmtDateTime, fmtPrice } from '@/lib/utils'
-import type { LabReport, LabSignal } from '@/types/api'
+import type { LabPaperTradeSummaryItem, LabReport, LabSignal } from '@/types/api'
 
 const VERDICT_CFG = {
   pass: {
@@ -38,9 +38,18 @@ const UNIVERSE_LABELS: Record<LabReport['universe_mode'], string> = {
   current: '현재 목록 (생존 편향)',
 }
 
+const DRIFT_CFG: Record<string, { label: string; cls: string } | undefined> = {
+  ok: { label: '실측 유지', cls: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300' },
+  drifting: { label: '실측 이탈', cls: 'border-red-400/30 bg-red-400/10 text-red-300' },
+  insufficient: { label: '실측 표본 부족', cls: 'border-border bg-background/50 text-muted-foreground' },
+  unknown: { label: '실측 대기', cls: 'border-border bg-background/50 text-muted-foreground' },
+}
+
 export default function LabPage() {
   const reportsQ = useQuery({ queryKey: ['lab-reports'], queryFn: labApi.reports, staleTime: 60_000 })
   const signalsQ = useQuery({ queryKey: ['lab-signals'], queryFn: labApi.signals, staleTime: 300_000 })
+  const paperQ = useQuery({ queryKey: ['lab-paper-summary'], queryFn: labApi.paperTradesSummary, staleTime: 120_000 })
+  const paperById = new Map((paperQ.data?.strategies ?? []).map(s => [s.strategy_id, s]))
 
   return (
     <div className="space-y-6">
@@ -76,7 +85,7 @@ export default function LabPage() {
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         {reportsQ.data?.reports.map(report => (
-          <ReportCard key={report.strategy} report={report} />
+          <ReportCard key={report.strategy} report={report} paper={paperById.get(report.strategy)} />
         ))}
       </div>
 
@@ -180,10 +189,11 @@ function LiveSignals({
   )
 }
 
-function ReportCard({ report }: { report: LabReport }) {
+function ReportCard({ report, paper }: { report: LabReport; paper?: LabPaperTradeSummaryItem }) {
   const cfg = VERDICT_CFG[report.verdict] ?? VERDICT_CFG.fail
   const Icon = cfg.icon
   const [ciLow, ciHigh] = report.ci_95
+  const driftCfg = paper ? DRIFT_CFG[paper.drift] : undefined
 
   return (
     <Card className={cn('space-y-4', cfg.card)}>
@@ -213,6 +223,24 @@ function ReportCard({ report }: { report: LabReport }) {
       </div>
 
       <p className="text-xs leading-relaxed text-muted-foreground">{cfg.note}</p>
+
+      {paper && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-background/50 p-2.5 text-[11px]">
+          <span className="font-medium text-foreground">실측(종이매매)</span>
+          {driftCfg && <span className={cn('rounded border px-1.5 py-0.5 font-semibold', driftCfg.cls)}>{driftCfg.label}</span>}
+          <span className="text-muted-foreground">
+            {paper.realized_n > 0
+              ? `${paper.realized_n}건 · 거래당 ${signedPct(paper.realized_ev_pct ?? 0)}`
+              : '아직 청산된 실측 트레이드 없음'}
+            {paper.open_count > 0 && ` · 진행중 ${paper.open_count}건`}
+          </span>
+          {paper.drift === 'drifting' && (
+            <span className="w-full text-red-300/90">
+              실측 기대값이 백테스트 신뢰구간 하한({signedPct(paper.backtest_ci_low ?? 0)})을 밑돕니다 — 이 전략은 관찰 등급으로 낮춰 보는 편이 안전합니다.
+            </span>
+          )}
+        </div>
+      )}
 
       <div className="space-y-1 rounded-lg border border-border bg-background/50 p-2.5 text-[11px] leading-relaxed text-muted-foreground">
         <div>

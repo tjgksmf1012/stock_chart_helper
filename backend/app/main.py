@@ -67,6 +67,7 @@ def _start_scheduler() -> None:
         from apscheduler.triggers.cron import CronTrigger
         from apscheduler.triggers.interval import IntervalTrigger
 
+        from .api.routes.lab import run_scheduled_paper_trade_evaluation
         from .api.routes.outcomes import run_scheduled_outcome_evaluation
         from .api.routes.system import run_scheduled_intraday_warmup
         from .services.alert_service import run_watchlist_alert_check
@@ -126,6 +127,13 @@ def _start_scheduler() -> None:
             run_scheduled_outcome_evaluation,
             CronTrigger(day_of_week="mon-fri", hour=16, minute=20, timezone="Asia/Seoul"),
             id="close_outcome_evaluation",
+            replace_existing=True,
+        )
+        # 랩 종이매매 청산 평가 — 장마감 확정 일봉이 반영된 뒤 (실측 vs 백테스트 드리프트 재료)
+        scheduler.add_job(
+            run_scheduled_paper_trade_evaluation,
+            CronTrigger(day_of_week="mon-fri", hour=16, minute=30, timezone="Asia/Seoul"),
+            id="close_paper_trade_evaluation",
             replace_existing=True,
         )
         # 관심종목 가격 알림 — 장중 10분 간격 (텔레그램 미설정 시 내부에서 no-op)
