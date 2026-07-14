@@ -59,6 +59,21 @@ class TestCollectRecentSignals:
         assert out[0]["strategy_id"] == "stub"
         assert out[0]["code"] == "A"
 
+    def test_dedupes_same_code_keeping_recent_then_tightest_stop(self):
+        # 같은 종목이 여러 패턴으로 잡혀도 화면엔 1개만 — 최신 신호일 우선,
+        # 동률이면 가장 타이트한(높은) 손절을 남긴다 (구매자 중복 피로감 방지)
+        as_of = date(2026, 6, 26)
+        sigs = [
+            Signal(code="A", signal_date=date(2026, 6, 24), stop_price=95.0),  # 오래됨
+            Signal(code="A", signal_date=date(2026, 6, 25), stop_price=96.0),  # 최신, 손절 96
+            Signal(code="A", signal_date=date(2026, 6, 25), stop_price=97.0),  # 최신, 손절 97(더 타이트)
+        ]
+        strat = _StubStrategy(sigs)
+        out = collect_recent_signals(strat, {"A": self._bars("A")}, as_of=as_of, lookback_days=5)
+        assert len(out) == 1
+        assert out[0]["signal_date"] == "2026-06-25"
+        assert out[0]["stop_price"] == 97.0
+
     def test_multiple_codes(self):
         as_of = date(2026, 6, 26)
         sigs = [

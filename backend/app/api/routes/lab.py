@@ -89,34 +89,43 @@ async def get_lab_report(strategy_id: str, include_trades: bool = False) -> dict
     raise HTTPException(status_code=404, detail=f"전략 리포트 없음: {strategy_id}")
 
 
-def _get_signals_lock() -> asyncio.Lock:
-    global _signals_lock
-    if _signals_lock is None:
-        _signals_lock = asyncio.Lock()
-    return _signals_lock
+_signals_task: asyncio.Task | None = None
+
+
+async def _compute_and_cache_signals() -> dict[str, Any]:
+    result = await _compute_live_signals()
+    await cache_set(_SIGNALS_CACHE_KEY, result, ttl=_SIGNALS_TTL)
+    return result
 
 
 @router.get("/signals")
 async def get_live_signals(refresh: bool = False) -> dict[str, Any]:
-    """검증 통과(pass/watch) 전략이 최근 며칠 내 낸 신호만 모아서 반환.
+    """검증 통과(pass/watch) 전략의 최근 신호. 논블로킹 — 시세 로딩(최대 ~80초)이
+    프론트 axios 타임아웃(20초)을 넘기므로, 즉시 반환하고 계산은 백그라운드로 돌린다.
 
-    탈락(fail) 전략의 신호는 포함하지 않는다. 시세 로딩이 무거워 30분 캐시하고,
-    동시 요청은 락으로 직렬화한다.
+    - 캐시 있음: status="ready" + 신호
+    - 캐시 없음/refresh: 백그라운드 계산 시작, status="computing" + 빈 신호
+      (프론트가 폴링하다가 ready가 되면 채운다)
+    탈락(fail) 전략의 신호는 포함하지 않는다.
     """
+    global _signals_task
+
     if not refresh:
         cached = await cache_get(_SIGNALS_CACHE_KEY)
         if isinstance(cached, dict):
-            return cached
+            return {**cached, "status": "ready"}
 
-    lock = _get_signals_lock()
-    async with lock:
-        if not refresh:
-            cached = await cache_get(_SIGNALS_CACHE_KEY)
-            if isinstance(cached, dict):
-                return cached
-        result = await _compute_live_signals()
-        await cache_set(_SIGNALS_CACHE_KEY, result, ttl=_SIGNALS_TTL)
-        return result
+    # 이미 계산 중이면 그 태스크를 재사용, 아니면 새로 시작
+    if _signals_task is None or _signals_task.done():
+        _signals_task = asyncio.create_task(_compute_and_cache_signals())
+
+    return {
+        "status": "computing",
+        "generated_at": None,
+        "eligible_strategies": [],
+        "signals": [],
+        "note": "현재 유니버스에서 신호를 계산하는 중입니다. 잠시 후 자동으로 채워집니다.",
+    }
 
 
 async def _compute_live_signals() -> dict[str, Any]:

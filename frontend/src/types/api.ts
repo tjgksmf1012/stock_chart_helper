@@ -1048,10 +1048,12 @@ export interface LabEligibleStrategy {
 }
 
 export interface LabSignalsResponse {
-  generated_at: string
+  status?: 'ready' | 'computing'
+  generated_at: string | null
   eligible_strategies: LabEligibleStrategy[]
   universe_size?: number
   signals: LabSignal[]
+  recorded_paper_trades?: number
   note: string | null
 }
 

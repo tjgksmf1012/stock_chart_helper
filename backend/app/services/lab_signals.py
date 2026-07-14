@@ -36,22 +36,28 @@ def collect_recent_signals(
     신호일이 as_of - lookback_days ~ as_of 사이인 것만 남긴다 (오래된 신호 제외).
     """
     floor = as_of - timedelta(days=lookback_days)
-    out: list[dict[str, Any]] = []
+    # 종목당 대표 신호 1개만 — 같은 종목이 여러 패턴으로 잡히면 리스트에 반복돼
+    # 구매자에게 중복 피로감을 준다. 최신 신호일 우선, 동률이면 가장 타이트한(높은)
+    # 손절을 남긴다 (롱 기준 손실 폭이 작은 쪽).
+    best_by_code: dict[str, dict[str, Any]] = {}
     for code, bars in bars_by_code.items():
         if bars is None or bars.empty:
             continue
         for sig in strategy.signals(code, bars, {}):
-            if floor <= sig.signal_date <= as_of:
-                out.append(
-                    {
-                        "strategy_id": strategy.id,
-                        "strategy_label": getattr(strategy, "label", strategy.id),
-                        "code": sig.code,
-                        "signal_date": sig.signal_date.isoformat(),
-                        "stop_price": round(sig.stop_price, 2),
-                        "target_price": round(sig.target_price, 2) if sig.target_price is not None else None,
-                        "max_holding_days": sig.max_holding_days,
-                    }
-                )
-    out.sort(key=lambda s: s["signal_date"], reverse=True)
+            if not (floor <= sig.signal_date <= as_of):
+                continue
+            row = {
+                "strategy_id": strategy.id,
+                "strategy_label": getattr(strategy, "label", strategy.id),
+                "code": sig.code,
+                "signal_date": sig.signal_date.isoformat(),
+                "stop_price": round(sig.stop_price, 2),
+                "target_price": round(sig.target_price, 2) if sig.target_price is not None else None,
+                "max_holding_days": sig.max_holding_days,
+            }
+            prev = best_by_code.get(sig.code)
+            if prev is None or (row["signal_date"], row["stop_price"]) > (prev["signal_date"], prev["stop_price"]):
+                best_by_code[sig.code] = row
+
+    out = sorted(best_by_code.values(), key=lambda s: s["signal_date"], reverse=True)
     return out
