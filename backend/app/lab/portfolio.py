@@ -53,7 +53,9 @@ def portfolio_equity_metrics(
         return empty
 
     returns = [daily[d] / slots for d in sorted(daily)]
-    equity = np.cumprod([1 + r for r in returns])
+    # 초기 자본 1.0을 앞에 붙인다 — 첫날이 손실이면 초기 자본 대비 낙폭이
+    # MDD에서 빠지는 버그 방지 (sizing.py에서 발견된 것과 같은 패턴)
+    equity = np.cumprod([1.0] + [1 + r for r in returns])
     peak = np.maximum.accumulate(equity)
     return {
         "portfolio_mdd_pct": float(np.max(1 - equity / peak)),

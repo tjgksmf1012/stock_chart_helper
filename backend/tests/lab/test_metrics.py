@@ -65,3 +65,9 @@ class TestVerdict:
 
     def test_random_none_means_only_ci_gate(self):
         assert decide_verdict(ev_pct=0.01, ci_low=0.002, random_ev_pct=None) == "pass"
+
+    def test_mdd_counts_drawdown_from_initial_capital(self):
+        # 첫 트레이드가 손실이면 초기 자본 1.0 대비 낙폭이 MDD여야 한다
+        # (자본곡선을 첫 트레이드부터 시작하면 이 낙폭이 통째로 빠지는 버그 회귀 방지)
+        s = summarize([_trade(-0.10)])
+        assert abs(s.mdd_pct - 0.10) < 1e-9

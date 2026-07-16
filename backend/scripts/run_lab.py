@@ -27,6 +27,7 @@ from app.lab.baselines import random_benchmark_signals  # noqa: E402
 from app.lab.costs import CostModel  # noqa: E402
 from app.lab.metrics import decide_verdict, summarize  # noqa: E402
 from app.lab.portfolio import portfolio_equity_metrics  # noqa: E402
+from app.lab.sizing import risk_based_metrics  # noqa: E402
 from app.lab.simulate import simulate_trades  # noqa: E402
 from app.lab.universe import fetch_current_universe_biased, fetch_point_in_time_universe  # noqa: E402
 from app.lab.walkforward import run_walk_forward, walk_forward_windows  # noqa: E402
@@ -176,6 +177,10 @@ async def main() -> None:
         # 순차 복리 MDD는 다종목에서 과장되므로 참고용, 대표 지표는 포트폴리오 기준
         "sequential_mdd_pct": round(result.summary.mdd_pct, 3),
         **{k: round(v, 4) for k, v in portfolio_equity_metrics(result.trades, bars, slots=10).items()},
+        # 고정 리스크(트레이드당 1%) 규율로 운용했을 때의 자본곡선 — 실제 운용 규율에
+        # 가장 가까운 MDD. 갭 손실은 -3R로 상한(사이징만으로 못 막는 한계는 별도 표기).
+        "risk_1pct": {k: round(v, 4) if isinstance(v, float) else v
+                      for k, v in risk_based_metrics(result.trades, risk_pct=0.01).items()},
         "random_benchmark_ev_pct": round(random_ev, 5) if random_ev is not None else None,
         "verdict": verdict,
         "generated_at": datetime.now().isoformat(),

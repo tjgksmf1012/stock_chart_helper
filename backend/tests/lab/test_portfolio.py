@@ -52,3 +52,15 @@ class TestPortfolioEquity:
         m = portfolio_equity_metrics(trades, bars, slots=10)
         # 두 슬롯이 각각 +10% → 포트폴리오 +2% 근처
         assert 0.015 <= m["portfolio_total_return_pct"] <= 0.025
+
+
+class TestInitialCapitalDrawdown:
+    def test_first_day_loss_counts_as_drawdown(self):
+        # 첫날 손실이 초기 자본 대비 MDD로 잡혀야 한다 (곡선 앞에 1.0 프리펜드)
+        bars = {"A": make_bars([
+            ("2025-01-02", 100, 101, 99, 100),
+            ("2025-01-03", 100, 101, 89, 90),
+        ])}
+        trades = [_trade("A", "2025-01-03", 100.0, "2025-01-03", 90.0, -0.10)]
+        m = portfolio_equity_metrics(trades, bars, slots=10)
+        assert abs(m["portfolio_mdd_pct"] - 0.01) < 1e-9  # -10%/10슬롯 = -1%
