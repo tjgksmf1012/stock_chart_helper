@@ -1021,6 +1021,8 @@ export interface LabReport {
   sequential_mdd_pct?: number
   portfolio_mdd_pct?: number
   portfolio_total_return_pct?: number
+  /** 고정 리스크(트레이드당 1%) 규율 운용 시 자본곡선 — 실제 운용 규율에 가장 가까운 MDD */
+  risk_1pct?: { n_used: number; total_return_pct: number; mdd_pct: number; avg_r: number; risk_pct: number }
   random_benchmark_ev_pct: number | null
   verdict: 'pass' | 'watch' | 'fail'
   generated_at: string
@@ -1035,6 +1037,8 @@ export interface LabSignal {
   strategy_label: string
   code: string
   signal_date: string
+  /** 신호일 종가 — 다음날 시가 진입의 근사치, 포지션 사이징 기준가 */
+  reference_price?: number | null
   stop_price: number
   target_price: number | null
   max_holding_days: number

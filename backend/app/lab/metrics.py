@@ -34,9 +34,11 @@ def summarize(trades: list[Trade]) -> Summary:
     payoff = (float(np.mean(wins)) / float(np.mean(losses))) if wins and losses else 0.0
 
     ordered = sorted(trades, key=lambda t: t.exit_date)
-    equity = np.cumprod([1 + t.net_return_pct for t in ordered])
+    # 초기 자본 1.0을 앞에 붙인다 — 첫 트레이드가 손실이면 초기 자본 대비
+    # 낙폭이 MDD에서 빠지는 버그 방지 (sizing.py에서 발견된 것과 같은 패턴)
+    equity = np.cumprod([1.0] + [1 + t.net_return_pct for t in ordered])
     peak = np.maximum.accumulate(equity)
-    mdd = float(np.max(1 - equity / peak)) if len(equity) else 0.0
+    mdd = float(np.max(1 - equity / peak))
 
     holding = [max(1, (t.exit_date - t.entry_date).days) for t in trades]
     return Summary(

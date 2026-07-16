@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { FlaskConical, ShieldAlert, ShieldCheck, ShieldQuestion, Zap } from 'lucide-react'
@@ -114,6 +115,35 @@ export default function LabPage() {
   )
 }
 
+// 백엔드 lab/sizing.py의 position_size()와 같은 고정 리스크 공식 (롱 전용).
+// 기준가(신호일 종가)를 진입가 근사로 쓰고, 집중 상한 20%를 적용한다.
+function suggestShares(accountValue: number, riskPct: number, referencePrice: number | null | undefined, stopPrice: number) {
+  if (!referencePrice || referencePrice <= 0 || accountValue <= 0 || riskPct <= 0) return null
+  const perShareRisk = referencePrice - stopPrice
+  if (perShareRisk <= 0) return null
+  let shares = Math.floor((accountValue * riskPct) / perShareRisk)
+  let capped = false
+  const maxByConcentration = Math.floor((accountValue * 0.2) / referencePrice)
+  if (shares > maxByConcentration) {
+    shares = maxByConcentration
+    capped = true
+  }
+  return { shares, positionValue: shares * referencePrice, capped }
+}
+
+const SIZING_STORAGE_KEY = 'lab-sizing-config-v1'
+
+function loadSizingConfig(): { account: number; riskPct: number } {
+  try {
+    const raw = localStorage.getItem(SIZING_STORAGE_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (typeof parsed.account === 'number' && typeof parsed.riskPct === 'number') return parsed
+    }
+  } catch { /* 무시 — 기본값 사용 */ }
+  return { account: 10_000_000, riskPct: 0.01 }
+}
+
 function LiveSignals({
   loading,
   error,
@@ -130,6 +160,14 @@ function LiveSignals({
   generatedAt?: string
 }) {
   const nav = useNavigate()
+  const [sizing, setSizing] = useState(loadSizingConfig)
+
+  const updateSizing = (next: { account: number; riskPct: number }) => {
+    setSizing(next)
+    try {
+      localStorage.setItem(SIZING_STORAGE_KEY, JSON.stringify(next))
+    } catch { /* localStorage 불가 환경 무시 */ }
+  }
 
   return (
     <Card className="space-y-3 border-primary/25 bg-primary/5">
@@ -156,41 +194,90 @@ function LiveSignals({
       )}
 
       {signals.length > 0 && (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[520px] text-xs">
-            <thead>
-              <tr className="border-b border-border/70 text-left text-muted-foreground">
-                <th className="py-2 pr-3 font-medium">종목</th>
-                <th className="py-2 pr-3 font-medium">전략</th>
-                <th className="py-2 pr-3 font-medium">등급</th>
-                <th className="py-2 pr-3 font-medium">신호일</th>
-                <th className="py-2 pr-3 font-medium">손절</th>
-                <th className="py-2 font-medium">보유</th>
-              </tr>
-            </thead>
-            <tbody>
-              {signals.map((sig, i) => {
-                const cfg = VERDICT_CFG[sig.verdict ?? 'fail'] ?? VERDICT_CFG.watch
-                return (
-                  <tr
-                    key={`${sig.strategy_id}-${sig.code}-${i}`}
-                    className="cursor-pointer border-b border-border/40 hover:bg-muted/30"
-                    onClick={() => nav(`/chart/${sig.code}`)}
-                  >
-                    <td className="py-2 pr-3 font-mono font-medium text-foreground">{sig.code}</td>
-                    <td className="py-2 pr-3">{sig.strategy_label}</td>
-                    <td className="py-2 pr-3">
-                      <span className={cn('rounded border px-1.5 py-0.5 text-[10px] font-semibold', cfg.badge)}>{cfg.label}</span>
-                    </td>
-                    <td className="py-2 pr-3 font-mono text-muted-foreground">{sig.signal_date}</td>
-                    <td className="py-2 pr-3 font-mono text-red-300">{fmtPrice(sig.stop_price)}</td>
-                    <td className="py-2 text-muted-foreground">{sig.max_holding_days}일</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-background/50 p-2.5 text-xs">
+            <span className="font-medium text-foreground">포지션 계산기</span>
+            <label className="flex items-center gap-1.5 text-muted-foreground">
+              계좌
+              <input
+                type="number"
+                value={sizing.account}
+                min={0}
+                step={1_000_000}
+                onChange={e => updateSizing({ ...sizing, account: Number(e.target.value) || 0 })}
+                className="w-28 rounded border border-border bg-card px-2 py-1 font-mono text-foreground"
+              />
+              원
+            </label>
+            <label className="flex items-center gap-1.5 text-muted-foreground">
+              트레이드당 리스크
+              <select
+                value={sizing.riskPct}
+                onChange={e => updateSizing({ ...sizing, riskPct: Number(e.target.value) })}
+                className="rounded border border-border bg-card px-2 py-1 text-foreground"
+              >
+                <option value={0.005}>0.5%</option>
+                <option value={0.01}>1%</option>
+                <option value={0.02}>2%</option>
+              </select>
+            </label>
+            <span className="text-muted-foreground/80">
+              손절에 걸리면 계좌의 {`${(sizing.riskPct * 100).toFixed(1)}%`}만 잃도록 수량을 계산합니다 (종목당 최대 20%).
+            </span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] text-xs">
+              <thead>
+                <tr className="border-b border-border/70 text-left text-muted-foreground">
+                  <th className="py-2 pr-3 font-medium">종목</th>
+                  <th className="py-2 pr-3 font-medium">전략</th>
+                  <th className="py-2 pr-3 font-medium">등급</th>
+                  <th className="py-2 pr-3 font-medium">신호일</th>
+                  <th className="py-2 pr-3 font-medium">기준가</th>
+                  <th className="py-2 pr-3 font-medium">손절</th>
+                  <th className="py-2 pr-3 font-medium">권장 수량</th>
+                  <th className="py-2 font-medium">보유</th>
+                </tr>
+              </thead>
+              <tbody>
+                {signals.map((sig, i) => {
+                  const cfg = VERDICT_CFG[sig.verdict ?? 'fail'] ?? VERDICT_CFG.watch
+                  const size = suggestShares(sizing.account, sizing.riskPct, sig.reference_price, sig.stop_price)
+                  return (
+                    <tr
+                      key={`${sig.strategy_id}-${sig.code}-${i}`}
+                      className="cursor-pointer border-b border-border/40 hover:bg-muted/30"
+                      onClick={() => nav(`/chart/${sig.code}`)}
+                    >
+                      <td className="py-2 pr-3 font-mono font-medium text-foreground">{sig.code}</td>
+                      <td className="py-2 pr-3">{sig.strategy_label}</td>
+                      <td className="py-2 pr-3">
+                        <span className={cn('rounded border px-1.5 py-0.5 text-[10px] font-semibold', cfg.badge)}>{cfg.label}</span>
+                      </td>
+                      <td className="py-2 pr-3 font-mono text-muted-foreground">{sig.signal_date}</td>
+                      <td className="py-2 pr-3 font-mono text-muted-foreground">{sig.reference_price ? fmtPrice(sig.reference_price) : '-'}</td>
+                      <td className="py-2 pr-3 font-mono text-red-300">{fmtPrice(sig.stop_price)}</td>
+                      <td className="py-2 pr-3 font-mono text-foreground">
+                        {size && size.shares > 0 ? (
+                          <>
+                            {size.shares.toLocaleString('ko-KR')}주
+                            {size.capped && <span className="ml-1 text-[10px] text-amber-300" title="집중 상한(계좌의 20%)으로 제한됨">상한</span>}
+                          </>
+                        ) : '-'}
+                      </td>
+                      <td className="py-2 text-muted-foreground">{sig.max_holding_days}일</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-[11px] text-muted-foreground/80">
+            기준가는 신호일 종가이며 실제 진입가(다음 거래일 시가)와 다를 수 있습니다. 갭 하락 시 손절보다 낮은 가격에
+            체결될 수 있어 실제 손실이 설정 리스크를 초과할 수 있습니다.
+          </p>
+        </>
       )}
     </Card>
   )
@@ -228,6 +315,18 @@ function ReportCard({ report, paper }: { report: LabReport; paper?: LabPaperTrad
         />
         <Metric label="데이터 커버리지" value={`${Math.round(report.data_coverage * 100)}%`} />
       </div>
+
+      {report.risk_1pct && report.risk_1pct.n_used > 0 && (
+        <div className="rounded-lg border border-sky-400/20 bg-sky-400/5 p-2.5 text-[11px] leading-relaxed">
+          <span className="font-medium text-sky-200">리스크 규율 운용 시뮬레이션</span>{' '}
+          <span className="text-muted-foreground">
+            — 매 트레이드 계좌의 1%만 리스크로 운용하면 검증구간 최대 낙폭{' '}
+            <span className="font-semibold text-foreground">{(report.risk_1pct.mdd_pct * 100).toFixed(1)}%</span>, 트레이드당 평균 손익{' '}
+            <span className="font-semibold text-foreground">{report.risk_1pct.avg_r.toFixed(2)}R</span>{' '}
+            (리스크의 {report.risk_1pct.avg_r.toFixed(2)}배). 갭 손실은 -3R로 상한 — 사이징만으로 못 막는 한계가 있습니다.
+          </span>
+        </div>
+      )}
 
       <p className="text-xs leading-relaxed text-muted-foreground">{cfg.note}</p>
 

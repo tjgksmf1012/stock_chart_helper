@@ -43,14 +43,21 @@ def collect_recent_signals(
     for code, bars in bars_by_code.items():
         if bars is None or bars.empty:
             continue
+        # 신호일 종가 조회용 — 포지션 사이징의 기준가(다음날 시가 진입의 근사)
+        close_by_date = {
+            d.date() if hasattr(d, "date") else d: float(c)
+            for d, c in zip(pd.to_datetime(bars["date"]), bars["close"])
+        }
         for sig in strategy.signals(code, bars, {}):
             if not (floor <= sig.signal_date <= as_of):
                 continue
+            reference = close_by_date.get(sig.signal_date)
             row = {
                 "strategy_id": strategy.id,
                 "strategy_label": getattr(strategy, "label", strategy.id),
                 "code": sig.code,
                 "signal_date": sig.signal_date.isoformat(),
+                "reference_price": round(reference, 2) if reference else None,
                 "stop_price": round(sig.stop_price, 2),
                 "target_price": round(sig.target_price, 2) if sig.target_price is not None else None,
                 "max_holding_days": sig.max_holding_days,

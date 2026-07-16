@@ -56,6 +56,7 @@ def simulate_trades(
                 exit_reason=exit_reason,
                 gross_return_pct=round(gross, 6),
                 net_return_pct=round(cost_model.net_return_pct(entry_price, exit_price), 6),
+                stop_price=signal.stop_price,
             )
         )
         blocked_until = exit_idx

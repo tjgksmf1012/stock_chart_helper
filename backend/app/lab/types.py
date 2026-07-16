@@ -29,3 +29,6 @@ class Trade:
     exit_reason: str  # "stop" | "target" | "time" | "data_end"
     gross_return_pct: float  # 비용 차감 전 (참고용, 화면 노출 금지)
     net_return_pct: float    # 비용 차감 후 — 모든 지표는 이 값 기준
+    # 신호의 손절가 — 리스크 기반 사이징(R-멀티플) 계산에 필요.
+    # 구버전 직렬화 호환을 위해 기본값 None.
+    stop_price: float | None = None

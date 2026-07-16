@@ -58,6 +58,8 @@ class TestCollectRecentSignals:
         assert out[0]["signal_date"] == "2026-06-25"
         assert out[0]["strategy_id"] == "stub"
         assert out[0]["code"] == "A"
+        # 포지션 사이징용 기준가 — 신호일 종가 (진입가=다음날 시가의 근사)
+        assert out[0]["reference_price"] == 100.0
 
     def test_dedupes_same_code_keeping_recent_then_tightest_stop(self):
         # 같은 종목이 여러 패턴으로 잡혀도 화면엔 1개만 — 최신 신호일 우선,
