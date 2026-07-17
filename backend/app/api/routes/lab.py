@@ -29,7 +29,7 @@ from ...services.lab_paper_trading import (
     new_paper_trade_signals,
     realized_summary_by_strategy,
 )
-from ...services.lab_signals import collect_recent_signals, eligible_strategy_ids
+from ...services.lab_signals import apply_drift_demotions, collect_recent_signals, eligible_strategy_ids
 from ...strategies.registry import make_strategy
 
 logger = logging.getLogger(__name__)
@@ -40,7 +40,7 @@ _LAB_DIR = Path(__file__).resolve().parents[3] / "data" / "lab"
 
 _VERDICT_ORDER = {"pass": 0, "watch": 1, "fail": 2}
 
-_SIGNALS_CACHE_KEY = "lab:live_signals:v1"
+_SIGNALS_CACHE_KEY = "lab:live_signals:v2"  # v2: demotions(드리프트 자동 강등) 추가
 _SIGNALS_TTL = 1800  # 30분 — 일봉 신호라 자주 안 바뀜
 _LIVE_UNIVERSE_TOP_N = 60
 _LIVE_LOOKBACK_BARS = 420  # 252봉 전략 워밍업 여유
@@ -128,11 +128,42 @@ async def get_live_signals(refresh: bool = False) -> dict[str, Any]:
     }
 
 
+async def _paper_state_by_id(reports: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """전략별 {drift, realized_ev_pct} — 신호 게이트의 드리프트 자동 강등 재료."""
+    ci_low_by_id = {
+        r["strategy"]: (r["ci_95"][0] if isinstance(r.get("ci_95"), list) and r["ci_95"] else None)
+        for r in reports if r.get("strategy")
+    }
+    async with AsyncSessionLocal() as session:
+        rows = (await session.execute(select(LabPaperTrade))).scalars().all()
+    closed = [
+        {"strategy_id": t.strategy_id, "status": "closed", "net_return_pct": t.net_return_pct}
+        for t in rows if t.status != "open"
+    ]
+    realized = realized_summary_by_strategy(closed)
+    out: dict[str, dict[str, Any]] = {}
+    for sid in set(realized) | set(ci_low_by_id):
+        ev = realized.get(sid, {}).get("ev_pct")
+        n = int(realized.get(sid, {}).get("n", 0))
+        out[sid] = {"drift": drift_status(ev, n, ci_low_by_id.get(sid)), "realized_ev_pct": ev}
+    return out
+
+
 async def _compute_live_signals() -> dict[str, Any]:
     from ...lab.universe import fetch_current_universe_biased
     from ...services.data_fetcher import get_data_fetcher
 
     reports = load_latest_reports(_LAB_DIR)
+    # 실측(종이매매)이 백테스트에서 이탈한 전략은 여기서 자동 강등된다
+    # (이탈+실측 흑자=관찰 강등, 이탈+실측 손실=제외). 판정 카드의 백테스트
+    # 리포트 자체는 바꾸지 않는다.
+    try:
+        paper_state = await _paper_state_by_id(reports)
+    except Exception as exc:  # 실측 조회 실패가 신호 게이트 전체를 죽이면 안 된다
+        logger.warning("실측 상태 조회 실패 — 강등 없이 진행: %s", exc)
+        paper_state = {}
+    reports, demotions = apply_drift_demotions(reports, paper_state)
+
     verdict_by_id = {r["strategy"]: r.get("verdict") for r in reports if r.get("strategy")}
     label_by_id = {r["strategy"]: r.get("label", r["strategy"]) for r in reports if r.get("strategy")}
     eligible = eligible_strategy_ids(reports)
@@ -141,6 +172,7 @@ async def _compute_live_signals() -> dict[str, Any]:
             "generated_at": datetime.now(UTC).replace(tzinfo=None).isoformat(),
             "eligible_strategies": [],
             "signals": [],
+            "demotions": demotions,
             "note": "검증을 통과한 전략이 아직 없습니다. 실험실에서 전략 판정을 먼저 확인하세요.",
         }
 
@@ -186,6 +218,7 @@ async def _compute_live_signals() -> dict[str, Any]:
         ],
         "universe_size": len(bars_by_code),
         "signals": all_signals,
+        "demotions": demotions,
         "recorded_paper_trades": recorded,
         # 라이브 유니버스는 현재 상장 종목이라 백테스트와 달리 생존 편향이 없다
         # (오늘 거래 가능한 종목에 대한 오늘의 신호이므로).

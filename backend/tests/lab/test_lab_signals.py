@@ -3,7 +3,7 @@ from datetime import date
 import pandas as pd
 
 from app.lab.types import Signal
-from app.services.lab_signals import collect_recent_signals, eligible_strategy_ids
+from app.services.lab_signals import apply_drift_demotions, collect_recent_signals, eligible_strategy_ids
 
 
 class _StubStrategy:
@@ -93,3 +93,37 @@ class TestCollectRecentSignals:
         strat = _StubStrategy([old])
         out = collect_recent_signals(strat, {"A": self._bars("A")}, as_of=as_of, lookback_days=5)
         assert out == []
+
+
+class TestApplyDriftDemotions:
+    def _reports(self):
+        return [
+            {"strategy": "a", "label": "전략A", "verdict": "pass", "ev_pct": 0.05},
+            {"strategy": "b", "label": "전략B", "verdict": "pass", "ev_pct": 0.03},
+            {"strategy": "c", "label": "전략C", "verdict": "watch", "ev_pct": 0.01},
+        ]
+
+    def test_no_paper_state_changes_nothing(self):
+        adjusted, demotions = apply_drift_demotions(self._reports(), {})
+        assert [r["verdict"] for r in adjusted] == ["pass", "pass", "watch"]
+        assert demotions == []
+
+    def test_drifting_positive_demotes_to_watch(self):
+        state = {"a": {"drift": "drifting", "realized_ev_pct": 0.004}}
+        adjusted, demotions = apply_drift_demotions(self._reports(), state)
+        assert adjusted[0]["verdict"] == "watch"
+        assert demotions == [{
+            "strategy_id": "a", "label": "전략A", "from": "pass", "to": "watch",
+            "reason": "실측 이탈 — 관찰 강등",
+        }]
+
+    def test_drifting_loss_excludes_from_eligible(self):
+        state = {"b": {"drift": "drifting", "realized_ev_pct": -0.002}}
+        adjusted, demotions = apply_drift_demotions(self._reports(), state)
+        assert demotions[0]["to"] == "fail"
+        assert "b" not in eligible_strategy_ids(adjusted)
+
+    def test_original_reports_not_mutated(self):
+        reports = self._reports()
+        apply_drift_demotions(reports, {"a": {"drift": "drifting", "realized_ev_pct": -1.0}})
+        assert reports[0]["verdict"] == "pass"
