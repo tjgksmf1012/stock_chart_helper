@@ -5,9 +5,11 @@ import { Bell, CheckCircle2, Clock, ShieldAlert } from 'lucide-react'
 
 import { MarketRegimeBar, getRegimeWarning } from '@/components/dashboard/MarketRegimeBar'
 import { LiveSignals } from '@/components/lab/LiveSignals'
+import { ObservationSection } from '@/components/today/ObservationSection'
 import { Card } from '@/components/ui/Card'
 import { dashboardApi, labApi, outcomesApi } from '@/lib/api'
 import { buildWatchlistDeck, dedupeDashboardItems } from '@/lib/dashboardDecks'
+import { buildObservationDeck } from '@/lib/observationDeck'
 import { normalizeDisplayTimeframe, timeframeLabel } from '@/lib/timeframes'
 import { attachJosa, cn, fmtDateTime } from '@/lib/utils'
 import { useAppStore } from '@/store/app'
@@ -20,7 +22,7 @@ import type { DashboardItem, OutcomeRecord, ScanStatusResponse, Timeframe } from
  */
 export default function TodayPage() {
   const nav = useNavigate()
-  const { selectedTimeframe, isWatched } = useAppStore()
+  const { selectedTimeframe, setTimeframe, isWatched } = useAppStore()
   const timeframe = normalizeDisplayTimeframe(selectedTimeframe)
   const [isTriggeringScan, setIsTriggeringScan] = useState(false)
   const [isCancellingScan, setIsCancellingScan] = useState(false)
@@ -69,6 +71,18 @@ export default function TodayPage() {
     queryKey: ['outcomes', 'today'],
     queryFn: outcomesApi.list,
     staleTime: 60_000,
+  })
+
+  const sectorQ = useQuery({
+    queryKey: ['dashboard', timeframe, 'sector-heatmap'],
+    queryFn: () => dashboardApi.sectorHeatmap(timeframe),
+    staleTime: 1_800_000,
+    // 섹터 맵이 백그라운드 빌드 중이면 빈 결과를 받으므로 30초마다 재시도
+    refetchInterval: query => {
+      const data = query.state.data
+      if (!data || data.sectors.length === 0) return 30_000
+      return false
+    },
   })
 
   // 스캔이 막 끝났으면 결과를 새로 가져온다
@@ -138,6 +152,19 @@ export default function TodayPage() {
     [overview],
   )
   const watchlistDeck = useMemo(() => buildWatchlistDeck(allDashboardItems, isWatched), [allDashboardItems, isWatched])
+  const observationDeck = useMemo(
+    () =>
+      buildObservationDeck({
+        armed: overview?.pattern_armed,
+        long: overview?.long_high_probability,
+        live: overview?.live_intraday_candidates,
+        forming: overview?.forming_candidates,
+        sim: overview?.high_textbook_similarity,
+        short: overview?.short_high_probability,
+        nosig: overview?.watchlist_no_signal,
+      }),
+    [overview],
+  )
   const pendingRecords = useMemo(
     () => (outcomesQ.data ?? []).filter(record => record.outcome === 'pending').slice(0, 5),
     [outcomesQ.data],
@@ -184,6 +211,17 @@ export default function TodayPage() {
         watchRisk={watchlistDeck.riskClose.slice(0, 3)}
         onOpenChart={openCandidate}
         onOpenJournal={() => nav('/journal')}
+      />
+
+      <ObservationSection
+        deck={observationDeck}
+        isLoading={overviewQ.isLoading}
+        isError={overviewQ.isError}
+        onRetry={() => overviewQ.refetch()}
+        timeframe={timeframe}
+        onTimeframeChange={setTimeframe}
+        sectors={sectorQ.data}
+        onOpen={openCandidate}
       />
 
       <ScanStrip
