@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { FlaskConical, ShieldAlert, ShieldCheck, ShieldQuestion } from 'lucide-react'
 
-import { LiveSignals } from '@/components/lab/LiveSignals'
 import { Card } from '@/components/ui/Card'
 import { QueryError } from '@/components/ui/QueryError'
 import { labApi } from '@/lib/api'
@@ -38,47 +37,32 @@ const UNIVERSE_LABELS: Record<LabReport['universe_mode'], string> = {
   current: '현재 목록 (생존 편향)',
 }
 
-const DRIFT_CFG: Record<string, { label: string; cls: string } | undefined> = {
+/** 실측(종이매매) 드리프트 상태 배지 — 실측 페이지에서도 재사용한다. */
+export const DRIFT_CFG: Record<string, { label: string; cls: string } | undefined> = {
   ok: { label: '실측 유지', cls: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300' },
   drifting: { label: '실측 이탈', cls: 'border-red-400/30 bg-red-400/10 text-red-300' },
   insufficient: { label: '실측 표본 부족', cls: 'border-border bg-background/50 text-muted-foreground' },
   unknown: { label: '실측 대기', cls: 'border-border bg-background/50 text-muted-foreground' },
 }
 
-export default function LabPage() {
+export default function JournalStrategiesPage() {
   const reportsQ = useQuery({ queryKey: ['lab-reports'], queryFn: labApi.reports, staleTime: 60_000 })
-  const signalsQ = useQuery({
-    queryKey: ['lab-signals'],
-    queryFn: labApi.signals,
-    staleTime: 300_000,
-    // 백엔드가 백그라운드로 계산 중(status=computing)이면 5초마다 폴링해 ready를 기다린다
-    refetchInterval: q => (q.state.data?.status === 'computing' ? 5_000 : false),
-  })
   const paperQ = useQuery({ queryKey: ['lab-paper-summary'], queryFn: labApi.paperTradesSummary, staleTime: 120_000 })
   const paperById = new Map((paperQ.data?.strategies ?? []).map(s => [s.strategy_id, s]))
-  const signalsComputing = signalsQ.data?.status === 'computing'
 
   return (
     <div className="space-y-6">
       <div>
         <div className="flex items-center gap-2 text-xl font-bold">
           <FlaskConical size={20} className="text-primary" />
-          전략 실험실
+          전략 검증
         </div>
         <p className="mt-1 max-w-3xl text-sm leading-relaxed text-muted-foreground">
           모든 전략은 같은 저울로 잽니다 — 워크포워드(학습/검증 분리), 거래 비용 차감, 시점 고정 유니버스, 랜덤 진입
-          벤치마크. <span className="font-medium text-foreground">검증을 통과하지 못한 전략의 신호는 추천에 쓰이지 않습니다.</span>
+          벤치마크. <span className="font-medium text-foreground">검증을 통과하지 못한 전략의 신호는 추천에 쓰이지 않습니다.</span>{' '}
+          오늘 나온 신호는 오늘 탭에서 봅니다.
         </p>
       </div>
-
-      <LiveSignals
-        loading={signalsQ.isLoading || signalsComputing}
-        error={signalsQ.isError}
-        onRetry={() => signalsQ.refetch()}
-        signals={signalsQ.data?.signals ?? []}
-        note={signalsComputing ? null : signalsQ.data?.note ?? null}
-        generatedAt={signalsQ.data?.generated_at ?? undefined}
-      />
 
       {reportsQ.isLoading && <Card className="text-sm text-muted-foreground">검증 리포트를 불러오는 중...</Card>}
       {reportsQ.isError && <QueryError message="검증 리포트를 불러오지 못했습니다." onRetry={() => reportsQ.refetch()} />}
