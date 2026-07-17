@@ -11,8 +11,39 @@ from typing import Any, Iterable, Mapping
 
 import pandas as pd
 
+from .lab_paper_trading import effective_verdict
+
 _VERDICT_ORDER = {"pass": 0, "watch": 1, "fail": 2}
 _DEFAULT_ALLOWED = frozenset({"pass", "watch"})
+
+
+def apply_drift_demotions(
+    reports: list[Mapping[str, Any]], paper_state: Mapping[str, Mapping[str, Any]]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """실측 드리프트로 판정을 조정한 리포트 사본과 강등 내역을 반환. 원본 불변.
+
+    paper_state: {strategy_id: {"drift": str, "realized_ev_pct": float|None}}
+    """
+    adjusted: list[dict[str, Any]] = []
+    demotions: list[dict[str, Any]] = []
+    for report in reports:
+        row = dict(report)
+        state = paper_state.get(str(report.get("strategy")))
+        if state:
+            verdict, note = effective_verdict(
+                str(report.get("verdict")), str(state.get("drift")), state.get("realized_ev_pct")
+            )
+            if note:
+                demotions.append({
+                    "strategy_id": str(report.get("strategy")),
+                    "label": str(report.get("label", report.get("strategy"))),
+                    "from": str(report.get("verdict")),
+                    "to": verdict,
+                    "reason": note,
+                })
+            row["verdict"] = verdict
+        adjusted.append(row)
+    return adjusted, demotions
 
 
 def eligible_strategy_ids(
