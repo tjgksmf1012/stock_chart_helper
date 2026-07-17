@@ -1,0 +1,85 @@
+# 랩 확장 3종 — 드리프트 자동 강등 · marcap 가격 폴백 · 횡단면 모멘텀
+
+날짜: 2026-07-17
+상태: 승인됨 (사용자 선택: "경고 강등 + 손실이면 제외", "3개 모두 진행")
+
+트레이딩 랩(2026-07-12 스펙)의 남은 확장 3개. 전부 백엔드 중심, PR 3개로 순차 진행.
+
+## ① 드리프트 자동 강등
+
+실측(종이매매) 표본이 쌓인 전략의 성적이 백테스트에서 이탈하면 신호 게이트가 자동 반응한다.
+
+**규칙** — 순수 함수 `effective_verdict(backtest_verdict, drift, realized_ev_pct) -> (verdict, note|None)`:
+
+| 조건 | 결과 |
+|---|---|
+| drift == "drifting" 이고 realized_ev ≤ 0 | `fail` — 신호 완전 제외 ("실측 손실") |
+| drift == "drifting" 이고 realized_ev > 0 | `watch` 강등 — 신호는 '관찰' 배지로 유지 |
+| 그 외 (ok/insufficient/unknown) | 백테스트 판정 그대로 |
+
+- 위치: `app/services/lab_paper_trading.py` (drift_status 옆).
+- 적용 지점: `/lab/signals` 백그라운드 계산(`routes/lab.py _signals_task`)에서
+  전략별 실측 요약을 조회해 자격 판정(eligible) 전에 적용.
+- 응답 확장: `demotions: [{strategy_id, label, from, to, reason}]` —
+  강등/제외가 발생한 전략 목록. 캐시 구조 버전은 키를 v2로 올린다.
+- 프론트: `LiveSignals`가 demotions 있으면 호박색 경고 박스 렌더
+  ("추세+시계열 모멘텀: 실측 이탈로 관찰 강등" 식).
+- 기록 탭 판정 카드는 변경 없음 (백테스트 판정 + 드리프트 배지 이미 표시).
+
+## ② marcap 가격 폴백 (상폐 종목 시세 보완)
+
+marcap parquet(보유: 2022~2026)에는 OHLCV+상장주식수(Stocks)가 있다. FDR이 못 주는
+상폐 종목 시세를 여기서 보완해 "상폐 종목 트레이드 누락" 잔여 편향을 줄인다.
+
+**새 모듈 `app/lab/marcap_bars.py`:**
+- `load_marcap_bars(code, data_dir=None) -> pd.DataFrame | None` —
+  연도별 parquet에서 해당 코드 행 추출, 컬럼 소문자 표준화(date/open/high/low/close/volume),
+  날짜 오름차순, 0/NaN 가격 행 제거.
+- **분할 보정 `adjust_for_splits(df)`**: 상장주식수가 전일 대비 ±0.5% 초과 변동한 날을
+  분할/병합으로 판정, 그 이전 구간의 가격 4종에 (전일주식수/당일주식수)를 누적 곱해
+  back-adjust (volume은 역수 보정). 보정 없이는 분할일의 가짜 -50% 봉이 전략을 오염시킨다.
+- 한계(스펙에 명시, 리포트에도 기록): 배당락 무보정 — 모멘텀 계산에 소폭 불리한 왜곡이
+  남지만, 상폐 트레이드를 통째로 빠뜨리는 현재 편향보다 작다.
+
+**run_lab 통합:**
+- `_load_bars`: fetcher 실패 또는 <150봉인 코드만 marcap 폴백 시도(같은 150봉 기준).
+  순수 병합 로직은 `merge_bars_with_fallback(fetched, fallback_loader, codes)`로 분리해 TDD.
+- 리포트에 `fallback_bars_count` 추가. 폴백 사용 시 universe_note에
+  "상폐 등 N종목은 marcap 시세(분할 보정)로 보완" 추가.
+- 데이터: marcap-2020/2021 parquet 추가 다운로드(2022년 첫 윈도우의 학습 워밍업용).
+- **완료 후 4개 전략 전부 재검증 실행** — 성적이 나빠질 수 있으며 그게 정직한 값.
+
+## ③ 횡단면 모멘텀 xs_momentum
+
+유니버스 내 상대 강도 상위 종목을 사는 전략 — 시계열(tsmom)과 독립적인,
+가장 오래 검증된 팩터. 기존 전략은 종목 단위 신호라 하네스 확장이 필요하다.
+
+**하네스 확장 (`lab/walkforward.py`):**
+- 전략이 `panel_signals(bars_by_code: Mapping[str, DataFrame], params) -> list[Signal]`을
+  가지면(causal_signals=True 필수) causal 경로에서 종목 루프 대신 패널 1회 호출.
+- 신호 필터는 기존과 동일: 코드가 속한 윈도우 유니버스의 검증 구간 내 신호만 인정,
+  시뮬레이션은 종목당 1회(전역 1종목 1포지션).
+- **인과성 회귀 테스트**: 패널의 모든 종목 bars를 날짜 T까지 자르면
+  신호(≤T)가 전체 패널 신호의 부분집합이어야 한다.
+
+**전략 `app/strategies/xs_momentum.py`** (고정 규칙, 학습 없음):
+- 리밸런스: 월 첫 거래일 (종목별 자체 달력 — KRX 공통 휴장이라 실질 동일).
+- 모멘텀: 12-1개월 (252봉 전 대비 21봉 전 수익률), 최소 253봉 이력.
+- 선정: 그 달 유효 종목 중 모멘텀 상위 10% (최소 5종목), 모멘텀 > 0 조건.
+- 신호: 손절 15%, 목표 없음, 보유 21거래일 (다음 리밸런스까지 — 여전히 상위면 재신호로 재진입).
+- id `xs_momentum`, label "횡단면 모멘텀 (상대 강도, 월 1회)". registry 등록.
+- 검증 실행 → 리포트 저장. 통과 시 신호 게이트에 자동 합류 (프론트 변경 불필요).
+
+## 하지 않는 것
+
+- 판정 카드(기록 탭)의 표시 로직 변경 없음. 스케줄러 변경 없음.
+- marcap 폴백을 라이브 신호 게이트에는 적용하지 않음 (라이브는 현재 상장 종목만 다룸).
+- 배당 보정, 일중 데이터, 숏 전략 없음.
+
+## 검증
+
+- 전부 TDD (pytest). ①은 신호 게이트 응답에 demotions 확인(가짜 실측 주입),
+  ②는 합성 분할 데이터로 보정 검증 + 실데이터 커버리지 상승 확인,
+  ③은 인과성·랭킹·하네스 패널 경로 테스트 + 실데이터 판정 실행.
+- 프론트: ① LiveSignals 경고 박스만 tsc + 브라우저 확인.
+- PR 순서: ① → ② → ③ (각각 자율 머지). ②와 ③ 후 `run_lab` 재실행으로 리포트 갱신.
