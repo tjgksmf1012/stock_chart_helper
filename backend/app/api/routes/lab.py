@@ -272,6 +272,92 @@ async def evaluate_paper_trades() -> dict[str, Any]:
     return {"status": "ok", "open_checked": checked, "closed": closed}
 
 
+_OUTLOOK_HORIZONS = (
+    (1, "내일"),
+    (5, "1주"),
+    (20, "1개월"),
+    (60, "3개월"),
+)
+_OUTLOOK_CACHE_PREFIX = "lab:outlook:v1"
+_OUTLOOK_TTL = 1800
+
+
+@router.get("/outlook/{symbol_code}")
+async def get_symbol_outlook(symbol_code: str) -> dict[str, Any]:
+    """확률적 전망 — 점 예측이 아니라 "80% 구간 + 그 구간의 실측 적중률".
+
+    기간별(1/5/20/60일) 선행수익률 분위수(최근 2년 분포)와, 같은 방식 구간이
+    과거에 실제로 몇 %를 맞췄는지(walk-forward coverage)를 함께 반환한다.
+    검증 통과 전략의 최근 신호가 이 종목에 있으면 조건부 기대값도 얹는다.
+    """
+    from ...lab.outlook import forward_return_quantiles, interval_coverage
+    from ...services.data_fetcher import get_data_fetcher
+
+    cache_key = f"{_OUTLOOK_CACHE_PREFIX}:{symbol_code}"
+    cached = await cache_get(cache_key)
+    if isinstance(cached, dict):
+        return cached
+
+    try:
+        bars = await get_data_fetcher().get_stock_ohlcv_by_timeframe(symbol_code, "1d", lookback_days=1200)
+    except Exception as exc:
+        logger.warning("outlook 시세 실패 %s: %s", symbol_code, exc)
+        bars = None
+    if bars is None or len(bars) < 150:
+        raise HTTPException(status_code=404, detail="전망을 계산할 시세 이력이 부족합니다")
+
+    closes = [float(c) for c in bars["close"]]
+    horizons: list[dict[str, Any]] = []
+    for days, label in _OUTLOOK_HORIZONS:
+        # 분위수는 최근 2년 분포로 (오래된 체제 섞임 방지), 적중률은 전체 이력으로 검증
+        quantiles = forward_return_quantiles(closes[-(504 + days):], horizon=days)
+        coverage = interval_coverage(closes, horizon=days, lookback=252)
+        if quantiles is None:
+            continue
+        horizons.append({
+            "horizon_days": days,
+            "label": label,
+            **{k: round(v, 4) for k, v in quantiles.items()},
+            "coverage": coverage,  # None이면 검증 표본 부족 — 프론트에 그대로 노출
+        })
+
+    # 검증 통과 전략의 조건부 기대값 (이 종목에 최근 신호가 있을 때만)
+    conditional = None
+    signals_cache = await cache_get(_SIGNALS_CACHE_KEY)
+    if isinstance(signals_cache, dict):
+        matching = [s for s in signals_cache.get("signals", []) if s.get("code") == symbol_code]
+        if matching:
+            sig = matching[0]
+            report = next(
+                (r for r in load_latest_reports(_LAB_DIR) if r.get("strategy") == sig.get("strategy_id")),
+                None,
+            )
+            if report:
+                conditional = {
+                    "strategy_id": sig["strategy_id"],
+                    "strategy_label": sig.get("strategy_label", sig["strategy_id"]),
+                    "signal_date": sig.get("signal_date"),
+                    "holding_days": sig.get("max_holding_days"),
+                    "ev_pct": report.get("ev_pct"),
+                    "ci_95": report.get("ci_95"),
+                    "verdict": report.get("verdict"),
+                }
+
+    result = {
+        "symbol_code": symbol_code,
+        "generated_at": datetime.now(UTC).replace(tzinfo=None).isoformat(),
+        "horizons": horizons,
+        "conditional_signal": conditional,
+        "note": (
+            "점 예측이 아닙니다 — 과거 분포 기반 80% 구간이며, '실측 적중률'은 같은 방식의 "
+            "구간이 과거에 실제로 맞은 비율입니다. 80%에서 크게 벗어나면 지금 분포가 "
+            "과거와 다르다는 경고로 읽으세요."
+        ),
+    }
+    await cache_set(cache_key, result, ttl=_OUTLOOK_TTL)
+    return result
+
+
 async def run_scheduled_paper_trade_evaluation() -> None:
     """APScheduler에서 종이매매 청산 평가를 돌린다 (장마감 후)."""
     try:
