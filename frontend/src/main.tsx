@@ -23,7 +23,7 @@ function lazyWithRetry<T extends { default: React.ComponentType<any> }>(
   })
 }
 
-const DashboardPage = lazyWithRetry(() => import('./pages/DashboardPage'), 'DashboardPage')
+const TodayPage = lazyWithRetry(() => import('./pages/TodayPage'), 'TodayPage')
 const ChartPage = lazyWithRetry(() => import('./pages/ChartPage'), 'ChartPage')
 const PatternLibraryPage = lazyWithRetry(() => import('./pages/PatternLibraryPage'), 'PatternLibraryPage')
 const PatternPerformancePage = lazyWithRetry(() => import('./pages/PatternPerformancePage'), 'PatternPerformancePage')
@@ -75,7 +75,7 @@ createRoot(document.getElementById('root')!).render(
           >
             <Routes>
               <Route path="/" element={<Layout />}>
-                <Route index element={<DashboardPage />} />
+                <Route index element={<TodayPage />} />
                 {/* 구 라우트 — 오늘의 추천은 오늘 탭에 흡수, 실험실은 기록>전략 검증으로 */}
                 <Route path="ai" element={<Navigate to="/" replace />} />
                 <Route path="lab" element={<Navigate to="/journal/strategies" replace />} />
