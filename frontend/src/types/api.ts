@@ -1051,12 +1051,22 @@ export interface LabEligibleStrategy {
   verdict: 'pass' | 'watch' | 'fail' | null
 }
 
+// 드리프트 자동 강등 내역 — 실측(종이매매)이 백테스트에서 이탈한 전략
+export interface LabSignalDemotion {
+  strategy_id: string
+  label: string
+  from: string
+  to: string
+  reason: string
+}
+
 export interface LabSignalsResponse {
   status?: 'ready' | 'computing'
   generated_at: string | null
   eligible_strategies: LabEligibleStrategy[]
   universe_size?: number
   signals: LabSignal[]
+  demotions?: LabSignalDemotion[]
   recorded_paper_trades?: number
   note: string | null
 }

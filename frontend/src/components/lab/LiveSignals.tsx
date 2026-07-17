@@ -5,7 +5,7 @@ import { Zap } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { QueryError } from '@/components/ui/QueryError'
 import { cn, fmtDateTime, fmtPrice } from '@/lib/utils'
-import type { LabSignal } from '@/types/api'
+import type { LabSignal, LabSignalDemotion } from '@/types/api'
 
 /** 신호 행에 붙는 판정 등급 배지 (판정 카드의 VERDICT_CFG에서 배지 부분만 분리) */
 export const SIGNAL_VERDICT_BADGE: Record<string, { label: string; badge: string }> = {
@@ -50,6 +50,7 @@ export function LiveSignals({
   signals,
   note,
   generatedAt,
+  demotions,
 }: {
   loading: boolean
   error: boolean
@@ -57,6 +58,7 @@ export function LiveSignals({
   signals: LabSignal[]
   note: string | null
   generatedAt?: string
+  demotions?: LabSignalDemotion[]
 }) {
   const nav = useNavigate()
   const [sizing, setSizing] = useState(loadSizingConfig)
@@ -81,6 +83,20 @@ export function LiveSignals({
         통과·관찰 등급 전략이 최근 5영업일 안에 낸 신호만 모았습니다. 탈락 전략의 신호는 포함하지 않습니다.
         진입은 다음 거래일 시가 기준이며, 손절·보유기간은 각 전략의 규칙을 따릅니다.
       </p>
+
+      {/* 드리프트 자동 강등 — 실측(종이매매)이 백테스트를 이탈한 전략의 경고 */}
+      {!loading && demotions && demotions.length > 0 && (
+        <div className="space-y-1 rounded-lg border border-amber-400/25 bg-amber-400/8 p-2.5 text-xs leading-relaxed text-amber-200/90">
+          {demotions.map(d => (
+            <div key={d.strategy_id}>
+              <span className="font-medium">{d.label}</span> — {d.reason}
+              {d.to === 'fail'
+                ? ' (이 전략의 신호는 아래 목록에서 제외됐습니다)'
+                : ' (신호는 관찰 등급으로 표시됩니다)'}
+            </div>
+          ))}
+        </div>
+      )}
 
       {loading && <div className="py-4 text-center text-xs text-muted-foreground">현재 유니버스에서 신호를 계산하는 중입니다... (최대 1~2분)</div>}
       {error && <QueryError message="라이브 신호를 불러오지 못했습니다." onRetry={onRetry} />}
