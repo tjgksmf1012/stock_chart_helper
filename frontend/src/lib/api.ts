@@ -7,7 +7,7 @@ import type {
   IntradayCandidateWarmupRequest, IntradayWarmupJobStatus, IntradayWarmupRequest, IntradayWarmupResponse, KisPrimeStatus, PatternStatsResponse, RuntimeStatusResponse, ScanHistoryRunSummary, ScanQualityReportResponse,
   WatchlistItem, OutcomeEvaluationResponse, OutcomeRecord, OutcomesSummary, OutcomeStatus, CalibrationReport, OfflineCalibrationResponse,
   MarketRegimeResponse, SectorHeatmapResponse, MoneyFlowData, DeepAnalysisResponse, DeepAnalysisProgress,
-  LabReportsResponse, LabSignalsResponse, LabPaperTradesSummaryResponse,
+  LabReportsResponse, LabSignalsResponse, LabPaperTradesSummaryResponse, SymbolOutlookResponse,
 } from '@/types/api'
 
 function resolveApiBase() {
@@ -395,4 +395,6 @@ export const labApi = {
   reports: () => api.get<LabReportsResponse>('/lab/reports').then(r => r.data),
   signals: () => api.get<LabSignalsResponse>('/lab/signals').then(r => r.data),
   paperTradesSummary: () => api.get<LabPaperTradesSummaryResponse>('/lab/paper-trades/summary').then(r => r.data),
+  // 첫 계산은 시세 로딩으로 느릴 수 있어 타임아웃을 넉넉히
+  outlook: (symbol: string) => api.get<SymbolOutlookResponse>(`/lab/outlook/${symbol}`, { timeout: 60_000 }).then(r => r.data),
 }

@@ -1075,3 +1075,33 @@ export interface LabPaperTradeSummaryItem {
 export interface LabPaperTradesSummaryResponse {
   strategies: LabPaperTradeSummaryItem[]
 }
+
+// 확률적 전망 — 점 예측이 아니라 구간 + 실측 적중률
+export interface OutlookHorizon {
+  horizon_days: number
+  label: string
+  q10: number
+  q25: number
+  q50: number
+  q75: number
+  q90: number
+  coverage: { coverage: number; hits: number; n: number; nominal: number } | null
+}
+
+export interface OutlookConditionalSignal {
+  strategy_id: string
+  strategy_label: string
+  signal_date: string
+  holding_days: number
+  ev_pct: number
+  ci_95: [number, number]
+  verdict: 'pass' | 'watch' | 'fail'
+}
+
+export interface SymbolOutlookResponse {
+  symbol_code: string
+  generated_at: string
+  horizons: OutlookHorizon[]
+  conditional_signal: OutlookConditionalSignal | null
+  note: string
+}

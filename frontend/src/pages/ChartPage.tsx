@@ -20,6 +20,7 @@ import { AnalysisPanel } from '@/components/chart/AnalysisPanel'
 import { CandidateRail, CandidateStrip } from '@/components/chart/CandidateRail'
 import { CandleChart } from '@/components/chart/CandleChart'
 import { DeepAnalysisPanel } from '@/components/chart/DeepAnalysisPanel'
+import { OutlookCard } from '@/components/chart/OutlookCard'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { QueryError } from '@/components/ui/QueryError'
@@ -616,6 +617,8 @@ export default function ChartPage() {
           </Card>
         </section>
       )}
+
+      {analysis && symbol && <OutlookCard symbol={symbol} />}
 
       {analysis && (
         <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
