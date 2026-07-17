@@ -23,6 +23,7 @@ import { DeepAnalysisPanel } from '@/components/chart/DeepAnalysisPanel'
 import { OutlookCard } from '@/components/chart/OutlookCard'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
+import { Collapsible } from '@/components/ui/Collapsible'
 import { QueryError } from '@/components/ui/QueryError'
 import { outcomesApi, patternsApi, symbolsApi } from '@/lib/api'
 import {
@@ -583,6 +584,8 @@ export default function ChartPage() {
         </section>
       )}
 
+      {analysis && symbol && <OutlookCard symbol={symbol} />}
+
       {analysis && (
         <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
           <Card className="space-y-3">
@@ -618,15 +621,13 @@ export default function ChartPage() {
         </section>
       )}
 
-      {analysis && symbol && <OutlookCard symbol={symbol} />}
-
       {analysis && (
+        <Collapsible
+          title="과거 레퍼런스 비교 · 읽는 포인트"
+          summary="지금 차트와 닮은 과거 시나리오를 새 창으로 띄워 비교합니다."
+        >
         <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-          <Card className="space-y-4">
-            <div className="flex items-center gap-2 text-sm font-semibold">
-              <BookOpen size={15} className="text-primary" />
-              과거 레퍼런스 비교
-            </div>
+          <div className="space-y-4">
             <p className="text-sm leading-relaxed text-muted-foreground">
               지금 보고 있는 차트와 닮은 과거 시나리오를 새 창으로 띄워 비교할 수 있게 묶어뒀습니다. 패턴 자체만 보는 용도보다, 어디서 쉬고 어디를 넘지 못했는지까지 함께 보는 데 초점을 맞췄습니다.
             </p>
@@ -683,9 +684,9 @@ export default function ChartPage() {
                 아직 현재 패턴과 상태에 딱 맞는 과거 사례가 충분히 모이지 않았습니다.
               </div>
             )}
-          </Card>
+          </div>
 
-          <Card className="space-y-3">
+          <div className="space-y-3">
             <div className="text-sm font-semibold">읽는 포인트</div>
             <SummaryCallout
               title="구름대 체크"
@@ -702,8 +703,9 @@ export default function ChartPage() {
               body="새 창은 현재 차트 옆에 띄워두고 neckline, cloud, 눌림 위치를 나란히 비교하는 용도로 쓰면 좋습니다."
               tone="amber"
             />
-          </Card>
+          </div>
         </section>
+        </Collapsible>
       )}
 
       {isPrimaryLoading && (

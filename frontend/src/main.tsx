@@ -1,10 +1,11 @@
 import { StrictMode, Suspense, lazy } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 import { AppErrorBoundary } from './components/AppErrorBoundary'
 import { Layout } from './components/Layout'
+import { SubTabs } from './components/shell/SubTabs'
 import './index.css'
 
 function lazyWithRetry<T extends { default: React.ComponentType<any> }>(
@@ -22,8 +23,7 @@ function lazyWithRetry<T extends { default: React.ComponentType<any> }>(
   })
 }
 
-const DashboardPage = lazyWithRetry(() => import('./pages/DashboardPage'), 'DashboardPage')
-const AiRecommendationsPage = lazyWithRetry(() => import('./pages/AiRecommendationsPage'), 'AiRecommendationsPage')
+const TodayPage = lazyWithRetry(() => import('./pages/TodayPage'), 'TodayPage')
 const ChartPage = lazyWithRetry(() => import('./pages/ChartPage'), 'ChartPage')
 const PatternLibraryPage = lazyWithRetry(() => import('./pages/PatternLibraryPage'), 'PatternLibraryPage')
 const PatternPerformancePage = lazyWithRetry(() => import('./pages/PatternPerformancePage'), 'PatternPerformancePage')
@@ -31,7 +31,23 @@ const ReferenceChartsPage = lazyWithRetry(() => import('./pages/ReferenceChartsP
 const ScreenerPage = lazyWithRetry(() => import('./pages/ScreenerPage'), 'ScreenerPage')
 const WatchlistPage = lazyWithRetry(() => import('./pages/WatchlistPage'), 'WatchlistPage')
 const SystemStatusPage = lazyWithRetry(() => import('./pages/SystemStatusPage'), 'SystemStatusPage')
-const LabPage = lazyWithRetry(() => import('./pages/LabPage'), 'LabPage')
+const JournalRecordsPage = lazyWithRetry(() => import('./pages/journal/JournalRecordsPage'), 'JournalRecordsPage')
+const JournalPaperPage = lazyWithRetry(() => import('./pages/journal/JournalPaperPage'), 'JournalPaperPage')
+const JournalStrategiesPage = lazyWithRetry(() => import('./pages/journal/JournalStrategiesPage'), 'JournalStrategiesPage')
+
+const ANALYSIS_TABS = [
+  { to: '/chart', label: '차트', end: false },
+  { to: '/screener', label: '종목 필터' },
+  { to: '/watchlist', label: '관심종목' },
+  { to: '/library', label: '패턴 사전' },
+]
+
+const JOURNAL_TABS = [
+  { to: '/journal', label: '내 기록' },
+  { to: '/journal/paper', label: '실측 (종이매매)' },
+  { to: '/journal/strategies', label: '전략 검증' },
+  { to: '/reports/patterns', label: '패턴 적중률' },
+]
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -59,16 +75,27 @@ createRoot(document.getElementById('root')!).render(
           >
             <Routes>
               <Route path="/" element={<Layout />}>
-                <Route index element={<DashboardPage />} />
-                <Route path="ai" element={<AiRecommendationsPage />} />
-                <Route path="chart" element={<ChartPage />} />
-                <Route path="chart/:symbol" element={<ChartPage />} />
+                <Route index element={<TodayPage />} />
+                {/* 구 라우트 — 오늘의 추천은 오늘 탭에 흡수, 실험실은 기록>전략 검증으로 */}
+                <Route path="ai" element={<Navigate to="/" replace />} />
+                <Route path="lab" element={<Navigate to="/journal/strategies" replace />} />
+
+                <Route element={<SubTabs tabs={ANALYSIS_TABS} />}>
+                  <Route path="chart" element={<ChartPage />} />
+                  <Route path="chart/:symbol" element={<ChartPage />} />
+                  <Route path="screener" element={<ScreenerPage />} />
+                  <Route path="watchlist" element={<WatchlistPage />} />
+                  <Route path="library" element={<PatternLibraryPage />} />
+                </Route>
+
+                <Route element={<SubTabs tabs={JOURNAL_TABS} />}>
+                  <Route path="journal" element={<JournalRecordsPage />} />
+                  <Route path="journal/paper" element={<JournalPaperPage />} />
+                  <Route path="journal/strategies" element={<JournalStrategiesPage />} />
+                  <Route path="reports/patterns" element={<PatternPerformancePage />} />
+                </Route>
+
                 <Route path="reference-charts" element={<ReferenceChartsPage />} />
-                <Route path="watchlist" element={<WatchlistPage />} />
-                <Route path="library" element={<PatternLibraryPage />} />
-                <Route path="reports/patterns" element={<PatternPerformancePage />} />
-                <Route path="screener" element={<ScreenerPage />} />
-                <Route path="lab" element={<LabPage />} />
                 <Route path="system" element={<SystemStatusPage />} />
               </Route>
             </Routes>

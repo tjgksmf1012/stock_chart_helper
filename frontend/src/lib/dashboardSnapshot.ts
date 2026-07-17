@@ -1,28 +1,11 @@
-import type { DashboardItem, Timeframe } from '@/types/api'
+import type { DashboardItem } from '@/types/api'
 
 /**
- * Dashboard candidate snapshot + movement classification.
- *
- * The dashboard remembers each candidate's priority between visits (in
- * localStorage) so it can flag whether a setup is newly appearing, holding
- * steady, or weakening. Extracted from DashboardPage to keep that page focused
- * on rendering.
+ * 후보 우선순위 점수 — 후보 레일과 관심종목 알림 덱의 정렬 기준.
+ * (스냅샷 비교(신규/유지/약화) 저장 로직은 3탭 재편에서 제거 — git 이력에 있음.)
  */
 
 export type CandidateMovement = 'new' | 'steady' | 'weakening'
-
-export interface CandidateSnapshot {
-  score: number
-  actionPlan: string
-  noSignal: boolean
-  updatedAt: string
-}
-
-const DASHBOARD_SNAPSHOT_PREFIX = 'stock-chart-helper:dashboard-snapshot:v1'
-
-export function dashboardSnapshotKey(item: DashboardItem) {
-  return `${item.timeframe}:${item.symbol.code}`
-}
 
 export function dashboardPriorityScore(item: DashboardItem, movement: CandidateMovement, watched: boolean) {
   const base =
@@ -39,45 +22,4 @@ export function dashboardPriorityScore(item: DashboardItem, movement: CandidateM
   const penalty = item.no_signal_flag ? 0.18 : item.action_plan === 'recheck' ? 0.08 : 0
 
   return base + movementBonus + watchBonus - penalty
-}
-
-export function candidateMovement(item: DashboardItem, previous: CandidateSnapshot | undefined): CandidateMovement {
-  if (!previous) return 'new'
-
-  const currentScore = item.action_priority_score ?? item.trade_readiness_score ?? 0
-  if (item.no_signal_flag || item.action_plan === 'recheck') return 'weakening'
-  if (currentScore < previous.score - 0.08) return 'weakening'
-  return 'steady'
-}
-
-export function readDashboardSnapshot(timeframe: Timeframe): Record<string, CandidateSnapshot> {
-  if (typeof window === 'undefined') return {}
-
-  try {
-    const raw = window.localStorage.getItem(`${DASHBOARD_SNAPSHOT_PREFIX}:${timeframe}`)
-    if (!raw) return {}
-    return JSON.parse(raw) as Record<string, CandidateSnapshot>
-  } catch {
-    return {}
-  }
-}
-
-export function writeDashboardSnapshot(timeframe: Timeframe, items: DashboardItem[], updatedAt?: string) {
-  if (typeof window === 'undefined') return
-
-  const snapshot = items.reduce<Record<string, CandidateSnapshot>>((acc, item) => {
-    acc[dashboardSnapshotKey(item)] = {
-      score: item.action_priority_score ?? item.trade_readiness_score ?? 0,
-      actionPlan: item.action_plan,
-      noSignal: item.no_signal_flag,
-      updatedAt: updatedAt ?? new Date().toISOString(),
-    }
-    return acc
-  }, {})
-
-  try {
-    window.localStorage.setItem(`${DASHBOARD_SNAPSHOT_PREFIX}:${timeframe}`, JSON.stringify(snapshot))
-  } catch {
-    // Local storage is a convenience only; the dashboard should still render without it.
-  }
 }
