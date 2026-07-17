@@ -105,3 +105,19 @@ def drift_status(realized_ev: float | None, realized_n: int, backtest_ci_low: fl
     if backtest_ci_low is None:
         return "unknown"
     return "drifting" if realized_ev < backtest_ci_low else "ok"
+
+
+def effective_verdict(
+    backtest_verdict: str, drift: str, realized_ev_pct: float | None
+) -> tuple[str, str | None]:
+    """실측 드리프트를 반영한 신호 게이트용 판정 (백테스트 리포트 자체는 불변).
+
+    - drifting + 실측 EV<=0 → fail: 검증은 통과했지만 실전에서 잃는 중 — 신호 제외
+    - drifting + 실측 EV>0 → watch 강등: 경고 라벨과 함께만 노출
+    - ok/insufficient/unknown → 백테스트 판정 유지
+    """
+    if drift == "drifting":
+        if realized_ev_pct is not None and realized_ev_pct <= 0:
+            return "fail", "실측 손실 — 신호 제외"
+        return ("watch" if backtest_verdict == "pass" else backtest_verdict), "실측 이탈 — 관찰 강등"
+    return backtest_verdict, None

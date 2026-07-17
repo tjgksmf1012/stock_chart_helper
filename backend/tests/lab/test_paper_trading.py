@@ -4,6 +4,7 @@ from app.lab.costs import CostModel
 from app.services.lab_paper_trading import (
     dedupe_key,
     drift_status,
+    effective_verdict,
     evaluate_paper_trade,
     new_paper_trade_signals,
     realized_summary_by_strategy,
@@ -118,3 +119,23 @@ class TestDriftStatus:
 
     def test_none_ev_is_insufficient(self):
         assert drift_status(realized_ev=None, realized_n=30, backtest_ci_low=0.01) == "insufficient"
+
+
+class TestEffectiveVerdict:
+    def test_drifting_with_loss_becomes_fail(self):
+        assert effective_verdict("pass", "drifting", -0.005) == ("fail", "실측 손실 — 신호 제외")
+
+    def test_drifting_with_zero_ev_becomes_fail(self):
+        assert effective_verdict("pass", "drifting", 0.0)[0] == "fail"
+
+    def test_drifting_with_positive_ev_demotes_pass_to_watch(self):
+        assert effective_verdict("pass", "drifting", 0.003) == ("watch", "실측 이탈 — 관찰 강등")
+
+    def test_drifting_watch_stays_watch_with_note(self):
+        assert effective_verdict("watch", "drifting", 0.003) == ("watch", "실측 이탈 — 관찰 강등")
+
+    def test_ok_keeps_backtest_verdict(self):
+        assert effective_verdict("pass", "ok", 0.01) == ("pass", None)
+
+    def test_insufficient_keeps_backtest_verdict(self):
+        assert effective_verdict("pass", "insufficient", None) == ("pass", None)
