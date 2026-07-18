@@ -8,12 +8,14 @@ from .high52_breakout import High52BreakoutStrategy
 from .legacy_patterns import LegacyPatternStrategy
 from .trend_tsmom import TrendTsmomStrategy
 from .vol_breakout import VolBreakoutStrategy
+from .xs_momentum import XsMomentumStrategy
 
 STRATEGY_REGISTRY: dict[str, type] = {
     "legacy_patterns": LegacyPatternStrategy,
     "vol_breakout": VolBreakoutStrategy,
     "high52_breakout": High52BreakoutStrategy,
     "trend_tsmom": TrendTsmomStrategy,
+    "xs_momentum": XsMomentumStrategy,
 }
 
 
