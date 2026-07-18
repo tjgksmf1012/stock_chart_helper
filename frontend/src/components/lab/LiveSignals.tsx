@@ -175,7 +175,10 @@ export function LiveSignals({
                       className="cursor-pointer border-b border-border/40 hover:bg-muted/30"
                       onClick={() => nav(`/chart/${sig.code}`)}
                     >
-                      <td className="py-2 pr-3 font-mono font-medium text-foreground">{sig.code}</td>
+                      <td className="py-2 pr-3">
+                        <div className="font-medium text-foreground">{sig.name ?? sig.code}</div>
+                        {sig.name && <div className="font-mono text-[10px] text-muted-foreground">{sig.code}</div>}
+                      </td>
                       <td className="py-2 pr-3">{sig.strategy_label}</td>
                       <td className="py-2 pr-3">
                         <span className={cn('rounded border px-1.5 py-0.5 text-[10px] font-semibold', cfg.badge)}>{cfg.label}</span>
@@ -189,6 +192,13 @@ export function LiveSignals({
                             {size.shares.toLocaleString('ko-KR')}주
                             {size.capped && <span className="ml-1 text-[10px] text-amber-300" title="집중 상한(계좌의 20%)으로 제한됨">상한</span>}
                           </>
+                        ) : size && size.shares === 0 ? (
+                          <span
+                            className="text-amber-300"
+                            title={`손절폭 ${stopDistancePct(sig)}%가 너무 넓어 설정 리스크로는 1주도 살 수 없습니다 — 이 신호는 건너뛰는 것이 규율입니다`}
+                          >
+                            0주 · 진입 불가
+                          </span>
                         ) : '-'}
                       </td>
                       <td className="py-2 text-muted-foreground">{sig.max_holding_days}일</td>
@@ -243,7 +253,10 @@ function TopPickStrip({
         <Crown size={13} />
         오늘의 최우선
       </span>
-      <span className="font-mono text-sm font-bold text-foreground">{top.code}</span>
+      <span className="text-sm font-bold text-foreground">
+        {top.name ?? top.code}
+        {top.name && <span className="ml-1.5 font-mono text-[11px] font-normal text-muted-foreground">{top.code}</span>}
+      </span>
       <span className="text-muted-foreground">
         {top.strategy_label}
         {ev != null && <> · 검증 EV {`${ev > 0 ? '+' : ''}${(ev * 100).toFixed(1)}%`}/거래</>}
@@ -252,7 +265,19 @@ function TopPickStrip({
         기준 {top.reference_price ? fmtPrice(top.reference_price) : '-'} · 손절 <span className="text-red-300">{fmtPrice(top.stop_price)}</span>
         {size && size.shares > 0 && <> · 권장 {size.shares.toLocaleString('ko-KR')}주</>}
       </span>
+      {size && size.shares === 0 && (
+        <span className="w-full text-[11px] text-amber-300/90">
+          리스크 {(sizing.riskPct * 100).toFixed(1)}% 기준 0주 — 손절폭 {stopDistancePct(top)}%가 너무 넓어 규율상
+          진입 불가입니다. 최우선이라도 살 수 없으면 건너뛰는 것이 원칙입니다.
+        </span>
+      )}
       <span className="ml-auto shrink-0 text-[11px] text-emerald-200/90">차트에서 확인 →</span>
     </button>
   )
+}
+
+/** 기준가 대비 손절까지의 거리(%) — 진입 불가 사유 표시에 사용 */
+function stopDistancePct(sig: LabSignal): string {
+  if (!sig.reference_price || sig.reference_price <= 0) return '-'
+  return (((sig.reference_price - sig.stop_price) / sig.reference_price) * 100).toFixed(0)
 }

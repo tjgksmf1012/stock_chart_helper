@@ -110,7 +110,11 @@ class Settings(BaseSettings):
     min_avg_volume_billion: float = 1.5     # 15억 원 (20일 평균 거래대금)
 
     # CORS — comma-separated list of allowed origins; "*" to allow all
-    allowed_origins: str = "http://localhost:5173,http://localhost:3000"
+    # 5174/5175: 5173이 점유됐을 때 vite가 옆 포트로 밀려나는 경우 —
+    # 허용하지 않으면 화면은 뜨는데 모든 API가 조용히 실패하는 함정이 된다.
+    allowed_origins: str = (
+        "http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:3000"
+    )
 
     # 텔레그램 관심종목 알림 메시지에 넣는 차트 링크의 기준 주소. 상시 서버로
     # 호스팅할 때만 의미가 있고(로컬 데스크톱 모드는 워치리스트 알림 자체를 안 씀),

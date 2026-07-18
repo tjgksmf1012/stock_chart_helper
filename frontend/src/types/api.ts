@@ -1036,6 +1036,8 @@ export interface LabSignal {
   strategy_id: string
   strategy_label: string
   code: string
+  /** 종목명 — 백엔드 symbols DB 조회, 없으면 코드만 표시 */
+  name?: string | null
   signal_date: string
   /** 신호일 종가 — 다음날 시가 진입의 근사치, 포지션 사이징 기준가 */
   reference_price?: number | null
