@@ -41,7 +41,7 @@ _LAB_DIR = Path(__file__).resolve().parents[3] / "data" / "lab"
 
 _VERDICT_ORDER = {"pass": 0, "watch": 1, "fail": 2}
 
-_SIGNALS_CACHE_KEY = "lab:live_signals:v2"  # v2: demotions(드리프트 자동 강등) 추가
+_SIGNALS_CACHE_KEY = "lab:live_signals:v3"  # v3: eligible_strategies에 ev_pct (오늘의 최우선 랭킹 재료)
 _SIGNALS_TTL = 1800  # 30분 — 일봉 신호라 자주 안 바뀜
 _LIVE_UNIVERSE_TOP_N = 60
 _LIVE_LOOKBACK_BARS = 420  # 252봉 전략 워밍업 여유
@@ -167,6 +167,7 @@ async def _compute_live_signals() -> dict[str, Any]:
 
     verdict_by_id = {r["strategy"]: r.get("verdict") for r in reports if r.get("strategy")}
     label_by_id = {r["strategy"]: r.get("label", r["strategy"]) for r in reports if r.get("strategy")}
+    ev_by_id = {r["strategy"]: r.get("ev_pct") for r in reports if r.get("strategy")}
     eligible = eligible_strategy_ids(reports)
     if not eligible:
         return {
@@ -214,7 +215,13 @@ async def _compute_live_signals() -> dict[str, Any]:
     return {
         "generated_at": datetime.now(UTC).replace(tzinfo=None).isoformat(),
         "eligible_strategies": [
-            {"strategy_id": sid, "label": label_by_id.get(sid, sid), "verdict": verdict_by_id.get(sid)}
+            {
+                "strategy_id": sid,
+                "label": label_by_id.get(sid, sid),
+                "verdict": verdict_by_id.get(sid),
+                # 오늘의 최우선 랭킹 재료 — 검증 기대값 (상승확률 랭킹 금지 원칙)
+                "ev_pct": ev_by_id.get(sid),
+            }
             for sid in eligible
         ],
         "universe_size": len(bars_by_code),

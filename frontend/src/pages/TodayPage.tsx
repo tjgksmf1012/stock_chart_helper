@@ -204,6 +204,7 @@ export default function TodayPage() {
         note={signalsComputing ? null : signalsQ.data?.note ?? null}
         generatedAt={signalsQ.data?.generated_at ?? undefined}
         demotions={signalsQ.data?.demotions}
+        eligible={signalsQ.data?.eligible_strategies}
       />
 
       <TodayChecklist

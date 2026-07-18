@@ -584,7 +584,7 @@ export default function ChartPage() {
         </section>
       )}
 
-      {analysis && symbol && <OutlookCard symbol={symbol} />}
+      {analysis && symbol && <OutlookCard symbol={symbol} pUp={analysis.p_up} />}
 
       {analysis && (
         <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">

@@ -1049,6 +1049,8 @@ export interface LabEligibleStrategy {
   strategy_id: string
   label: string
   verdict: 'pass' | 'watch' | 'fail' | null
+  // 검증 기대값 (거래당, 비용 차감) — 오늘의 최우선 랭킹 재료
+  ev_pct?: number | null
 }
 
 // 드리프트 자동 강등 내역 — 실측(종이매매)이 백테스트에서 이탈한 전략
