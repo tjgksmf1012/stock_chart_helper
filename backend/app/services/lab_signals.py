@@ -67,6 +67,15 @@ def collect_recent_signals(
     신호일이 as_of - lookback_days ~ as_of 사이인 것만 남긴다 (오래된 신호 제외).
     """
     floor = as_of - timedelta(days=lookback_days)
+
+    # 횡단면 전략은 패널 1회 호출로 신호를 받는다 (종목 단독으로는 상대 강도 정의 불가)
+    panel_by_code: dict[str, list] | None = None
+    if hasattr(strategy, "panel_signals"):
+        valid = {c: b for c, b in bars_by_code.items() if b is not None and not b.empty}
+        panel_by_code = {}
+        for sig in strategy.panel_signals(valid, {}):
+            panel_by_code.setdefault(sig.code, []).append(sig)
+
     # 종목당 대표 신호 1개만 — 같은 종목이 여러 패턴으로 잡히면 리스트에 반복돼
     # 구매자에게 중복 피로감을 준다. 최신 신호일 우선, 동률이면 가장 타이트한(높은)
     # 손절을 남긴다 (롱 기준 손실 폭이 작은 쪽).
@@ -79,7 +88,8 @@ def collect_recent_signals(
             d.date() if hasattr(d, "date") else d: float(c)
             for d, c in zip(pd.to_datetime(bars["date"]), bars["close"])
         }
-        for sig in strategy.signals(code, bars, {}):
+        code_signals = panel_by_code.get(code, []) if panel_by_code is not None else strategy.signals(code, bars, {})
+        for sig in code_signals:
             if not (floor <= sig.signal_date <= as_of):
                 continue
             reference = close_by_date.get(sig.signal_date)

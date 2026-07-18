@@ -127,3 +127,45 @@ class TestApplyDriftDemotions:
         reports = self._reports()
         apply_drift_demotions(reports, {"a": {"drift": "drifting", "realized_ev_pct": -1.0}})
         assert reports[0]["verdict"] == "pass"
+
+
+class _PanelStub:
+    """패널 전략 스텁 — collect_recent_signals가 panel_signals를 쓰는지 검증."""
+    id = "panel_stub"
+    label = "패널 스텁"
+    causal_signals = True
+
+    def fit(self, train_bars):
+        return {}
+
+    def signals(self, code, bars, params):
+        return []  # 패널 전용 — 이 경로로는 신호가 없어야 정상
+
+    def panel_signals(self, bars_by_code, params):
+        out = []
+        for code, bars in sorted(bars_by_code.items()):
+            d = pd.to_datetime(bars["date"]).dt.date.iloc[-1]
+            out.append(Signal(code=code, signal_date=d, stop_price=90.0, max_holding_days=21))
+        return out
+
+
+class TestCollectRecentSignalsPanel:
+    def _bars(self, last_day: date) -> pd.DataFrame:
+        dates = pd.bdate_range(end=last_day, periods=10)
+        return pd.DataFrame({
+            "date": dates, "open": [100.0] * 10, "high": [101.0] * 10,
+            "low": [99.0] * 10, "close": [100.5] * 10, "volume": [1000] * 10,
+        })
+
+    def test_panel_strategy_signals_collected(self):
+        as_of = date(2026, 7, 17)
+        bars_by_code = {"A": self._bars(as_of), "B": self._bars(as_of)}
+        rows = collect_recent_signals(_PanelStub(), bars_by_code, as_of=as_of, lookback_days=5)
+        assert {r["code"] for r in rows} == {"A", "B"}
+        assert all(r["reference_price"] == 100.5 for r in rows)
+
+    def test_panel_old_signals_filtered_by_recency(self):
+        as_of = date(2026, 7, 17)
+        bars_by_code = {"A": self._bars(date(2026, 6, 1))}  # 마지막 봉이 오래됨
+        rows = collect_recent_signals(_PanelStub(), bars_by_code, as_of=as_of, lookback_days=5)
+        assert rows == []

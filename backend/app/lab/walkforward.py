@@ -168,12 +168,30 @@ def _run_causal(
     used_signals: list[Signal] = []
     last_test_end = max(w.test_end for w in windows)
 
+    visible_by_code = {
+        code: _slice(bars_by_code[code], end=last_test_end) for code in ranges_by_code
+    }
+    visible_by_code = {c: df for c, df in visible_by_code.items() if not df.empty}
+
+    # 횡단면 전략(panel_signals) — "상대 강도"는 종목 하나로 정의되지 않으므로
+    # 패널(유니버스 전체)을 1회 넘겨 신호를 받고, 이후 필터/시뮬레이션은
+    # 종목 단위 경로와 동일하게 재사용한다.
+    raw_by_code: dict[str, list[Signal]] | None = None
+    if hasattr(strategy, "panel_signals"):
+        raw_by_code = {}
+        for s in strategy.panel_signals(visible_by_code, params):
+            raw_by_code.setdefault(s.code, []).append(s)
+
     for code, code_windows in ranges_by_code.items():
-        visible = _slice(bars_by_code[code], end=last_test_end)
-        if visible.empty:
+        visible = visible_by_code.get(code)
+        if visible is None:
             continue
+        candidates = (
+            raw_by_code.get(code, []) if raw_by_code is not None
+            else strategy.signals(code, visible, params)
+        )
         signals = [
-            s for s in strategy.signals(code, visible, params)
+            s for s in candidates
             if any(w.test_start <= s.signal_date <= w.test_end for w in code_windows)
         ]
         used_signals.extend(signals)
