@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Zap } from 'lucide-react'
+import { Crown, Zap } from 'lucide-react'
 
 import { Card } from '@/components/ui/Card'
 import { QueryError } from '@/components/ui/QueryError'
+import { pickTopSignal } from '@/lib/topPick'
 import { cn, fmtDateTime, fmtPrice } from '@/lib/utils'
-import type { LabSignal, LabSignalDemotion } from '@/types/api'
+import type { LabEligibleStrategy, LabSignal, LabSignalDemotion } from '@/types/api'
 
 /** 신호 행에 붙는 판정 등급 배지 (판정 카드의 VERDICT_CFG에서 배지 부분만 분리) */
 export const SIGNAL_VERDICT_BADGE: Record<string, { label: string; badge: string }> = {
@@ -51,6 +52,7 @@ export function LiveSignals({
   note,
   generatedAt,
   demotions,
+  eligible,
 }: {
   loading: boolean
   error: boolean
@@ -59,6 +61,7 @@ export function LiveSignals({
   note: string | null
   generatedAt?: string
   demotions?: LabSignalDemotion[]
+  eligible?: LabEligibleStrategy[]
 }) {
   const nav = useNavigate()
   const [sizing, setSizing] = useState(loadSizingConfig)
@@ -110,6 +113,13 @@ export function LiveSignals({
 
       {signals.length > 0 && (
         <>
+          <TopPickStrip
+            signals={signals}
+            eligible={eligible ?? []}
+            sizing={sizing}
+            onOpenChart={code => nav(`/chart/${code}`)}
+          />
+
           <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-background/50 p-2.5 text-xs">
             <span className="font-medium text-foreground">포지션 계산기</span>
             <label className="flex items-center gap-1.5 text-muted-foreground">
@@ -195,5 +205,54 @@ export function LiveSignals({
         </>
       )}
     </Card>
+  )
+}
+
+/** 오늘의 최우선 — pass 신호 중 검증 EV 최고를 지목. watch만 있으면 "없음"을 정직하게 말한다. */
+function TopPickStrip({
+  signals,
+  eligible,
+  sizing,
+  onOpenChart,
+}: {
+  signals: LabSignal[]
+  eligible: LabEligibleStrategy[]
+  sizing: { account: number; riskPct: number }
+  onOpenChart: (code: string) => void
+}) {
+  const top = pickTopSignal(signals, eligible)
+
+  if (!top) {
+    return (
+      <div className="rounded-lg border border-border bg-background/50 p-3 text-xs text-muted-foreground">
+        <span className="font-medium text-foreground">오늘의 최우선 없음</span> — 통과 등급 신호가 없습니다. 관찰
+        등급은 최우선으로 지목하지 않으며, 안 사는 것도 전략입니다.
+      </div>
+    )
+  }
+
+  const ev = eligible.find(e => e.strategy_id === top.strategy_id)?.ev_pct
+  const size = suggestShares(sizing.account, sizing.riskPct, top.reference_price, top.stop_price)
+
+  return (
+    <button
+      onClick={() => onOpenChart(top.code)}
+      className="flex w-full flex-wrap items-center gap-x-4 gap-y-1.5 rounded-lg border border-emerald-400/25 bg-emerald-400/8 p-3 text-left text-xs transition-colors hover:bg-emerald-400/12"
+    >
+      <span className="inline-flex items-center gap-1.5 font-semibold text-emerald-200">
+        <Crown size={13} />
+        오늘의 최우선
+      </span>
+      <span className="font-mono text-sm font-bold text-foreground">{top.code}</span>
+      <span className="text-muted-foreground">
+        {top.strategy_label}
+        {ev != null && <> · 검증 EV {`${ev > 0 ? '+' : ''}${(ev * 100).toFixed(1)}%`}/거래</>}
+      </span>
+      <span className="text-muted-foreground">
+        기준 {top.reference_price ? fmtPrice(top.reference_price) : '-'} · 손절 <span className="text-red-300">{fmtPrice(top.stop_price)}</span>
+        {size && size.shares > 0 && <> · 권장 {size.shares.toLocaleString('ko-KR')}주</>}
+      </span>
+      <span className="ml-auto shrink-0 text-[11px] text-emerald-200/90">차트에서 확인 →</span>
+    </button>
   )
 }

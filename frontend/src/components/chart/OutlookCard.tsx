@@ -3,6 +3,7 @@ import { CalendarRange } from 'lucide-react'
 
 import { Card } from '@/components/ui/Card'
 import { labApi } from '@/lib/api'
+import { detectOutlookConflict } from '@/lib/outlookConflict'
 import { cn } from '@/lib/utils'
 import type { OutlookHorizon } from '@/types/api'
 
@@ -11,7 +12,7 @@ import type { OutlookHorizon } from '@/types/api'
  * 과거 분포 기반 80% 구간과 "그 구간이 실제로 맞았는지"(실측 적중률)를 함께 보여준다.
  * 적중률이 80%에서 크게 벗어나면 지금 분포가 과거와 다르다는 경고다.
  */
-export function OutlookCard({ symbol }: { symbol: string }) {
+export function OutlookCard({ symbol, pUp }: { symbol: string; pUp?: number | null }) {
   const outlookQ = useQuery({
     queryKey: ['symbol-outlook', symbol],
     queryFn: () => labApi.outlook(symbol),
@@ -28,6 +29,7 @@ export function OutlookCard({ symbol }: { symbol: string }) {
   }
 
   const { horizons, conditional_signal: conditional, note } = outlookQ.data
+  const conflict = detectOutlookConflict(pUp, horizons)
 
   return (
     <Card className="space-y-3">
@@ -35,6 +37,15 @@ export function OutlookCard({ symbol }: { symbol: string }) {
         <CalendarRange size={15} className="text-primary" />
         확률적 전망 (구간)
       </div>
+
+      {/* 패턴 확률(단기)과 종목 체질(분포)이 반대 방향이면 — 한샘 유형의 함정 경고 */}
+      {conflict.conflict && pUp != null && conflict.medianPct != null && (
+        <div className="rounded-lg border border-amber-400/25 bg-amber-400/8 p-2.5 text-xs leading-relaxed text-amber-200/90">
+          <span className="font-medium">단기 패턴과 종목 체질이 충돌합니다</span> — 패턴 상승확률은{' '}
+          {Math.round(pUp * 100)}%로 위를 가리키지만, 이 종목의 과거 분포는 1개월 중앙값 {pct(conflict.medianPct)}로
+          아래를 가리킵니다. 이런 구간에서는 패턴 신뢰를 낮추고 보수적으로 보는 편이 안전합니다.
+        </div>
+      )}
 
       <div className="overflow-x-auto">
         <table className="w-full min-w-[420px] text-xs">
