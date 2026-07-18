@@ -286,11 +286,12 @@ async def on_startup():
 
     _start_scheduler()
 
-    # 클라우드 수집 신호 동기화 — 며칠 꺼뒀다 켜도 그동안 GitHub Actions가 모은
-    # 신호가 실측 표본으로 합류한다 (실패 무해, 백그라운드)
-    from .api.routes.lab import sync_collected_signals
+    # 랩 실측 따라잡기 — 며칠 꺼뒀다 켜도 GitHub Actions가 모은 신호가 합류하고
+    # 열린 종이매매가 소급 청산된다. 로컬 모드(enable_scheduler=false)의
+    # 16:25/16:30 잡 부재를 이 한 번의 실행이 대신한다 (실패 무해, 백그라운드).
+    from .api.routes.lab import run_startup_lab_sync
 
-    asyncio.create_task(sync_collected_signals())
+    asyncio.create_task(run_startup_lab_sync())
 
     from .api.routes.system import trigger_background_kis_prime
     from .services.backtest_engine import get_pattern_stats_map

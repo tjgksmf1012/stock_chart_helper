@@ -401,15 +401,21 @@ async def run_scheduled_paper_trade_evaluation() -> None:
         logger.warning("scheduled paper-trade eval 실패: %s", exc)
 
 
-async def sync_collected_signals() -> int:
+def _collected_signals_url() -> str:
+    """설정에서 수집 신호 JSONL의 raw URL을 읽는다 (빈 값 = 동기화 비활성)."""
+    from ...core.config import get_settings
+
+    return get_settings().collected_signals_url.strip()
+
+
+async def sync_collected_signals(url: str | None = None) -> int:
     """GitHub Actions가 커밋한 수집 신호(JSONL)를 받아 종이매매 DB에 동기화한다.
 
     컴퓨터를 며칠 꺼뒀어도, 켜는 순간 그동안 클라우드가 모아둔 신호가 실측
     표본으로 합류한다. 중복은 기존 dedupe 경로가 걸러낸다. 실패는 무해(로그만).
     """
-    from ...core.config import settings
-
-    url = settings.collected_signals_url.strip()
+    if url is None:
+        url = _collected_signals_url()
     if not url:
         return 0
     try:
@@ -426,6 +432,24 @@ async def sync_collected_signals() -> int:
     except Exception as exc:
         logger.warning("수집 신호 동기화 실패 (무해 — 다음 기회에 재시도): %s", exc)
         return 0
+
+
+async def run_startup_lab_sync() -> None:
+    """앱 시작 시 랩 실측 따라잡기 — 수집 신호 합류 후 청산 소급 평가.
+
+    로컬 데스크톱 모드는 스케줄러가 꺼져 있어(enable_scheduler=false) 16:25/16:30
+    잡이 돌지 않는다 — 대신 켜는 순간 이 함수가 공백을 메운다. 실패는 무해.
+    """
+    try:
+        await sync_collected_signals()
+    except Exception as exc:
+        logger.warning("시작 시 수집 동기화 실패: %s", exc)
+    try:
+        result = await evaluate_paper_trades()
+        if result.get("closed"):
+            logger.info("시작 시 청산 소급: %s건 확인, %s건 청산", result.get("open_checked"), result.get("closed"))
+    except Exception as exc:
+        logger.warning("시작 시 청산 평가 실패: %s", exc)
 
 
 async def run_scheduled_signal_computation() -> None:
