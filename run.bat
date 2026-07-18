@@ -55,7 +55,10 @@ if errorlevel 1 (
 )
 
 echo [1/3] Backend starting at http://localhost:%BACKEND_PORT%
-start "Backend" cmd /k "cd /d "%ROOT_DIR%backend" && .venv\Scripts\python.exe -m uvicorn app.main:app --reload --reload-exclude "data/*" --port %BACKEND_PORT%"
+rem --reload-exclude "data/*" 는 쓰면 안 된다: uvicorn CLI(click)가 Windows에서
+rem 와일드카드를 파일 목록으로 확장해 "unexpected extra arguments"로 죽는다.
+rem 감시 대상을 소스 폴더(app)로 한정하면 data/ 변경도 자연히 무시된다.
+start "Backend" cmd /k "cd /d "%ROOT_DIR%backend" && .venv\Scripts\python.exe -m uvicorn app.main:app --reload --reload-dir app --port %BACKEND_PORT%"
 
 echo [2/3] Frontend starting at http://localhost:%FRONTEND_PORT%
 start "Frontend" cmd /k "cd /d "%ROOT_DIR%frontend" && npm run dev"
