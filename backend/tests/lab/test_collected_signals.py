@@ -63,3 +63,21 @@ class TestParseCollectedRecords:
     def test_empty_text(self):
         assert parse_collected_records("") == []
         assert parse_collected_records("\n\n") == []
+
+
+class TestSyncPlumbing:
+    """네트워크 없이 동기화 배선을 검증 — settings import 오타 같은 배선 버그를 잡는다."""
+
+    def test_sync_url_reads_settings(self):
+        from app.api.routes.lab import _collected_signals_url
+
+        url = _collected_signals_url()
+        assert isinstance(url, str)
+        assert url == "" or url.startswith("https://")
+
+    def test_sync_disabled_when_url_empty(self):
+        import asyncio
+
+        from app.api.routes.lab import sync_collected_signals
+
+        assert asyncio.run(sync_collected_signals(url="")) == 0
