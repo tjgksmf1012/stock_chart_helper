@@ -29,6 +29,7 @@ from ...services.lab_paper_trading import (
     new_paper_trade_signals,
     realized_summary_by_strategy,
 )
+from ...services.collected_signals import parse_collected_records
 from ...services.lab_signals import apply_drift_demotions, collect_recent_signals, eligible_strategy_ids
 from ...strategies.registry import make_strategy
 
@@ -398,6 +399,33 @@ async def run_scheduled_paper_trade_evaluation() -> None:
         logger.info("scheduled paper-trade eval: checked=%s closed=%s", result["open_checked"], result["closed"])
     except Exception as exc:
         logger.warning("scheduled paper-trade eval 실패: %s", exc)
+
+
+async def sync_collected_signals() -> int:
+    """GitHub Actions가 커밋한 수집 신호(JSONL)를 받아 종이매매 DB에 동기화한다.
+
+    컴퓨터를 며칠 꺼뒀어도, 켜는 순간 그동안 클라우드가 모아둔 신호가 실측
+    표본으로 합류한다. 중복은 기존 dedupe 경로가 걸러낸다. 실패는 무해(로그만).
+    """
+    from ...core.config import settings
+
+    url = settings.collected_signals_url.strip()
+    if not url:
+        return 0
+    try:
+        import httpx
+
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+        records = parse_collected_records(response.text)
+        recorded = await _record_paper_trades(records)
+        if recorded:
+            logger.info("수집 신호 동기화: %s건 중 신규 %s건 기록", len(records), recorded)
+        return recorded
+    except Exception as exc:
+        logger.warning("수집 신호 동기화 실패 (무해 — 다음 기회에 재시도): %s", exc)
+        return 0
 
 
 async def run_scheduled_signal_computation() -> None:

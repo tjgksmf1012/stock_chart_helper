@@ -67,7 +67,11 @@ def _start_scheduler() -> None:
         from apscheduler.triggers.cron import CronTrigger
         from apscheduler.triggers.interval import IntervalTrigger
 
-        from .api.routes.lab import run_scheduled_paper_trade_evaluation, run_scheduled_signal_computation
+        from .api.routes.lab import (
+            run_scheduled_paper_trade_evaluation,
+            run_scheduled_signal_computation,
+            sync_collected_signals,
+        )
         from .api.routes.outcomes import run_scheduled_outcome_evaluation
         from .api.routes.system import run_scheduled_intraday_warmup
         from .services.alert_service import run_watchlist_alert_check
@@ -127,6 +131,13 @@ def _start_scheduler() -> None:
             run_scheduled_outcome_evaluation,
             CronTrigger(day_of_week="mon-fri", hour=16, minute=20, timezone="Asia/Seoul"),
             id="close_outcome_evaluation",
+            replace_existing=True,
+        )
+        # 클라우드 수집 신호 동기화 — 청산 평가 직전에 GitHub의 수집분을 DB에 합류
+        scheduler.add_job(
+            sync_collected_signals,
+            CronTrigger(day_of_week="mon-fri", hour=16, minute=25, timezone="Asia/Seoul"),
+            id="collected_signals_sync",
             replace_existing=True,
         )
         # 랩 종이매매 청산 평가 — 장마감 확정 일봉이 반영된 뒤 (실측 vs 백테스트 드리프트 재료)
@@ -274,6 +285,12 @@ async def on_startup():
         logger.warning("DB init skipped", error=str(exc))
 
     _start_scheduler()
+
+    # 클라우드 수집 신호 동기화 — 며칠 꺼뒀다 켜도 그동안 GitHub Actions가 모은
+    # 신호가 실측 표본으로 합류한다 (실패 무해, 백그라운드)
+    from .api.routes.lab import sync_collected_signals
+
+    asyncio.create_task(sync_collected_signals())
 
     from .api.routes.system import trigger_background_kis_prime
     from .services.backtest_engine import get_pattern_stats_map
