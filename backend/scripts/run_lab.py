@@ -63,6 +63,13 @@ async def main() -> None:
     parser.add_argument("--train-years", type=int, default=2)
     parser.add_argument("--test-months", type=int, default=6)
     parser.add_argument(
+        "--regime-gate", action="store_true",
+        help=(
+            "사전 등록 실험 ①: KOSPI 종가가 200일선 위일 때만 신호 인정. "
+            "결과는 data/lab_experiments/에 저장 (UI 리포트와 분리)"
+        ),
+    )
+    parser.add_argument(
         "--universe", choices=["marcap", "pit", "current"], default="marcap",
         help=(
             "marcap=시점 고정, 상폐 포함 (FinanceData/marcap parquet — 권장), "
@@ -73,6 +80,16 @@ async def main() -> None:
     args = parser.parse_args()
 
     strategy = STRATEGIES[args.strategy]()
+    if args.regime_gate:
+        import FinanceDataReader as fdr
+
+        from app.lab.regime_gate import RegimeGatedStrategy, build_regime_lookup
+
+        index_raw = fdr.DataReader("KS11", (args.start - pd.Timedelta(days=400)).isoformat())
+        index_bars = pd.DataFrame({"date": index_raw.index.date, "close": index_raw["Close"].values})
+        strategy = RegimeGatedStrategy(strategy, build_regime_lookup(index_bars, ma_window=200))
+        print(f"체제 게이트 ON — KOSPI 200일선 (지수 {len(index_bars)}봉)")
+
     windows = walk_forward_windows(args.start, args.end, args.train_years, args.test_months, args.test_months)
     if not windows:
         print("검증 윈도우를 만들 수 없습니다 (기간이 너무 짧음).")
@@ -203,19 +220,23 @@ async def main() -> None:
             for t in result.trades
         ],
     }
-    out_dir = Path(__file__).resolve().parents[1] / "data" / "lab"
+    # 실험(--regime-gate) 결과는 UI가 읽는 data/lab과 분리 — 채택 결정 전까지
+    # 판정 카드·신호 게이트에 영향을 주지 않는다.
+    out_dir = Path(__file__).resolve().parents[1] / "data" / ("lab_experiments" if args.regime_gate else "lab")
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"{strategy.id}_{datetime.now():%Y%m%d_%H%M%S}.json"
+    suffix = "_regimegate" if args.regime_gate else ""
+    out_path = out_dir / f"{strategy.id}{suffix}_{datetime.now():%Y%m%d_%H%M%S}.json"
     out_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    # 공개 사본(트레이드 제외) — data/는 gitignore라 커밋 가능한 collected/에 따로 저장.
-    # GitHub Actions 신호 수집이 이 파일로 자격(pass/watch)을 판정한다.
-    public_dir = Path(__file__).resolve().parents[1] / "collected" / "lab_reports"
-    public_dir.mkdir(parents=True, exist_ok=True)
-    public_report = {k: v for k, v in report.items() if k != "trades"}
-    (public_dir / f"{strategy.id}.json").write_text(
-        json.dumps(public_report, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    if not args.regime_gate:
+        # 공개 사본(트레이드 제외) — data/는 gitignore라 커밋 가능한 collected/에 따로 저장.
+        # GitHub Actions 신호 수집이 이 파일로 자격(pass/watch)을 판정한다.
+        public_dir = Path(__file__).resolve().parents[1] / "collected" / "lab_reports"
+        public_dir.mkdir(parents=True, exist_ok=True)
+        public_report = {k: v for k, v in report.items() if k != "trades"}
+        (public_dir / f"{strategy.id}.json").write_text(
+            json.dumps(public_report, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
 
     print("\n===== 검증 리포트 =====")
     print(f"전략: {strategy.label}")
