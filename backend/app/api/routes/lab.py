@@ -41,7 +41,7 @@ _LAB_DIR = Path(__file__).resolve().parents[3] / "data" / "lab"
 
 _VERDICT_ORDER = {"pass": 0, "watch": 1, "fail": 2}
 
-_SIGNALS_CACHE_KEY = "lab:live_signals:v3"  # v3: eligible_strategies에 ev_pct (오늘의 최우선 랭킹 재료)
+_SIGNALS_CACHE_KEY = "lab:live_signals:v4"  # v4: 신호에 종목명(name) 추가
 _SIGNALS_TTL = 1800  # 30분 — 일봉 신호라 자주 안 바뀜
 _LIVE_UNIVERSE_TOP_N = 60
 _LIVE_LOOKBACK_BARS = 420  # 252봉 전략 워밍업 여유
@@ -203,6 +203,17 @@ async def _compute_live_signals() -> dict[str, Any]:
         all_signals.extend(signals)
 
     all_signals.sort(key=lambda s: (_VERDICT_ORDER.get(s.get("verdict"), 3), s["signal_date"]), reverse=False)
+
+    # 종목명 부착 — 코드만 보여주면 매일 읽는 화면의 가독성이 나쁘다. 실패해도 무해.
+    # symbols DB는 로컬 모드에서 비어 있으므로 유니버스 캐시(name 포함)를 쓴다.
+    try:
+        universe_df = await fetcher.get_universe()
+        if "name" in universe_df.columns:
+            name_by_code = dict(zip(universe_df["code"].astype(str), universe_df["name"]))
+            for sig in all_signals:
+                sig["name"] = name_by_code.get(sig["code"])
+    except Exception as exc:
+        logger.warning("신호 종목명 조회 실패 (코드만 표시): %s", exc)
 
     # 자동 종이매매: 새로 나온 신호를 open 상태로 기록 (중복은 무시). 실측 성적을
     # 쌓아 백테스트와의 드리프트를 감시하는 재료가 된다.
