@@ -117,6 +117,15 @@ async def main() -> None:
     lookback = (args.end - args.start).days + 800  # 학습 워밍업 여유
     print(f"시세 로딩: {len(all_codes)}종목, lookback {lookback}일")
     bars = await _load_bars(all_codes, lookback)
+    fallback_count = 0
+    if args.universe == "marcap":
+        # 상폐 등 fetcher가 못 채운 종목은 marcap 자체 OHLCV로 보완 (분할 보정 적용).
+        # "상폐 종목 트레이드 누락(대개 나쁜 쪽)" 잔여 편향을 줄이는 핵심 단계.
+        from app.lab.marcap_bars import load_marcap_bars, merge_bars_with_fallback
+
+        bars, fallback_count = merge_bars_with_fallback(bars, all_codes, load_marcap_bars)
+        if fallback_count:
+            print(f"marcap 폴백: {fallback_count}종목 시세 보완 (분할 보정 적용)")
     coverage = len(bars) / max(1, len(all_codes))
     print(f"데이터 커버리지: {coverage:.0%} ({len(bars)}/{len(all_codes)})")
 
@@ -160,6 +169,10 @@ async def main() -> None:
     elif args.universe == "marcap" and coverage < 0.9:
         universe_note = f"시세 커버리지 {coverage:.0%} — 상폐 종목 시세 누락으로 실제 성적은 이보다 나쁠 수 있습니다."
 
+    if fallback_count and args.universe == "marcap":
+        fallback_note = f"상폐 등 {fallback_count}종목은 marcap 시세(분할 보정, 배당락 무보정)로 보완했습니다."
+        universe_note = f"{universe_note} {fallback_note}" if universe_note else fallback_note
+
     report = {
         "strategy": strategy.id,
         "label": strategy.label,
@@ -169,6 +182,7 @@ async def main() -> None:
         "universe_mode": args.universe,
         "universe_note": universe_note,
         "data_coverage": round(coverage, 3),
+        "fallback_bars_count": fallback_count,
         "n_trades": result.summary.n,
         "ev_pct": round(result.summary.ev_pct, 5),
         "ci_95": [round(result.ci[0], 5), round(result.ci[1], 5)],
