@@ -1,6 +1,6 @@
 {
   "strategy": "high52_breakout",
-  "label": "52주 신고가 근접 돌파",
+  "label": "52주 신고가 근접 돌파 + 체제 게이트",
   "period": {
     "start": "2020-01-01",
     "end": "2026-07-01"
@@ -9,31 +9,32 @@
     "top_n": 80,
     "train_years": 2,
     "test_months": 6,
-    "round_trip_cost_pct": 0.0038
+    "round_trip_cost_pct": 0.0038,
+    "regime_gate": true
   },
   "universe_mode": "marcap",
   "universe_note": null,
   "data_coverage": 1.0,
   "fallback_bars_count": 0,
-  "n_trades": 488,
-  "ev_pct": 0.04942,
+  "n_trades": 412,
+  "ev_pct": 0.05551,
   "ci_95": [
-    0.02683,
-    0.07365
+    0.03154,
+    0.08248
   ],
-  "win_rate": 0.377,
-  "payoff_ratio": 3.32,
-  "sequential_mdd_pct": 0.924,
+  "win_rate": 0.383,
+  "payoff_ratio": 3.41,
+  "sequential_mdd_pct": 0.936,
   "portfolio_mdd_pct": 0.6333,
-  "portfolio_total_return_pct": 4.2452,
+  "portfolio_total_return_pct": 3.57,
   "risk_1pct": {
-    "n_used": 486,
-    "total_return_pct": 15.0128,
-    "mdd_pct": 0.2658,
-    "avg_r": 0.6202,
+    "n_used": 410,
+    "total_return_pct": 14.2691,
+    "mdd_pct": 0.2768,
+    "avg_r": 0.7202,
     "risk_pct": 0.01
   },
-  "random_benchmark_ev_pct": 0.01769,
+  "random_benchmark_ev_pct": 0.01663,
   "verdict": "pass",
-  "generated_at": "2026-07-17T19:39:39.353190"
+  "generated_at": "2026-07-18T23:26:42.033904"
 }

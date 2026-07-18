@@ -1,6 +1,6 @@
 {
   "strategy": "trend_tsmom",
-  "label": "추세+시계열 모멘텀 (월 1회)",
+  "label": "추세+시계열 모멘텀 (월 1회) + 체제 게이트",
   "period": {
     "start": "2020-01-01",
     "end": "2026-07-01"
@@ -9,31 +9,32 @@
     "top_n": 80,
     "train_years": 2,
     "test_months": 6,
-    "round_trip_cost_pct": 0.0038
+    "round_trip_cost_pct": 0.0038,
+    "regime_gate": true
   },
   "universe_mode": "marcap",
   "universe_note": null,
   "data_coverage": 1.0,
   "fallback_bars_count": 0,
-  "n_trades": 720,
-  "ev_pct": 0.06164,
+  "n_trades": 534,
+  "ev_pct": 0.07296,
   "ci_95": [
-    0.04004,
-    0.08499
+    0.04668,
+    0.10316
   ],
-  "win_rate": 0.474,
-  "payoff_ratio": 2.17,
+  "win_rate": 0.504,
+  "payoff_ratio": 2.15,
   "sequential_mdd_pct": 1.0,
-  "portfolio_mdd_pct": 0.9484,
-  "portfolio_total_return_pct": 1.4349,
+  "portfolio_mdd_pct": 0.9487,
+  "portfolio_total_return_pct": 0.8295,
   "risk_1pct": {
-    "n_used": 720,
-    "total_return_pct": 13.9736,
-    "mdd_pct": 0.4323,
-    "avg_r": 0.3988,
+    "n_used": 534,
+    "total_return_pct": 8.6802,
+    "mdd_pct": 0.4065,
+    "avg_r": 0.4474,
     "risk_pct": 0.01
   },
-  "random_benchmark_ev_pct": 0.03327,
+  "random_benchmark_ev_pct": 0.03239,
   "verdict": "pass",
-  "generated_at": "2026-07-17T19:38:37.133537"
+  "generated_at": "2026-07-18T23:25:49.181501"
 }
