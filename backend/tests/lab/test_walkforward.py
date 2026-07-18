@@ -148,3 +148,71 @@ class TestHarness:
             ),
         )
         assert result.verdict in {"pass", "watch", "fail"}
+
+
+class _PanelEcho:
+    """panel_signals 훅 검증용 — 패널 전체를 보고 코드별 고정 신호 방출."""
+    id = "panel_echo"
+    label = "패널 에코"
+    causal_signals = True
+
+    def __init__(self):
+        self.panel_calls = 0
+        self.seen_codes: list[str] = []
+
+    def fit(self, train_bars):
+        return {}
+
+    def signals(self, code, bars, params):
+        raise AssertionError("panel 전략에서는 signals()가 호출되면 안 된다")
+
+    def panel_signals(self, bars_by_code, params):
+        self.panel_calls += 1
+        self.seen_codes = sorted(bars_by_code)
+        out = []
+        for code, bars in sorted(bars_by_code.items()):
+            months = set()
+            for _, row in bars.iterrows():
+                d = row["date"].date()
+                key = (d.year, d.month)
+                if key not in months:
+                    months.add(key)
+                    out.append(Signal(code=code, signal_date=d,
+                                      stop_price=float(row["close"]) * 0.9,
+                                      max_holding_days=5))
+        return out
+
+
+class TestPanelSignalsPath:
+    def _windows(self):
+        return walk_forward_windows(
+            start=date(2020, 1, 1), end=date(2022, 6, 30),
+            train_years=1, test_months=6, step_months=6,
+        )
+
+    def test_panel_hook_called_once_and_universe_filtered(self):
+        # 코드 A만 유니버스에 있음 → 패널은 1회 호출, 트레이드/신호는 A만
+        bars = {"A": _monotone_bars("2020-01-01", 700), "B": _monotone_bars("2020-01-01", 700)}
+        strategy = _PanelEcho()
+        windows = self._windows()
+        result = run_walk_forward(
+            strategy=strategy, bars_by_code=bars,
+            universe_fn=lambda w: ["A"], cost_model=NO_COST, windows=windows,
+        )
+        assert strategy.panel_calls == 1
+        assert strategy.seen_codes == ["A"]  # 유니버스 밖 종목은 패널에도 없다
+        assert result.summary.n > 0
+        assert all(t.code == "A" for t in result.trades)
+        assert all(s.code == "A" for s in result.signals)
+        # 신호는 반드시 검증 구간 안에서만 인정된다
+        assert all(any(w.test_start <= s.signal_date <= w.test_end for w in windows) for s in result.signals)
+
+    def test_panel_signals_outside_test_ranges_dropped(self):
+        bars = {"A": _monotone_bars("2020-01-01", 700)}
+        windows = self._windows()
+        result = run_walk_forward(
+            strategy=_PanelEcho(), bars_by_code=bars,
+            universe_fn=lambda w: ["A"], cost_model=NO_COST, windows=windows,
+        )
+        for t in result.trades:
+            assert any(w.test_start <= t.entry_date <= w.test_end for w in windows)
