@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     # 없다 — .env.local.example은 이 값을 false로 둔다.
     enable_scheduler: bool = True
 
+    # GitHub Actions가 매일 수집해 커밋하는 신호 JSONL — 로컬이 켜질 때 동기화해
+    # 종이매매(실측) 공백을 메운다. 빈 값이면 동기화 비활성.
+    collected_signals_url: str = (
+        "https://raw.githubusercontent.com/tjgksmf1012/stock_chart_helper/main/backend/collected/paper_signals.jsonl"
+    )
+
     # OpenAI API (optional, for LLM-written recommendation commentary)
     openai_api_key: str = ""
     openai_model: str = "gpt-5-mini"
