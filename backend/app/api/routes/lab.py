@@ -400,6 +400,23 @@ async def run_scheduled_paper_trade_evaluation() -> None:
         logger.warning("scheduled paper-trade eval 실패: %s", exc)
 
 
+async def run_scheduled_signal_computation() -> None:
+    """APScheduler에서 장마감 후 신호를 계산·기록한다.
+
+    사용자가 오늘 탭을 열지 않는 날에도 종이매매(실측 표본)가 매일 쌓이게 하는
+    잡 — 드리프트 감시의 재료가 사용 빈도와 무관하게 누적된다. 캐시도 채워져
+    다음 방문 시 신호가 즉시 뜬다. 강등 로직 포함 전체 파이프라인을 재사용.
+    """
+    try:
+        result = await _compute_and_cache_signals()
+        logger.info(
+            "scheduled signal computation: signals=%s recorded=%s",
+            len(result.get("signals", [])), result.get("recorded_paper_trades"),
+        )
+    except Exception as exc:
+        logger.warning("scheduled signal computation 실패: %s", exc)
+
+
 @router.get("/paper-trades/summary")
 async def paper_trades_summary() -> dict[str, Any]:
     """전략별 실측 종이매매 성적 + 백테스트 대비 드리프트 판정."""
