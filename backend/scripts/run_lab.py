@@ -208,6 +208,15 @@ async def main() -> None:
     out_path = out_dir / f"{strategy.id}_{datetime.now():%Y%m%d_%H%M%S}.json"
     out_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
+    # 공개 사본(트레이드 제외) — data/는 gitignore라 커밋 가능한 collected/에 따로 저장.
+    # GitHub Actions 신호 수집이 이 파일로 자격(pass/watch)을 판정한다.
+    public_dir = Path(__file__).resolve().parents[1] / "collected" / "lab_reports"
+    public_dir.mkdir(parents=True, exist_ok=True)
+    public_report = {k: v for k, v in report.items() if k != "trades"}
+    (public_dir / f"{strategy.id}.json").write_text(
+        json.dumps(public_report, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
     print("\n===== 검증 리포트 =====")
     print(f"전략: {strategy.label}")
     print(f"트레이드: {report['n_trades']}건, 커버리지 {coverage:.0%}")

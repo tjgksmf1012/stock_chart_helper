@@ -1,0 +1,39 @@
+{
+  "strategy": "xs_momentum",
+  "label": "횡단면 모멘텀 (상대 강도, 월 1회)",
+  "period": {
+    "start": "2020-01-01",
+    "end": "2026-07-01"
+  },
+  "config": {
+    "top_n": 80,
+    "train_years": 2,
+    "test_months": 6,
+    "round_trip_cost_pct": 0.0038
+  },
+  "universe_mode": "marcap",
+  "universe_note": null,
+  "data_coverage": 1.0,
+  "fallback_bars_count": 0,
+  "n_trades": 332,
+  "ev_pct": 0.01171,
+  "ci_95": [
+    -0.01008,
+    0.03478
+  ],
+  "win_rate": 0.434,
+  "payoff_ratio": 1.54,
+  "sequential_mdd_pct": 0.997,
+  "portfolio_mdd_pct": 0.2977,
+  "portfolio_total_return_pct": 0.2959,
+  "risk_1pct": {
+    "n_used": 332,
+    "total_return_pct": 0.185,
+    "mdd_pct": 0.2399,
+    "avg_r": 0.061,
+    "risk_pct": 0.01
+  },
+  "random_benchmark_ev_pct": 0.01784,
+  "verdict": "watch",
+  "generated_at": "2026-07-18T09:08:54.181128"
+}
