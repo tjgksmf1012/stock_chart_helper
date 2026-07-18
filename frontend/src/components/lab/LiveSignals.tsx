@@ -6,7 +6,7 @@ import { Card } from '@/components/ui/Card'
 import { QueryError } from '@/components/ui/QueryError'
 import { pickTopSignal } from '@/lib/topPick'
 import { cn, fmtDateTime, fmtPrice } from '@/lib/utils'
-import type { LabEligibleStrategy, LabSignal, LabSignalDemotion } from '@/types/api'
+import type { LabEligibleStrategy, LabRegimeGate, LabSignal, LabSignalDemotion } from '@/types/api'
 
 /** 신호 행에 붙는 판정 등급 배지 (판정 카드의 VERDICT_CFG에서 배지 부분만 분리) */
 export const SIGNAL_VERDICT_BADGE: Record<string, { label: string; badge: string }> = {
@@ -53,6 +53,7 @@ export function LiveSignals({
   generatedAt,
   demotions,
   eligible,
+  regimeGate,
 }: {
   loading: boolean
   error: boolean
@@ -62,6 +63,7 @@ export function LiveSignals({
   generatedAt?: string
   demotions?: LabSignalDemotion[]
   eligible?: LabEligibleStrategy[]
+  regimeGate?: LabRegimeGate
 }) {
   const nav = useNavigate()
   const [sizing, setSizing] = useState(loadSizingConfig)
@@ -86,6 +88,15 @@ export function LiveSignals({
         통과·관찰 등급 전략이 최근 5영업일 안에 낸 신호만 모았습니다. 탈락 전략의 신호는 포함하지 않습니다.
         진입은 다음 거래일 시가 기준이며, 손절·보유기간은 각 전략의 규칙을 따릅니다.
       </p>
+
+      {/* 시장 체제 게이트 (실험① 채택) — 비우호 체제에서는 신호 발행 자체가 정지된다 */}
+      {!loading && regimeGate?.enabled && regimeGate.ok_today === false && (
+        <div className="rounded-lg border border-sky-400/25 bg-sky-400/8 p-2.5 text-xs leading-relaxed text-sky-200/90">
+          <span className="font-medium">시장 체제 비우호 — 신호 발행 정지 중.</span> KOSPI가 200일선 아래에 있어
+          검증된 전략의 신호를 내지 않습니다. 검증 결과 이 시기의 진입은 기대값을 갉아먹었습니다 — 신호가 없는 것이
+          시스템이 일하고 있는 것입니다.
+        </div>
+      )}
 
       {/* 드리프트 자동 강등 — 실측(종이매매)이 백테스트를 이탈한 전략의 경고 */}
       {!loading && demotions && demotions.length > 0 && (

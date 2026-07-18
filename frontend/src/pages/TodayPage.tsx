@@ -205,6 +205,7 @@ export default function TodayPage() {
         generatedAt={signalsQ.data?.generated_at ?? undefined}
         demotions={signalsQ.data?.demotions}
         eligible={signalsQ.data?.eligible_strategies}
+        regimeGate={signalsQ.data?.regime_gate}
       />
 
       <TodayChecklist

@@ -41,7 +41,7 @@ _LAB_DIR = Path(__file__).resolve().parents[3] / "data" / "lab"
 
 _VERDICT_ORDER = {"pass": 0, "watch": 1, "fail": 2}
 
-_SIGNALS_CACHE_KEY = "lab:live_signals:v4"  # v4: 신호에 종목명(name) 추가
+_SIGNALS_CACHE_KEY = "lab:live_signals:v5"  # v5: 시장 체제 게이트 (실험① 채택)
 _SIGNALS_TTL = 1800  # 30분 — 일봉 신호라 자주 안 바뀜
 _LIVE_UNIVERSE_TOP_N = 60
 _LIVE_LOOKBACK_BARS = 420  # 252봉 전략 워밍업 여유
@@ -189,6 +189,20 @@ async def _compute_live_signals() -> dict[str, Any]:
         except Exception as exc:
             logger.warning("live signals: 시세 실패 %s: %s", code, exc)
 
+    # 시장 체제 게이트 (실험① 채택, 2026-07-19) — 백테스트와 같은 규칙을 라이브에도.
+    # KOSPI가 200일선 아래인 날짜의 신호는 발행하지 않는다. 지수 조회 실패 시엔
+    # 게이트 없이 진행하되 응답에 사실대로 기록한다 (신호 게이트 생존 우선).
+    from ...lab.regime_gate import DEFAULT_MA_WINDOW, RegimeGatedStrategy, build_regime_lookup, fetch_kospi_bars
+
+    regime_lookup = None
+    regime_info: dict[str, Any] = {"enabled": False, "ok_today": None}
+    try:
+        index_bars = await asyncio.to_thread(fetch_kospi_bars)
+        regime_lookup = build_regime_lookup(index_bars, ma_window=DEFAULT_MA_WINDOW)
+        regime_info = {"enabled": True, "ok_today": regime_lookup(date.today())}
+    except Exception as exc:
+        logger.warning("체제 게이트: 지수 조회 실패 — 게이트 없이 진행: %s", exc)
+
     as_of = date.today()
     all_signals: list[dict[str, Any]] = []
     for strategy_id in eligible:
@@ -196,6 +210,8 @@ async def _compute_live_signals() -> dict[str, Any]:
             strategy = make_strategy(strategy_id)
         except KeyError:
             continue
+        if regime_lookup is not None:
+            strategy = RegimeGatedStrategy(strategy, regime_lookup)
         signals = collect_recent_signals(strategy, bars_by_code, as_of=as_of, lookback_days=_SIGNAL_RECENT_DAYS)
         for sig in signals:
             sig["verdict"] = verdict_by_id.get(strategy_id)
@@ -238,6 +254,7 @@ async def _compute_live_signals() -> dict[str, Any]:
         "universe_size": len(bars_by_code),
         "signals": all_signals,
         "demotions": demotions,
+        "regime_gate": regime_info,
         "recorded_paper_trades": recorded,
         # 라이브 유니버스는 현재 상장 종목이라 백테스트와 달리 생존 편향이 없다
         # (오늘 거래 가능한 종목에 대한 오늘의 신호이므로).

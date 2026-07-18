@@ -1064,6 +1064,12 @@ export interface LabSignalDemotion {
   reason: string
 }
 
+// 시장 체제 게이트 상태 (실험① 채택) — KOSPI 200일선 기준
+export interface LabRegimeGate {
+  enabled: boolean
+  ok_today: boolean | null
+}
+
 export interface LabSignalsResponse {
   status?: 'ready' | 'computing'
   generated_at: string | null
@@ -1071,6 +1077,7 @@ export interface LabSignalsResponse {
   universe_size?: number
   signals: LabSignal[]
   demotions?: LabSignalDemotion[]
+  regime_gate?: LabRegimeGate
   recorded_paper_trades?: number
   note: string | null
 }

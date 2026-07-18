@@ -24,6 +24,12 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 from app.api.routes.lab import load_latest_reports  # noqa: E402
+from app.lab.regime_gate import (  # noqa: E402
+    DEFAULT_MA_WINDOW,
+    RegimeGatedStrategy,
+    build_regime_lookup,
+    fetch_kospi_bars,
+)
 from app.services.collected_signals import merge_signal_records  # noqa: E402
 from app.services.lab_signals import collect_recent_signals, eligible_strategy_ids  # noqa: E402
 from app.strategies.registry import make_strategy  # noqa: E402
@@ -74,6 +80,15 @@ async def main() -> None:
         print("[실패] 시세를 하나도 못 받았습니다 (러너 IP 차단 가능성).")
         sys.exit(1)
 
+    # 시장 체제 게이트 (실험① 채택) — 라이브 신호 파이프라인과 동일한 규칙.
+    # 지수 조회 실패 시엔 게이트 없이 진행 (수집 중단보다 낫다 — 로컬 게이트가 한 번 더 거름)
+    regime_lookup = None
+    try:
+        regime_lookup = build_regime_lookup(fetch_kospi_bars(), ma_window=DEFAULT_MA_WINDOW)
+        print(f"체제 게이트: 오늘 {'우호' if regime_lookup(date.today()) else '비우호 — 신호 발행 정지'}")
+    except Exception as exc:
+        print(f"체제 게이트: 지수 조회 실패 — 게이트 없이 수집: {exc}")
+
     as_of = date.today()
     collected_at = datetime.now().isoformat(timespec="seconds")
     new_records: list[dict] = []
@@ -82,6 +97,8 @@ async def main() -> None:
             strategy = make_strategy(strategy_id)
         except KeyError:
             continue
+        if regime_lookup is not None:
+            strategy = RegimeGatedStrategy(strategy, regime_lookup)
         for sig in collect_recent_signals(strategy, bars_by_code, as_of=as_of, lookback_days=5):
             new_records.append({
                 **sig,

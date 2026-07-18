@@ -17,6 +17,22 @@ from .types import Signal
 
 RegimeLookup = Callable[[date], bool]
 
+DEFAULT_MA_WINDOW = 200
+
+
+def fetch_kospi_bars(lookback_days: int = 400) -> pd.DataFrame:
+    """KOSPI 지수 일봉(date/close) — FDR 'KS11'. 게이트 판정용 (블로킹 IO).
+
+    async 컨텍스트에서는 asyncio.to_thread로 감싸서 호출할 것.
+    """
+    from datetime import timedelta
+
+    import FinanceDataReader as fdr
+
+    start = (date.today() - timedelta(days=lookback_days)).isoformat()
+    raw = fdr.DataReader("KS11", start)
+    return pd.DataFrame({"date": raw.index.date, "close": raw["Close"].values})
+
 
 def build_regime_lookup(index_bars: pd.DataFrame, ma_window: int = 200) -> RegimeLookup:
     """지수 일봉(date/close)으로 '이 날짜에 체제가 우호적인가' 조회 함수를 만든다.
