@@ -67,7 +67,7 @@ def _start_scheduler() -> None:
         from apscheduler.triggers.cron import CronTrigger
         from apscheduler.triggers.interval import IntervalTrigger
 
-        from .api.routes.lab import run_scheduled_paper_trade_evaluation
+        from .api.routes.lab import run_scheduled_paper_trade_evaluation, run_scheduled_signal_computation
         from .api.routes.outcomes import run_scheduled_outcome_evaluation
         from .api.routes.system import run_scheduled_intraday_warmup
         from .services.alert_service import run_watchlist_alert_check
@@ -134,6 +134,14 @@ def _start_scheduler() -> None:
             run_scheduled_paper_trade_evaluation,
             CronTrigger(day_of_week="mon-fri", hour=16, minute=30, timezone="Asia/Seoul"),
             id="close_paper_trade_evaluation",
+            replace_existing=True,
+        )
+        # 랩 신호 자동 계산·기록 — 사용자가 오늘 탭을 안 열어도 실측 표본이 매일 쌓인다
+        # (청산 평가 16:30 뒤에 배치해 같은 날 신호가 곧바로 open으로 기록되게)
+        scheduler.add_job(
+            run_scheduled_signal_computation,
+            CronTrigger(day_of_week="mon-fri", hour=16, minute=35, timezone="Asia/Seoul"),
+            id="close_signal_computation",
             replace_existing=True,
         )
         # 관심종목 가격 알림 — 장중 10분 간격 (텔레그램 미설정 시 내부에서 no-op)
