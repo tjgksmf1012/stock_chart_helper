@@ -63,6 +63,13 @@ async def main() -> None:
     parser.add_argument("--train-years", type=int, default=2)
     parser.add_argument("--test-months", type=int, default=6)
     parser.add_argument(
+        "--atr-stop", action="store_true",
+        help=(
+            "사전 등록 실험 ②: 고정 %% 손절을 2.5×ATR(20)로 교체. "
+            "결과는 data/lab_experiments/에 저장 (공식 리포트와 분리)"
+        ),
+    )
+    parser.add_argument(
         "--no-regime-gate", action="store_true",
         help=(
             "체제 게이트 끄기 (비교 실험용). 기본은 게이트 ON — 실험 ①(2026-07-19)에서 "
@@ -81,6 +88,12 @@ async def main() -> None:
     args = parser.parse_args()
 
     strategy = STRATEGIES[args.strategy]()
+    if args.atr_stop:
+        from app.lab.atr_stop import AtrStopStrategy
+
+        strategy = AtrStopStrategy(strategy)
+        print("ATR 손절 ON — 2.5×ATR(20)")
+
     regime_gated = not args.no_regime_gate
     if regime_gated:
         from datetime import timedelta
@@ -201,7 +214,7 @@ async def main() -> None:
         "period": {"start": args.start.isoformat(), "end": args.end.isoformat()},
         "config": {"top_n": args.top_n, "train_years": args.train_years,
                    "test_months": args.test_months, "round_trip_cost_pct": cost_model.round_trip_pct,
-                   "regime_gate": regime_gated},
+                   "regime_gate": regime_gated, "atr_stop": args.atr_stop},
         "universe_mode": args.universe,
         "universe_note": universe_note,
         "data_coverage": round(coverage, 3),
@@ -226,15 +239,16 @@ async def main() -> None:
             for t in result.trades
         ],
     }
-    # 게이트 OFF(비교 실험) 결과는 UI가 읽는 data/lab과 분리 — 공식 리포트는
-    # 채택된 기본 구성(게이트 ON)만 싣는다.
-    out_dir = Path(__file__).resolve().parents[1] / "data" / ("lab" if regime_gated else "lab_experiments")
+    # 실험 구성(게이트 OFF 또는 ATR 손절)의 결과는 UI가 읽는 data/lab과 분리 —
+    # 공식 리포트는 채택된 기본 구성만 싣는다.
+    official = regime_gated and not args.atr_stop
+    out_dir = Path(__file__).resolve().parents[1] / "data" / ("lab" if official else "lab_experiments")
     out_dir.mkdir(parents=True, exist_ok=True)
-    suffix = "" if regime_gated else "_nogate"
+    suffix = "" if official else ("_atrstop" if args.atr_stop else "_nogate")
     out_path = out_dir / f"{strategy.id}{suffix}_{datetime.now():%Y%m%d_%H%M%S}.json"
     out_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    if regime_gated:
+    if official:
         # 공개 사본(트레이드 제외) — data/는 gitignore라 커밋 가능한 collected/에 따로 저장.
         # GitHub Actions 신호 수집이 이 파일로 자격(pass/watch)을 판정한다.
         public_dir = Path(__file__).resolve().parents[1] / "collected" / "lab_reports"
