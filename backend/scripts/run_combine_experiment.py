@@ -22,7 +22,13 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 from app.api.routes.lab import load_latest_reports  # noqa: E402
-from app.lab.combine import monthly_r_series, pairwise_correlation, trades_from_report_dicts  # noqa: E402
+from app.lab.combine import (  # noqa: E402
+    combine_series,
+    monthly_r_series,
+    monthly_sharpe,
+    pairwise_correlation,
+    trades_from_report_dicts,
+)
 from app.lab.sizing import risk_based_metrics  # noqa: E402
 
 _LAB_DIR = Path(__file__).resolve().parents[1] / "data" / "lab"
@@ -59,8 +65,19 @@ def main() -> None:
         correlations[f"{a}~{b}"] = corr
         print(f"  {a} ~ {b}: {corr:+.2f}" if corr is not None else f"  {a} ~ {b}: 측정 불가")
 
+    # 실험 ③-b: 월별 R 샤프 (리스크 크기 불변 지표) — 공통 월축, 거래 없는 달 = 0
+    all_months = sorted({m for s in series.values() for m in s})
+    aligned = {sid: {m: s.get(m, 0.0) for m in all_months} for sid, s in series.items()}
+    sharpes = {sid: monthly_sharpe(s) for sid, s in aligned.items()}
+    combined_sharpe = monthly_sharpe(combine_series(aligned.values()))
+    print("== 월별 R 샤프 (③-b) ==")
+    for sid, sharpe in sorted(sharpes.items(), key=lambda kv: -(kv[1] or -9)):
+        print(f"  {sid}: {sharpe:.3f}" if sharpe is not None else f"  {sid}: 측정 불가")
+    print(f"  합산: {combined_sharpe:.3f}" if combined_sharpe is not None else "  합산: 측정 불가")
+
     result = {
         "experiment": "combined_portfolio",
+        "monthly_sharpe": {"individual": sharpes, "combined": combined_sharpe},
         "risk_pct": _RISK,
         "strategies": sorted(trades_by_id),
         "individual": {sid: {k: v for k, v in m.items()} for sid, m in individual.items()},

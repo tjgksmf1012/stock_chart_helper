@@ -57,6 +57,31 @@ def monthly_r_series(trades: Iterable[Trade], max_loss_r: float = _MAX_LOSS_R) -
     return series
 
 
+def combine_series(series_list: Iterable[Mapping[str, float]]) -> dict[str, float]:
+    """월별 R 시계열들을 월 단위로 합산 — '한 계좌로 전부 운용'의 월별 손익."""
+    combined: dict[str, float] = {}
+    for series in series_list:
+        for month, value in series.items():
+            combined[month] = combined.get(month, 0.0) + value
+    return combined
+
+
+def monthly_sharpe(series: Mapping[str, float]) -> float | None:
+    """월별 R 시계열의 샤프 비율(평균÷모표준편차) — 리스크 크기에 불변인 비교축.
+
+    2개월 미만이거나 변동성이 0이면 None (정의 불가).
+    """
+    values = [series[m] for m in sorted(series)]
+    n = len(values)
+    if n < 2:
+        return None
+    mean = sum(values) / n
+    variance = sum((v - mean) ** 2 for v in values) / n
+    if variance <= 0:
+        return None
+    return mean / math.sqrt(variance)
+
+
 def pairwise_correlation(a: Mapping[str, float], b: Mapping[str, float]) -> float | None:
     """월별 R 시계열의 피어슨 상관. 한쪽만 거래한 달은 0으로 채운다 (그 달 손익 0).
 
