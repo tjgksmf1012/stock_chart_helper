@@ -59,3 +59,26 @@ def test_direction_neutral_pattern_uses_instance_direction():
     semi = result[0]
     assert semi["bullish_count"] == 1
     assert semi["bearish_count"] == 1
+
+
+def test_build_sector_map_skips_when_krx_in_cooldown(monkeypatch):
+    # KRX 쿨다운 중에는 pykrx 호출 자체를 건너뛴다 — 실패 print 스팸 방지
+    import asyncio
+
+    from app.services import sector_service
+
+    calls = {"fetch": 0}
+
+    async def fake_cooldown() -> bool:
+        return True
+
+    async def fake_fetch(ticker, today):
+        calls["fetch"] += 1
+        return ticker, []
+
+    monkeypatch.setattr("app.services.data_fetcher.krx_in_cooldown", fake_cooldown)
+    monkeypatch.setattr(sector_service, "_fetch_sector_constituents", fake_fetch)
+
+    result = asyncio.run(sector_service._build_sector_map())
+    assert result == {}
+    assert calls["fetch"] == 0  # 쿨다운이면 섹터 조회를 한 번도 시도하지 않는다
