@@ -57,6 +57,12 @@ def _get_semaphore() -> asyncio.Semaphore:
 async def _fetch_sector_constituents(ticker: str, today: str) -> tuple[str, list[str]]:
     """단일 섹터 인덱스의 구성 종목 코드 리스트를 반환. 세마포어로 동시 호출 제한."""
     sector_name = _SECTOR_TICKERS.get(ticker, ticker)
+    # KRX가 이미 차단 판정(쿨다운)이면 호출 자체를 건너뛴다 — pykrx가 실패마다
+    # 내부 print를 찍어 로그 스팸이 되고, 어차피 빈 응답이다
+    from .data_fetcher import krx_in_cooldown
+
+    if await krx_in_cooldown():
+        return sector_name, []
     sem = _get_semaphore()
     try:
         from pykrx import stock as krx
@@ -90,6 +96,12 @@ async def _fetch_sector_constituents(ticker: str, today: str) -> tuple[str, list
 
 async def _build_sector_map() -> dict[str, str]:
     """18개 섹터를 순차 배치(3개씩)로 가져와 캐시에 저장."""
+    from .data_fetcher import krx_in_cooldown, mark_krx_cooldown
+
+    if await krx_in_cooldown():
+        logger.info("sector map build skipped — KRX cooldown 중 (쿨다운 해제 후 재시도)")
+        return {}
+
     today = date.today().strftime("%Y%m%d")
     tickers = list(_SECTOR_TICKERS.keys())
 
@@ -110,6 +122,10 @@ async def _build_sector_map() -> dict[str, str]:
     logger.info("sector map built: %d stocks", len(code_to_sector))
     if len(code_to_sector) > 50:
         await cache_set(_SECTOR_MAP_CACHE_KEY, code_to_sector, ttl=_SECTOR_MAP_TTL)
+    elif not code_to_sector:
+        # 18개 전부 빈 응답 = KRX 차단인데 아직 쿨다운 마크 전 — 여기서 걸어줘야
+        # 프론트의 30초 재시도 루프가 15분간 pykrx를 다시 두들기지 않는다
+        await mark_krx_cooldown("sector constituents: 전 섹터 빈 응답 (KRX 차단 추정)")
     return code_to_sector
 
 
