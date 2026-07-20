@@ -74,3 +74,30 @@ class TestPairwiseCorrelation:
 
     def test_insufficient_months_returns_none(self):
         assert pairwise_correlation({"2024-01": 1.0}, {"2024-01": 0.5}) is None
+
+
+class TestMonthlySharpe:
+    def test_constant_positive_series_has_no_sharpe(self):
+        # 표준편차 0 → 정의 불가 (None)
+        from app.lab.combine import monthly_sharpe
+        assert monthly_sharpe({"2024-01": 1.0, "2024-02": 1.0}) is None
+
+    def test_known_series(self):
+        from app.lab.combine import monthly_sharpe
+        # 평균 0.5, 모표준편차 0.5 → 샤프 1.0
+        assert abs(monthly_sharpe({"2024-01": 0.0, "2024-02": 1.0}) - 1.0) < 1e-9
+
+    def test_insufficient_months(self):
+        from app.lab.combine import monthly_sharpe
+        assert monthly_sharpe({"2024-01": 1.0}) is None
+
+    def test_combined_of_anticorrelated_beats_individuals(self):
+        # 완전 역상관 두 시계열의 합은 변동성이 0에 가까워져 샤프가 발산 —
+        # 분산 효과의 극단 사례가 수학적으로 재현되는지 확인
+        from app.lab.combine import combine_series, monthly_sharpe
+        a = {"2024-01": 1.0, "2024-02": 0.0, "2024-03": 1.0, "2024-04": 0.0}
+        b = {"2024-01": 0.0, "2024-02": 1.0, "2024-03": 0.0, "2024-04": 1.0}
+        combined = combine_series([a, b])
+        assert combined == {"2024-01": 1.0, "2024-02": 1.0, "2024-03": 1.0, "2024-04": 1.0}
+        assert monthly_sharpe(combined) is None  # 변동성 0 → 발산(None)이 정직한 표현
+        assert monthly_sharpe(a) is not None
